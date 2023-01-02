@@ -8,7 +8,9 @@ edition = "2021"
 
 [dependencies]
 pnet = { version = "0.31.0", features = ["std"] }
-clap = {version = "4.0.26", features = ["cargo"]}
-tokio = { version = "1.22", features = ["full"] }
+clap = {version = "4.0.32", features = ["cargo"]}
+tokio = { version = "1.22", features = ["full","macros", "rt-multi-thread"] }
+byteorder = "1.4.3"
+pcap = "1.0.0"
 syslog = "^6.0"
 csv = "1.1"
