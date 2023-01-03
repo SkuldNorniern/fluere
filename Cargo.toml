@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 pnet = { version = "0.31.0", features = ["std"] }
-pcap-parser = "0.14.0"
+rpcap = "1.0.0"
 clap = {version = "4.0.32", features = ["cargo"]}
 tokio = { version = "1.22", features = ["full","macros", "rt-multi-thread"] }
 byteorder = "1.4.3"
