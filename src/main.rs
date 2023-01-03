@@ -43,6 +43,24 @@ fn cli() -> Command{
                         .long("csv")
                 )
             )
+        .subcommand(
+            Command::new("pcap")
+                .about("collect pcket and save to .pcap file")
+                .arg(
+                    Arg::new("interface")
+                        //.about("Select network interface to use")
+                        .short('i')
+                        .long("interface")
+                )
+                .arg(
+                    Arg::new("list")
+                        //.about("List of network interfaces")
+                        .short('l')
+                        .long("list")
+                        .action(ArgAction::SetTrue),
+                )
+            )
+        
 }
 
 #[tokio::main]
@@ -72,6 +90,22 @@ async fn main() {
             let _file = args.get_one::<String>("file").unwrap();
             let _csv = args.get_one::<String>("csv").unwrap();
             //net::netflow(_file, _csv);
+        },
+        Some(("pcap", args)) => {
+            println!("Pcap mode");
+            if args.contains_id("interface"){
+                println!("Interface {} selected", args.get_one::<String>("interface").unwrap());
+                interface = args.get_one::<String>("interface").unwrap()
+            }
+            if args.contains_id("list"){
+                for (i, interface) in _interfaces.iter().enumerate() {
+                    println!("[{}]: {}",i ,interface.name);
+                }
+                //println!("List of interfaces {:?}", _interfaces);
+                //exit(0);
+            }
+            
+            net::packet_capture(interface);
         },
         _ => {
             println!("No mode selected");

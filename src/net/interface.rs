@@ -10,6 +10,8 @@ pub fn get_default_interface(interfaces: Vec<NetworkInterface>) -> String {
         }
     }
     panic!("No valid interfaces")
+
+    
 }
 
 pub fn get_default_interface_name(interfaces: &[NetworkInterface]) -> String {

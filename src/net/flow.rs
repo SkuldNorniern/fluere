@@ -1,4 +1,4 @@
-extern crate pcap_parser;
+extern crate rpcap;
 extern crate pnet;
 extern crate byteorder;
 
@@ -10,7 +10,7 @@ use std::str;
 use std::time::{SystemTime, UNIX_EPOCH};
 use byteorder::{ByteOrder, NetworkEndian};
 
-use pcap_parser::PcapNGReader;
+use rpcap::read::PcapReader;
 use pnet::packet::Packet;
 use pnet::packet::ip::{IpNextHeaderProtocols, IpNextHeaderProtocol};
 use pnet::packet::ipv4::Ipv4Packet;
@@ -51,14 +51,15 @@ pub fn netflow(pcap_file: &str, csv_file: &str) {
     //}
     //let pcap_file = &args[1];
     //let csv_file = &args[2];
-    let file = File::open(pcap_file).unwrap();    
-    // Open the PCAP file for reading
-    let mut pcap_reader = PcapNGReader::new(65536, file);
+       
+    let infile = File::open("example.pcap").unwrap();
+    let reader = BufReader::new(infile);
+    let (file_opts, mut pcapr) = PcapReader::new(reader).unwrap();
 
     // Process the packets in the PCAP file
     let mut netflow_records = Vec::new();
-    for pcap in pcap_reader {
-        let packet = pcap.unwrap().packet_data;
+    for pcap in capture {
+        let packet = pcap.unwrap();
         // Parse and extract information from the packet as before
         let ipv4_packet = Ipv4Packet::new(packet).unwrap();
         // Extract the source and destination IP addresses from the IPv4 packet
