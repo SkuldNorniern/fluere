@@ -1,8 +1,9 @@
+use super::types::C_Ipv4Packet;
 use std::fs::File;
 use std::time::{SystemTime, UNIX_EPOCH};
 use pcap::{Capture, PacketHeader, Packet};
 
-pub fn write_pcap(packets: Vec<Packet>, file_name: &str) {
+pub fn write_pcap(packets: Vec<C_Ipv4Packet>, file_name: &str) {
     let file = File::create(file_name).unwrap();
     let mut capture = Capture::dead(2048);
     capture.write_pcap_header().unwrap();

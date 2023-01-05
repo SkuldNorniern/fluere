@@ -1,45 +1,55 @@
+use super::types::C_Ipv4Packet;
 use pnet::datalink::{self, DataLinkReceiver, NetworkInterface,Channel};
+use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::{Packet, MutablePacket};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
 use pnet::packet::tcp::{TcpPacket, MutableTcpPacket};
 use pnet::packet::udp::{UdpPacket, MutableUdpPacket};
 use pnet::packet::ipv4::{Ipv4Packet, MutableIpv4Packet};
-use std::env;
+use std::{env, vec};
 use std::io::{self, Write};
-use std::net::IpAddr;
 
-pub fn packet_capture(interface_name: &str){
-    println!("Capturing on interface: {}", interface_name);
-    // Parse the interface str into NetworkInterface
-    let interface_names_match = |iface: &NetworkInterface| iface.name == interface_name;
-    let interfaces = datalink::interfaces();
-    let interface = interfaces
-        .into_iter()
-        .filter(interface_names_match)
-        .next()
-        .unwrap();
-    
-    // Create a channel to receive on
-    let (_, mut rx) = match datalink::channel(&interface, Default::default()) {
-        Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
-        Ok(_) => panic!("Unhandled channel type"),
-        Err(e) => panic!("An error occurred when creating the datalink channel: {}", e),
-    };
-
+fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
+    let mut packets = Vec::new();
     loop {
         match rx.next() {
             Ok(packet) => {
                 // Process the packet
                 let ethernet_packet = EthernetPacket::new(packet).unwrap();
+                
                 let protocol = ethernet_packet.get_ethertype();
                 match protocol {
                     EtherTypes::Ipv4 => {
                         // Parse the IP packet
-                        let ipv4_packet = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
-                        let src_ip = ipv4_packet.get_source();
-                        let dst_ip = ipv4_packet.get_destination();
-                        let packet_protocol = ipv4_packet.get_next_level_protocol();
-                        println!("IP packet: {} > {}", src_ip, dst_ip);
+                        let ipv4_packet = Ipv4Packet::new(ethernet_packet.packet()).unwrap();
+                        let c_packet = C_Ipv4Packet::new(ipv4_packet);
+                        let src_ip = c_packet.get_source();
+                        let dst_ip = c_packet.get_destination();
+                        let protocol = c_packet.get_next_level_protocol();
+                        let mut src_port = 0;
+                        let mut dst_port = 0;
+                        //println!("protocol: {:?}", c_packet.get_next_level_protocol());
+                        match protocol.0 {
+                            6 => {
+                                let tcp_packet = TcpPacket::new(c_packet.get_payload()).unwrap();
+                                src_port = tcp_packet.get_source();
+                                dst_port = tcp_packet.get_destination();
+                                println!("TCP packet: {}:{} > {}:{}", src_ip, src_port, dst_ip, dst_port);
+                            }
+                            17 => {
+                                let udp_packet = UdpPacket::new(c_packet.get_payload()).unwrap();
+                                src_port = udp_packet.get_source();
+                                dst_port = udp_packet.get_destination();
+                                println!("UDP packet: {}:{} > {}:{}", src_ip, src_port, dst_ip, dst_port);
+                            }
+                            // Add other protocol cases here
+                            _ => {
+                                // Ignore other protocols
+                            }
+                        }
+                        
+                        println!("protocol: {} packet: {}:{} > {}:{}",protocol, src_ip,src_port, dst_ip,dst_port);
+                        packets.push(c_packet.clone());
                     }
                     _ => {
                         println!("Other packet: {:?}", protocol)
@@ -53,4 +63,30 @@ pub fn packet_capture(interface_name: &str){
             }
         }
     }
+    println!("Packets: {:?}", packets);
+    packets
+}
+
+pub fn packet_capture(interface_name: &str){ 
+    println!("Capturing on interface: {}", interface_name);
+    
+    // Parse the interface str into NetworkInterface
+    let interface_names_match = |iface: &NetworkInterface| iface.name == interface_name;
+    let interfaces = datalink::interfaces();
+    let interface = interfaces
+        .into_iter()
+        .filter(interface_names_match)
+        .next()
+        .unwrap();
+
+    // Create a channel to receive on
+    let (_, mut rx) = match datalink::channel(&interface, Default::default()) {
+        Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => panic!("Unhandled channel type"),
+        Err(e) => panic!("An error occurred when creating the datalink channel: {}", e),
+    };
+
+    // Process packets
+    let packets = process_packets(&mut rx);
+    //packets
 }
