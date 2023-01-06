@@ -1,6 +1,4 @@
-use std::convert::TryFrom;
-use std::array::TryFromSliceError;
-#[derive(Debug, Clone, Copy,PartialEq,Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MacAddress(pub [u8; 6]);
 
 impl MacAddress {

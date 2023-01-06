@@ -1,26 +1,31 @@
-use crate::net::types::ether::{EtherFrame, EtherProtocol, MacAddress};
 use nom::{bytes::complete::take, IResult};
 
-pub fn parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {
-    let (packet_data, dest_mac_bytes) = take(6usize)(packet_data)?;
-    let dest_mac = MacAddress::from(dest_mac_bytes);
-    let (packet_data, source_mac_bytes) = take(6usize)(packet_data)?;
-    let source_mac = MacAddress::from(source_mac_bytes);
-    let (packet_data, ether_type_bytes) = take(2usize)(packet_data)?;
-    let mut ether_type_array = [0u8; 2];
-    ether_type_array.copy_from_slice(ether_type_bytes);
-    let ether_protocol: EtherProtocol = EtherProtocol::from(u16::from_be_bytes(ether_type_array));
+use crate::net::types::protocols::Ports;
+use crate::net::types::protocols::Udp;
 
-    let frame = EtherFrame {
-        dest_mac,
-        source_mac,
-        ether_protocol,
+pub fn parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
+    let (payload, source) = take(2usize)(payload)?;
+    let (payload, dest) = take(2usize)(payload)?;
+    let (payload, length) = take(2usize)(payload)?;
+    let (payload, checksum) = take(2usize)(payload)?;
+
+    let datagram = Udp {
+        ports: Ports {
+            source: u16::from_be_bytes([source[0], source[1]]),
+            dest: u16::from_be_bytes([dest[0], dest[1]]),
+        },
+        length: u16::from_be_bytes([length[0], length[1]]),
+        checksum: u16::from_be_bytes([checksum[0], checksum[1]]),
     };
-    Ok((packet_data, frame))
+
+    Ok((payload, datagram))
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::net::{parser::parse_ipv4, types::ipv4::IPProtocol};
+
+    use super::super::parse_etherprotocol;
     use super::*;
     use pcap::{Packet, PacketHeader};
     use std::os::raw::c_long;
@@ -75,15 +80,12 @@ mod tests {
                 157, 51,
             ],
         };
-        let (_packet_data, frame) = parse_etherprotocol(packet.data).unwrap();
-        assert_eq!(
-            frame.dest_mac,
-            MacAddress::new([0x58, 0x11, 0x22, 0x15, 0x06, 0x18])
-        );
-        assert_eq!(
-            frame.source_mac,
-            MacAddress::new([0x0c, 0x9d, 0x92, 0x80, 0x4a, 0x5c])
-        );
-        assert_eq!(frame.ether_protocol, EtherProtocol::IPv4);
+        let (payload, frame) = parse_etherprotocol(packet.data).unwrap();
+        let (payload2, etherprot) = parse_ipv4(payload).unwrap();
+        let (_payload3, protocol) = parse_udp(payload2).unwrap();
+        assert_eq!(protocol.ports.source, 41641);
+        assert_eq!(protocol.ports.dest, 41641);
+        assert_eq!(protocol.length, 520);
+        assert_eq!(protocol.checksum, 42744);
     }
 }
