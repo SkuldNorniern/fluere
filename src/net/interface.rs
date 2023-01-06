@@ -1,17 +1,46 @@
-use pnet::datalink::{self, DataLinkReceiver, NetworkInterface};
+extern crate pcap;
+use pcap::Device;
+use pnet::datalink::{self, NetworkInterface};
+use std::time::Instant;
+
+pub fn get_interface(device_name: &str) -> Device {
+    let start = Instant::now();
+    println!("Requested Device : {}", device_name);
+    let mut selected_device: Device = Device::lookup().unwrap().unwrap();
+    let devices = Device::list();
+
+    // Begin
+    match devices {
+        Ok(vec_devices) => {
+            for device in vec_devices {
+                if &*device.name == device_name {
+                    selected_device = device.clone();
+                    let duration = start.elapsed();
+                    println!(
+                        "-{} device has been captured! in {:?}",
+                        device_name, duration
+                    );
+                };
+            }
+        }
+        Err(_) => {
+            println!("No devices found...");
+            std::process::exit(1);
+        }
+    }
+
+    selected_device
+}
 
 pub fn get_default_interface(interfaces: Vec<NetworkInterface>) -> String {
     for interface in interfaces {
         if interface.is_loopback() || !interface.is_up() || interface.mac.is_none() {
             continue;
-        }
-        else {
-            return interface.name
+        } else {
+            return interface.name;
         }
     }
     panic!("No valid interfaces")
-
-    
 }
 
 pub fn get_default_interface_name(interfaces: &[NetworkInterface]) -> String {

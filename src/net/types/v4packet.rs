@@ -1,9 +1,8 @@
 use std::net::Ipv4Addr;
 
 use pnet::packet::ip::IpNextHeaderProtocol;
-use pnet::packet::ipv4::{Ipv4Packet, Ipv4Option};
-use pnet::packet::Packet;
-
+use pnet::packet::ipv4::{Ipv4Option, Ipv4Packet};
+use pnet::packet::Packet as PnetPacket;
 #[derive(Debug, Clone)]
 pub struct C_Ipv4Packet {
     version: u8,
@@ -24,7 +23,7 @@ pub struct C_Ipv4Packet {
 }
 
 impl C_Ipv4Packet {
-    pub fn new(packet_data: Ipv4Packet) -> C_Ipv4Packet  {
+    pub fn new(packet_data: Ipv4Packet) -> C_Ipv4Packet {
         // Parse the packet fields and construct the Ipv4Packet struct
         let version = packet_data.get_version();
         let header_len = packet_data.get_header_length();
@@ -41,7 +40,7 @@ impl C_Ipv4Packet {
         let destination = packet_data.get_destination();
         let options = packet_data.get_options();
         let payload = packet_data.payload().to_vec();
-        
+
         // Return an error if parsing fails
         C_Ipv4Packet {
             version,
@@ -108,7 +107,7 @@ impl C_Ipv4Packet {
 
     pub fn get_source(&self) -> Ipv4Addr {
         self.source
-    }   
+    }
 
     pub fn get_destination(&self) -> Ipv4Addr {
         self.destination
@@ -116,10 +115,9 @@ impl C_Ipv4Packet {
 
     pub fn get_options(&self) -> &Vec<Ipv4Option> {
         &self.options
-    }   
+    }
 
     pub fn get_payload(&self) -> &[u8] {
         &self.payload
-    }   
-    
+    }
 }
