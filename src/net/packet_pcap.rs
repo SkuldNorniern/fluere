@@ -12,7 +12,7 @@ pub fn packet_capture(interface_name: &str) {
     let interface = get_interface(interface_name);
     let mut cap = Capture::from_device(interface)
         .unwrap()
-        .timeout(100)
+        .timeout(0)
         .buffer_size(10000000)
         .open()
         .unwrap();

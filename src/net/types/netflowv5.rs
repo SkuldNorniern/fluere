@@ -1,30 +1,43 @@
+use libc::timeval;
 use pcap::Packet;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct V5header{
+#[derive(Clone, Copy)]
+pub struct V5Netflow {
+    pub header: V5header,
+    pub records: V5record,
+}
+#[derive(Clone, Copy)]
+pub struct V5header {
     pub version: u16,
     pub count: u16,
     pub sys_uptime: u32,
-    pub unix_secs: u32,
+    pub unix_secs: timeval,
     pub unix_nsecs: u32,
     pub flow_sequence: u32,
     pub engine_type: u8,
     pub engine_id: u8,
     pub sampling_interval: u16,
 }
-impl V5header{
-    pub fn new(packe:Packet){
-        let packet_header = packet.PacketHeader;
+impl V5header {
+    pub fn new(packet: Packet) -> V5header {
+        let packet_header = packet.header;
         let packet_data = packet.data;
-        
-        V5header{
+
+        V5header {
             version: packet_data[0] as u16,
-            unix_secs = packet_header.ts,
+            unix_secs: packet_header.ts,
+            count: todo!(),
+            sys_uptime: todo!(),
+            unix_nsecs: todo!(),
+            flow_sequence: todo!(),
+            engine_type: todo!(),
+            engine_id: todo!(),
+            sampling_interval: todo!(),
         }
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct V5record{
+pub struct V5record {
     pub src_addr: u32,
     pub dst_addr: u32,
     pub nexthop: u32,
@@ -45,5 +58,4 @@ pub struct V5record{
     pub src_mask: u8,
     pub dst_mask: u8,
     pub pad2: u16,
-
 }

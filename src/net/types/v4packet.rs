@@ -3,6 +3,7 @@ use std::net::Ipv4Addr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::{Ipv4Option, Ipv4Packet};
 use pnet::packet::Packet as PnetPacket;
+
 #[derive(Debug, Clone)]
 pub struct C_Ipv4Packet {
     version: u8,
