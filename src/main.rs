@@ -1,22 +1,22 @@
 pub mod net;
 
-use clap::{arg,Arg,ArgAction,ArgMatches,Command};
+use clap::{Arg, ArgAction, Command};
 use std::process::exit;
 
-fn cli() -> Command{
+fn cli() -> Command {
     Command::new("fluere")
         .version("1.0")
         .author("Skuld Norniern. <skuldnorniern@gmail.com>")
         .about("Netflow Capture Tool")
         .subcommand_required(true)
         .subcommand(
-             Command::new("online")
+            Command::new("online")
                 .about("Capture netflow online")
                 .arg(
                     Arg::new("interface")
                         //.about("Select network interface to use")
                         .short('i')
-                        .long("interface")
+                        .long("interface"),
                 )
                 .arg(
                     Arg::new("list")
@@ -24,8 +24,7 @@ fn cli() -> Command{
                         .short('l')
                         .long("list")
                         .action(ArgAction::SetTrue),
-                )
-            
+                ),
         )
         .subcommand(
             Command::new("offline")
@@ -34,15 +33,15 @@ fn cli() -> Command{
                     Arg::new("file")
                         //.about("name of the pcap file")
                         .short('f')
-                        .long("file")
+                        .long("file"),
                 )
                 .arg(
                     Arg::new("csv")
                         //.about("name of the exported csv file")
                         .short('c')
-                        .long("csv")
-                )
-            )
+                        .long("csv"),
+                ),
+        )
         .subcommand(
             Command::new("pcap")
                 .about("collect pcket and save to .pcap file")
@@ -50,7 +49,7 @@ fn cli() -> Command{
                     Arg::new("interface")
                         //.about("Select network interface to use")
                         .short('i')
-                        .long("interface")
+                        .long("interface"),
                 )
                 .arg(
                     Arg::new("list")
@@ -58,9 +57,8 @@ fn cli() -> Command{
                         .short('l')
                         .long("list")
                         .action(ArgAction::SetTrue),
-                )
-            )
-        
+                ),
+        )
 }
 
 #[tokio::main]
@@ -69,44 +67,50 @@ async fn main() {
     let _interfaces = net::list_interfaces();
     let mut interface = "None";
 
-    match args.subcommand(){
+    match args.subcommand() {
         Some(("online", args)) => {
             println!("Online mode");
-            if args.contains_id("interface"){
-                println!("Interface {} selected", args.get_one::<String>("interface").unwrap());
-                interface = args.get_one::<String>("interface").unwrap()
-            }
-            if args.contains_id("list"){
+            if args.get_flag("list") {
+                println!("List of interfaces");
                 for (i, interface) in _interfaces.iter().enumerate() {
-                    println!("[{}]: {}",i ,interface.name);
+                    println!("[{}]: {}", i, interface.name);
                 }
-                //println!("List of interfaces {:?}", _interfaces);
+
                 exit(0);
             }
-               //net::netflow(_interface);
-        },
+            interface = args.get_one::<String>("interface").unwrap();
+            println!("Interface {} selected", interface);
+
+            //net::netflow(_interface);
+        }
         Some(("offline", args)) => {
             println!("Offline mode");
-            let _file = args.get_one::<String>("file").unwrap();
-            let _csv = args.get_one::<String>("csv").unwrap();
+            let mut _file;
+            let mut _csv;
+            if args.get_flag("file") {
+                _file = args.get_one::<String>("file").unwrap();
+            }
+            if args.get_flag("csv") {
+                _csv = args.get_one::<String>("csv").unwrap();
+            }
             //net::netflow(_file, _csv);
-        },
+        }
         Some(("pcap", args)) => {
             println!("Pcap mode");
-            if args.contains_id("interface"){
-                println!("Interface {} selected", args.get_one::<String>("interface").unwrap());
-                interface = args.get_one::<String>("interface").unwrap()
-            }
-            if args.contains_id("list"){
+            if args.get_flag("list") {
+                println!("List of interfaces");
                 for (i, interface) in _interfaces.iter().enumerate() {
-                    println!("[{}]: {}",i ,interface.name);
+                    println!("[{}]: {}", i, interface.name);
                 }
-                //println!("List of interfaces {:?}", _interfaces);
-                //exit(0);
+
+                exit(0);
             }
-            
+
+            interface = args.get_one::<String>("interface").unwrap();
+            println!("Interface {} selected", interface);
+
             net::packet_capture(interface);
-        },
+        }
         _ => {
             println!("No mode selected");
             exit(0);
@@ -153,6 +157,4 @@ async fn main() {
             panic!("No valid interfaces")
         }
     }*/
-
-    println!("Interface {:?}", interface);
 }
