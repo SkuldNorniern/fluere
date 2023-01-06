@@ -1,26 +1,61 @@
-use crate::net::types::ether::{EtherFrame, EtherProtocol, MacAddress};
+use crate::net::types::ipv4::{IPProtocol, IPv4};
 use nom::{bytes::complete::take, IResult};
+use std::net::Ipv4Addr;
 
-pub fn parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {
-    let (packet_data, dest_mac_bytes) = take(6usize)(packet_data)?;
-    let dest_mac = MacAddress::from(dest_mac_bytes);
-    let (packet_data, source_mac_bytes) = take(6usize)(packet_data)?;
-    let source_mac = MacAddress::from(source_mac_bytes);
-    let (packet_data, ether_type_bytes) = take(2usize)(packet_data)?;
-    let mut ether_type_array = [0u8; 2];
-    ether_type_array.copy_from_slice(ether_type_bytes);
-    let ether_protocol: EtherProtocol = EtherProtocol::from(u16::from_be_bytes(ether_type_array));
+pub fn parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
+    let (payload, version_header_length) = take(1usize)(payload)?;
+    let version = version_header_length[0] >> 4;
+    let header_length = version_header_length[0] & 15;
+    let (payload, type_of_service) = take(1usize)(payload)?;
+    let (payload, length) = take(2usize)(payload)?;
+    let (payload, id) = take(2usize)(payload)?;
+    let (payload, flag_frag_offset) = take(2usize)(payload)?;
+    let flags = ((flag_frag_offset[0] as u32) >> 13) as u8;
+    let fragment_offset: u32 = (flag_frag_offset[0] as u32) & 8191;
+    let (payload, ttl) = take(1usize)(payload)?;
+    let (payload, protocol) = take(1usize)(payload)?;
+    let (payload, checksum) = take(2usize)(payload)?;
+    let (payload, source_addr) = take(4usize)(payload)?;
+    let source_addr = Ipv4Addr::new(
+        source_addr[0],
+        source_addr[1],
+        source_addr[2],
+        source_addr[3],
+    );
+    let (payload, dest_addr) = take(4usize)(payload)?;
+    let dest_addr = Ipv4Addr::new(
+        dest_addr[0],
+        dest_addr[1], 
+        dest_addr[2], 
+        dest_addr[3]
+    );
 
-    let frame = EtherFrame {
-        dest_mac,
-        source_mac,
-        ether_protocol,
+    let (payload, _) = if header_length > 5 {
+        take((header_length - 5) * 4)(payload)?
+    } else {
+        (payload, &[] as &[u8])
     };
-    Ok((packet_data, frame))
+
+    let v4packet = IPv4 {
+        version,
+        header_length,
+        type_of_service: u8::from_be_bytes([type_of_service[0]]),
+        length: u16::from_be_bytes([length[0], length[1]]),
+        id: u16::from_be_bytes([id[0], id[1]]),
+        flags,
+        fragment_offset,
+        ttl: u8::from_be_bytes([ttl[0]]),
+        protocol: IPProtocol::from(u8::from_be_bytes([protocol[0]])),
+        checksum: u16::from_be_bytes([checksum[0], checksum[1]]),
+        source_addr,
+        dest_addr,
+    };
+    Ok((payload, v4packet))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::parse_etherprotocol;
     use super::*;
     use pcap::{Packet, PacketHeader};
     use std::os::raw::c_long;
@@ -75,15 +110,20 @@ mod tests {
                 157, 51,
             ],
         };
-        let (_packet_data, frame) = parse_etherprotocol(packet.data).unwrap();
-        assert_eq!(
-            frame.dest_mac,
-            MacAddress::new([0x58, 0x11, 0x22, 0x15, 0x06, 0x18])
-        );
-        assert_eq!(
-            frame.source_mac,
-            MacAddress::new([0x0c, 0x9d, 0x92, 0x80, 0x4a, 0x5c])
-        );
-        assert_eq!(frame.ether_protocol, EtherProtocol::IPv4);
+        let (payload, frame) = parse_etherprotocol(packet.data).unwrap();
+        println!("{:?}", frame);
+        let (_payload2, etherprot) = parse_ipv4(payload).unwrap();
+        println!("{:?}", etherprot);
+        assert_eq!(etherprot.version, 4);
+        assert_eq!(etherprot.type_of_service, 0);
+        assert_eq!(etherprot.length, 540);
+        assert_eq!(etherprot.id, 8751);
+        assert_eq!(etherprot.flags, 0);
+        assert_eq!(etherprot.fragment_offset, 0);
+        assert_eq!(etherprot.ttl, 128);
+        assert_eq!(etherprot.protocol, IPProtocol::UDP);
+        assert_eq!(etherprot.checksum, 0);
+        assert_eq!(etherprot.source_addr.to_string(), "192.168.50.241");
+        assert_eq!(etherprot.dest_addr.to_string(), "1.209.175.116");
     }
 }
