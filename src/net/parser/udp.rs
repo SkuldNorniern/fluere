@@ -23,7 +23,7 @@ pub fn parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
 
 #[cfg(test)]
 mod tests {
-    use crate::net::{parser::parse_ipv4, types::ipv4::IPProtocol};
+    use crate::net::{parser::parse_ipv4};
 
     use super::super::parse_etherprotocol;
     use super::*;
@@ -80,8 +80,8 @@ mod tests {
                 157, 51,
             ],
         };
-        let (payload, frame) = parse_etherprotocol(packet.data).unwrap();
-        let (payload2, etherprot) = parse_ipv4(payload).unwrap();
+        let (payload, _frame) = parse_etherprotocol(packet.data).unwrap();
+        let (payload2, _etherprot) = parse_ipv4(payload).unwrap();
         let (_payload3, protocol) = parse_udp(payload2).unwrap();
         assert_eq!(protocol.ports.source, 41641);
         assert_eq!(protocol.ports.dest, 41641);

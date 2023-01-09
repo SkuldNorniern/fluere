@@ -1,7 +1,7 @@
 pub mod net;
 
 use clap::{Arg, ArgAction, Command};
-use std::{process::exit, sync::Arc};
+use std::{process::exit};
 
 fn cli() -> Command {
     Command::new("fluere")
@@ -57,7 +57,6 @@ fn cli() -> Command {
                         .default_value("0")
                         .short('d')
                         .long("duration"),
-                        
                 )
                 .arg(
                     Arg::new("list")
@@ -92,8 +91,8 @@ async fn main() {
         }
         Some(("offline", args)) => {
             println!("Offline mode");
-            let mut file=args.get_one::<String>("file").unwrap();
-            let mut csv=args.get_one::<String>("csv").unwrap();
+            let file = args.get_one::<String>("file").unwrap();
+            let csv = args.get_one::<String>("csv").unwrap();
             net::netflow_fileparse(file, csv);
             //net::netflow(_file, _csv);
         }

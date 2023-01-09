@@ -23,12 +23,7 @@ pub fn parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
         source_addr[3],
     );
     let (payload, dest_addr) = take(4usize)(payload)?;
-    let dest_addr = Ipv4Addr::new(
-        dest_addr[0],
-        dest_addr[1], 
-        dest_addr[2], 
-        dest_addr[3]
-    );
+    let dest_addr = Ipv4Addr::new(dest_addr[0], dest_addr[1], dest_addr[2], dest_addr[3]);
 
     let (payload, _) = if header_length > 5 {
         take((header_length - 5) * 4)(payload)?
@@ -52,7 +47,6 @@ pub fn parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
     };
     Ok((payload, v4packet))
 }
-
 
 #[cfg(test)]
 mod tests {
