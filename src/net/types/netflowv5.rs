@@ -1,29 +1,30 @@
 use pnet::packet::PrimitiveValues;
-use pnet_macros::Packet;
 use pnet_macros::packet;
-use std::net::Ipv4Addr;
+use pnet_macros::Packet;
 use pnet_macros_support::types::*;
 use serde::ser::Serialize;
 use serde::ser::SerializeStruct;
 use serde::Serializer;
+use std::net::Ipv4Addr;
 
 #[packet]
 pub struct V5Netflow {
     #[construct_with(u16, u16, u32, u32, u32, u32, u8, u8, u16)]
     header: V5Header,
-    
+
     #[length_fn = "v5netflow_records_length"]
     records: Vec<V5record>,
-    
+
     #[payload]
-    payload: Vec<u8>
+    payload: Vec<u8>,
 }
 fn v5netflow_records_length(p: &V5NetflowPacket) -> usize {
     p.get_header().count as usize * 48
 }
 impl Serialize for V5Netflow {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut struc = serializer.serialize_struct("V5Netflow", 2)?;
         struc.serialize_field("header", &self.header)?;
@@ -33,7 +34,8 @@ impl Serialize for V5Netflow {
 }
 impl Serialize for V5NetflowPacket<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut struc = serializer.serialize_struct("V5NetflowPacket", 2)?;
         struc.serialize_field("header", &self.get_header())?;
@@ -48,9 +50,8 @@ impl Serialize for V5NetflowPacket<'_> {
     }
 }*/
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct V5Header{
+pub struct V5Header {
     version: u16,
     count: u16,
     sys_uptime: u32,
@@ -64,12 +65,23 @@ pub struct V5Header{
 impl PrimitiveValues for V5Header {
     type T = (u16, u16, u32, u32, u32, u32, u8, u8, u16);
     fn to_primitive_values(&self) -> (u16, u16, u32, u32, u32, u32, u8, u8, u16) {
-        (self.version, self.count, self.sys_uptime, self.unix_secs, self.unix_nsecs, self.flow_sequence, self.engine_type, self.engine_id, self.sampling_interval)
+        (
+            self.version,
+            self.count,
+            self.sys_uptime,
+            self.unix_secs,
+            self.unix_nsecs,
+            self.flow_sequence,
+            self.engine_type,
+            self.engine_id,
+            self.sampling_interval,
+        )
     }
 }
 impl Serialize for V5Header {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut struc = serializer.serialize_struct("V5Header", 9)?;
         struc.serialize_field("version", &self.version)?;
@@ -84,9 +96,19 @@ impl Serialize for V5Header {
         struc.end()
     }
 }
-impl V5Header{
-    pub fn new(version: u16, count: u16, sys_uptime: u32, unix_secs: u32, unix_nsecs: u32, flow_sequence: u32, engine_type: u8, engine_id: u8, sampling_interval: u16) -> V5Header{
-        V5Header{
+impl V5Header {
+    pub fn new(
+        version: u16,
+        count: u16,
+        sys_uptime: u32,
+        unix_secs: u32,
+        unix_nsecs: u32,
+        flow_sequence: u32,
+        engine_type: u8,
+        engine_id: u8,
+        sampling_interval: u16,
+    ) -> V5Header {
+        V5Header {
             version,
             count,
             sys_uptime,
@@ -104,13 +126,13 @@ impl V5Header{
 pub struct V5record {
     #[construct_with(u8, u8, u8, u8)]
     source: Ipv4Addr,
-    
+
     #[construct_with(u8, u8, u8, u8)]
     destination: Ipv4Addr,
-    
+
     #[construct_with(u8, u8, u8, u8)]
     next_hop: Ipv4Addr,
-    
+
     input: u16be,
     output: u16be,
     d_pkts: u32be,
@@ -129,17 +151,17 @@ pub struct V5record {
     dst_mask: u8,
     pad2: u16be,
 
-    
     #[length_fn = "record_payload_length"]
     #[payload]
-    payload: Vec<u8>
+    payload: Vec<u8>,
 }
 fn record_payload_length(_: &V5recordPacket) -> usize {
     0usize
 }
 impl Serialize for V5record {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut struc = serializer.serialize_struct("Record", 18)?;
         struc.serialize_field("source", &self.source)?;

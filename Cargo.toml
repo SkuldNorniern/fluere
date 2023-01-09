@@ -5,15 +5,23 @@ authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[build-dependencies]
+syntex = "0.42"
+pnet_macros = "0.31.0"
+pcap = "1.0.0"
 
 [dependencies]
-pnet = { version = "0.31.0", features = ["std"] }
-chrono = "0.4.23"
-libc = "0.2"
 clap = {version = "4.0.32", features = ["cargo"]}
 tokio = { version = "1.22", features = ["full","macros", "rt-multi-thread"] }
-byteorder = "1.4.3"
+pnet = { version = "0.31.0", features = ["std"] }
+pnet_macros_support = "0.31.0"
+pnet_macros = "0.31.0"
 pcap = "1.0.0"
+chrono = "0.4.23"
+libc = "0.2"
+byteorder = "1.4.3"
 syslog = "^6.0"
 csv = "1.1"
 nom = "7.1.2"
+serde = "1.0.152"
+serde_json = "1.0.91"
