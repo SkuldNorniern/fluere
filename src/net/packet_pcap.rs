@@ -8,11 +8,11 @@ use super::interface::get_interface;
 
 use std::time::Instant;
 
-pub fn packet_capture(interface_name: &str) {
+pub fn pcap_capture(interface_name: &str, duration: i32) {
     let interface = get_interface(interface_name);
     let mut cap = Capture::from_device(interface)
         .unwrap()
-        .timeout(0)
+        .timeout(duration)
         .buffer_size(10000000)
         .open()
         .unwrap();
@@ -28,7 +28,7 @@ pub fn packet_capture(interface_name: &str) {
     let start = Instant::now();
     while let Ok(packet) = cap.next_packet() {
         println!("received packet");
-        println!("packet: {:?}", packet);
+        //println!("packet: {:?}", packet);
         file.write(&packet);
     }
     let duration = start.elapsed();

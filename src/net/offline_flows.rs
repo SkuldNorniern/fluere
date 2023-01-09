@@ -7,9 +7,6 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::ethernet::EthernetPacket;
-use std::fs;
-
-use super::interface::get_interface;
 
 use crate::net::types::V5NetflowPacket;
 
@@ -45,16 +42,12 @@ fn handle_netflow(d: &[u8]) {
     println!("received flow"); 
 }
 
-pub fn packet_capture(interface_name: &str) {
-    let interface = get_interface(interface_name);
-    let mut cap = Capture::from_device(interface)
-        .unwrap()
-        .timeout(0)
-        .buffer_size(10000000)
-        .open()
+pub fn netflow_fileparse(file_name: &str, output_dir: &str) {
+    let mut cap = Capture::from_file(file_name)
         .unwrap();
 
     let date = Local::now();
+    let file_dir = "./output";
     let start = Instant::now();
     while let Ok(packet) = cap.next_packet() {
         //println!("received packet");
