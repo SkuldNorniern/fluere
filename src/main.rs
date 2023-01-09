@@ -1,7 +1,7 @@
 pub mod net;
 
 use clap::{Arg, ArgAction, Command};
-use std::process::exit;
+use std::{process::exit, sync::Arc};
 
 fn cli() -> Command {
     Command::new("fluere")
@@ -52,6 +52,14 @@ fn cli() -> Command {
                         .long("interface"),
                 )
                 .arg(
+                    Arg::new("duration")
+                        //.about("Select network interface to use")
+                        .default_value("0")
+                        .short('d')
+                        .long("duration"),
+                        
+                )
+                .arg(
                     Arg::new("list")
                         //.about("List of network interfaces")
                         .short('l')
@@ -66,7 +74,6 @@ async fn main() {
     let args = cli().get_matches();
     let _interfaces = net::list_interfaces();
     let mut interface = "None";
-
     match args.subcommand() {
         Some(("online", args)) => {
             println!("Online mode");
@@ -80,19 +87,14 @@ async fn main() {
             }
             interface = args.get_one::<String>("interface").unwrap();
             println!("Interface {} selected", interface);
-
+            net::packet_capture(interface);
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
             println!("Offline mode");
-            let mut _file;
-            let mut _csv;
-            if args.get_flag("file") {
-                _file = args.get_one::<String>("file").unwrap();
-            }
-            if args.get_flag("csv") {
-                _csv = args.get_one::<String>("csv").unwrap();
-            }
+            let mut file=args.get_one::<String>("file").unwrap();
+            let mut csv=args.get_one::<String>("csv").unwrap();
+            net::netflow_fileparse(file, csv);
             //net::netflow(_file, _csv);
         }
         Some(("pcap", args)) => {
@@ -107,9 +109,11 @@ async fn main() {
             }
 
             interface = args.get_one::<String>("interface").unwrap();
+            let duration = args.get_one::<String>("duration").expect("default");
+            let duration: i32 = duration.parse().unwrap();
             println!("Interface {} selected", interface);
 
-            net::packet_capture(interface);
+            net::pcap_capture(interface, duration);
         }
         _ => {
             println!("No mode selected");
