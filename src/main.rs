@@ -13,10 +13,30 @@ fn cli() -> Command {
             Command::new("online")
                 .about("Capture netflow online")
                 .arg(
+                    Arg::new("csv")
+                        //.about("name of the exported csv file")
+                        .short('c')
+                        .long("csv"),
+                )
+                .arg(
                     Arg::new("interface")
                         //.about("Select network interface to use")
                         .short('i')
                         .long("interface"),
+                )
+                .arg(
+                    Arg::new("duration")
+                        //.about("Select network interface to use")
+                        .default_value("0")
+                        .short('d')
+                        .long("duration"),
+                )
+                .arg(
+                    Arg::new("timeout")
+                        //.about("Select network interface to use")
+                        .default_value("300000")
+                        .short('t')
+                        .long("timeout"),
                 )
                 .arg(
                     Arg::new("list")
@@ -40,6 +60,13 @@ fn cli() -> Command {
                         //.about("name of the exported csv file")
                         .short('c')
                         .long("csv"),
+                )
+                .arg(
+                    Arg::new("timeout")
+                        //.about("Select network interface to use")
+                        .default_value("300000")
+                        .short('t')
+                        .long("timeout"),
                 ),
         )
         .subcommand(
@@ -84,10 +111,15 @@ async fn main() {
 
                 exit(0);
             }
+            let csv = args.get_one::<String>("csv").unwrap();
             interface = args.get_one::<String>("interface").unwrap();
+            let timeout = args.get_one::<String>("timeout").unwrap();
+            let timeout: u32 = timeout.parse().unwrap();
+            let duration = args.get_one::<String>("duration").expect("default");
+            let duration: i32 = duration.parse().unwrap();
             println!("Interface {} selected", interface);
             //net::packet_capture(interface);
-            net::flow_pnet::packet_capture(interface);
+            net::flow_pnet::packet_capture(csv, interface, duration, timeout);
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {

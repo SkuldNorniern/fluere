@@ -1,9 +1,10 @@
 extern crate chrono;
+extern crate csv;
 
 use chrono::Local;
 use pcap::Capture;
 use pnet::packet::ethernet::EthernetPacket;
-
+use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
@@ -12,25 +13,40 @@ use pnet::packet::Packet;
 use super::interface::get_interface;
 
 use crate::net;
+use crate::net::parser::dscp_to_tos;
 use crate::net::parser::parse_etherprotocol;
 use crate::net::parser::parse_ipv4;
-use crate::net::types::V5NetflowPacket;
-use crate::net::parser::dscp_to_tos;
 
 use std::collections::HashMap;
-
+use std::fs;
+use std::net::Ipv4Addr;
 use std::time::Instant;
 
-fn handle_ipv4(d: &[u8]) {
-    let i = Ipv4Packet::new(d).unwrap();
+/*fn check_timeout() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as u32;
 
-    match i.get_next_level_protocol() {
-        _Udp => handle_udp(i.payload()),
-        _Tcp => handle_tcp(i.payload()),
-        _ => panic!("Unknown protocol {:?}", i),
+    let expired_flows: Vec<FlowKey> = self
+        .active_flows
+        .iter()
+        .filter(|(_, flow)| now - flow.last_seen > FLOW_TIMEOUT)
+        .map(|(key, _)| key.clone())
+        .collect();
+
+    for key in expired_flows {
+        self.active_flows.remove(&key);
     }
+}*/
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Key {
+    src_ip: std::net::Ipv4Addr,
+    src_port: u16,
+    dst_ip: std::net::Ipv4Addr,
+    dst_port: u16,
+    protocol: IpNextHeaderProtocol,
 }
-
 fn handle_udp(d: &[u8]) {
     //println!("raw_udp: {:?}", d);
     let u = UdpPacket::new(d).unwrap();
@@ -46,29 +62,31 @@ fn handle_tcp(d: &[u8]) {
     println!("tcp: {:?}", u);
     //handle_netflow(u.payload());
 }
-fn handle_netflow(d: &[u8]) {
-    let n = V5NetflowPacket::new(d);
-    let netflow = serde_json::to_string(&n).unwrap();
-    println!("{}", netflow);
-    println!("received flow");
-}
 
-pub fn packet_capture(interface_name: &str) {
+pub fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_timeout: u32) {
     let interface = get_interface(interface_name);
     let mut cap = Capture::from_device(interface)
         .unwrap()
-        .timeout(0)
+        .timeout(duration)
         .buffer_size(10000000)
         .open()
         .unwrap();
 
-    let _date = Local::now();
+    let date = Local::now();
+    let file_dir = "./output";
+    fs::create_dir_all(file_dir.clone());
     let start = Instant::now();
-    let _records: Vec<net::types::netflowv5::V5Record> = Vec::new();
-    let mut active_flow: HashMap<
-        (std::net::Ipv4Addr, u16, std::net::Ipv4Addr, u16),
-        net::types::netflowv5::V5Record,
-    > = HashMap::new();
+    let file_path = format!(
+        "{}/{}_{}.csv",
+        file_dir,
+        csv_file,
+        date.format("%Y-%m-%d_%H-%M-%S")
+    );
+    let file = fs::File::create(file_path).unwrap();
+    let mut wtr = csv::Writer::from_writer(file);
+
+    let mut records: Vec<net::types::netflowv5::V5Record> = Vec::new();
+    let mut active_flow: HashMap<Key, net::types::netflowv5::V5Record> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
         //println!("received packet");
@@ -98,7 +116,7 @@ pub fn packet_capture(interface_name: &str) {
             pnet::packet::ip::IpNextHeaderProtocol(6) => {
                 TcpPacket::new(i.payload()).unwrap().get_source()
             }
-            _ => continue,//panic!("Unknown protocol {:?}", i),
+            _ => continue, //panic!("Unknown protocol {:?}", i),
         };
         let dst_port = match i.get_next_level_protocol() {
             pnet::packet::ip::IpNextHeaderProtocol(17) => {
@@ -107,7 +125,7 @@ pub fn packet_capture(interface_name: &str) {
             pnet::packet::ip::IpNextHeaderProtocol(6) => {
                 TcpPacket::new(i.payload()).unwrap().get_destination()
             }
-            _ => continue,//panic!("Unknown protocol {:?}", i),
+            _ => continue, //panic!("Unknown protocol {:?}", i),
         };
         //Total number of Layer 3 bytes in the packets of the flow
         //let d_octets:u32 =
@@ -119,18 +137,24 @@ pub fn packet_capture(interface_name: &str) {
         let src_mask = 0;
         //Destination address prefix mask bits
         let dst_mask = 0;
-        let key = (src_ip, src_port, dst_ip, dst_port);
+        let key_value = Key {
+            src_ip,
+            src_port,
+            dst_ip,
+            dst_port,
+            protocol: i.get_next_level_protocol(),
+        };
         //pushing packet in to active_flows if it is not present
 
         active_flow
-            .entry(key)
+            .entry(key_value)
             .or_insert(net::types::netflowv5::V5Record::new(
                 i.get_source(),
                 i.get_destination(),
-                [0,0,0,0].into(),
+                Ipv4Addr::new(0, 0, 0, 0),
                 0,
                 0,
-                1,
+                0,
                 0,
                 packet.header.ts.tv_sec as u32,
                 packet.header.ts.tv_sec as u32,
@@ -146,7 +170,30 @@ pub fn packet_capture(interface_name: &str) {
                 dst_mask,
                 0,
             ));
-        println!("active flows: {:?}", active_flow.len());
+        let cur_dpkt = active_flow.get_mut(&key_value).unwrap().get_d_pkts();
+        //println!("active flows: {:?}", active_flow.len());
+        //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
+        active_flow
+            .get_mut(&key_value)
+            .unwrap()
+            .set_d_pkts(cur_dpkt + 1);
+        active_flow
+            .get_mut(&key_value)
+            .unwrap()
+            .set_last(packet.header.ts.tv_sec as u32);
+        let keys: Vec<Key> = active_flow.keys().cloned().collect();
+        //println!("keys: {:?}", keys);
+
+        for key in keys {
+            let flow = active_flow.get(&key).unwrap();
+            if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout))
+                || i.get_flags() == 0x01
+            {
+                println!("flow expired: {:?}", flow);
+                records.push(*flow);
+                active_flow.remove(&key);
+            }
+        }
         /*let flow = active_flows.get(&key);
 
         if flow.is_some() {
@@ -164,7 +211,58 @@ pub fn packet_capture(interface_name: &str) {
         //records.push(net::types::netflowv5::V5Record::new());
         //println!("packet: {:?}", i);
         //println!("packet: {:?}", packet);
+        println!("received packet");
     }
-    let duration = start.elapsed();
-    println!("Captured in {:?}", duration);
+    println!("Captured in {:?}", start.elapsed());
+    // Write the header row
+    wtr.write_record([
+        "src_ip",
+        "dst_ip",
+        "nexthop",
+        "input",
+        "output",
+        "dPkts",
+        "dOctets",
+        "First",
+        "Last",
+        "src_port",
+        "dst_port",
+        "pad1",
+        "tcp_flags",
+        "prot",
+        "tos",
+        "src_as",
+        "dst_as",
+        "src_mask",
+        "dst_mask",
+        "pad2",
+    ])
+    .unwrap();
+    for flow in records.iter() {
+        wtr.write_record([
+            &flow.get_source().to_string(),
+            &flow.get_destination().to_string(),
+            &flow.get_next_hop().to_string(),
+            &flow.get_input().to_string(),
+            &flow.get_output().to_string(),
+            &flow.get_d_pkts().to_string(),
+            &flow.get_d_octets().to_string(),
+            &flow.get_first().to_string(),
+            &flow.get_last().to_string(),
+            &flow.get_src_port().to_string(),
+            &flow.get_dst_port().to_string(),
+            &flow.get_pad1().to_string(),
+            &flow.get_tcp_flags().to_string(),
+            &flow.get_prot().to_string(),
+            &flow.get_tos().to_string(),
+            &flow.get_src_as().to_string(),
+            &flow.get_dst_as().to_string(),
+            &flow.get_src_mask().to_string(),
+            &flow.get_dst_mask().to_string(),
+            &flow.get_pad2().to_string(),
+        ])
+        .unwrap();
+    }
+
+    println!("records {:?}", records);
 }

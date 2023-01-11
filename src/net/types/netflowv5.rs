@@ -118,4 +118,76 @@ impl V5Record {
             pad2,
         }
     }
+    pub fn set_d_pkts(&mut self, d_pkts: u32) {
+        self.d_pkts = d_pkts;
+    }
+    pub fn set_d_octets(&mut self, d_octets: u32) {
+        self.d_octets = d_octets;
+    }
+    pub fn set_first(&mut self, first: u32) {
+        self.first = first;
+    }
+    pub fn set_last(&mut self, last: u32) {
+        self.last = last;
+    }
+    pub fn get_source(&self) -> Ipv4Addr {
+        self.source
+    }
+    pub fn get_destination(&self) -> Ipv4Addr {
+        self.destination
+    }
+    pub fn get_next_hop(&self) -> Ipv4Addr {
+        self.next_hop
+    }
+    pub fn get_input(&self) -> u16 {
+        self.input
+    }
+    pub fn get_output(&self) -> u16 {
+        self.output
+    }
+    pub fn get_d_pkts(&self) -> u32 {
+        self.d_pkts
+    }
+    pub fn get_d_octets(&self) -> u32 {
+        self.d_octets
+    }
+    pub fn get_first(&self) -> u32 {
+        self.first
+    }
+    pub fn get_last(&self) -> u32 {
+        self.last
+    }
+    pub fn get_src_port(&self) -> u16 {
+        self.src_port
+    }
+    pub fn get_dst_port(&self) -> u16 {
+        self.dst_port
+    }
+    pub fn get_pad1(&self) -> u8 {
+        self.pad1
+    }
+    pub fn get_tcp_flags(&self) -> u8 {
+        self.tcp_flags
+    }
+    pub fn get_prot(&self) -> IpNextHeaderProtocol {
+        self.prot
+    }
+    pub fn get_tos(&self) -> u8 {
+        self.tos
+    }
+    pub fn get_src_as(&self) -> u16 {
+        self.src_as
+    }
+    pub fn get_dst_as(&self) -> u16 {
+        self.dst_as
+    }
+    pub fn get_src_mask(&self) -> u8 {
+        self.src_mask
+    }
+    pub fn get_dst_mask(&self) -> u8 {
+        self.dst_mask
+    }
+    pub fn get_pad2(&self) -> u16 {
+        self.pad2
+    }
 }
