@@ -5,10 +5,6 @@ authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[build-dependencies]
-syntex = "0.42"
-pnet_macros = "0.31.0"
-pcap = "1.0.0"
 
 [dependencies]
 clap = {version = "4.0.32", features = ["cargo"]}
