@@ -10,3 +10,9 @@ pub struct Udp {
     pub length: u16,
     pub checksum: u16,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tcp {
+    pub ports: Ports,
+    pub length: u16,
+    pub checksum: u16,
+}

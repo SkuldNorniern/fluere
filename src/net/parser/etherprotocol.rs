@@ -1,4 +1,4 @@
-use crate::net::types::ether::{EtherFrame, EtherProtocol, MacAddress};
+use crate::net::types::{EtherFrame, EtherProtocol, MacAddress};
 use nom::{bytes::complete::take, IResult};
 
 pub fn parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {

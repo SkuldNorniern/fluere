@@ -8,7 +8,6 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
-
 use super::interface::get_interface;
 
 use crate::net::types::V5NetflowPacket;

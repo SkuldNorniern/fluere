@@ -1,3 +1,4 @@
+pub mod flow_pnet;
 mod flows;
 mod interface;
 mod offline_flows;

@@ -1,7 +1,7 @@
 use nom::{bytes::complete::take, IResult};
 
-use crate::net::types::protocols::Ports;
-use crate::net::types::protocols::Udp;
+use crate::net::types::Ports;
+use crate::net::types::Udp;
 
 pub fn parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
     let (payload, source) = take(2usize)(payload)?;
@@ -23,7 +23,7 @@ pub fn parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
 
 #[cfg(test)]
 mod tests {
-    use crate::net::{parser::parse_ipv4};
+    use crate::net::parser::parse_ipv4;
 
     use super::super::parse_etherprotocol;
     use super::*;
