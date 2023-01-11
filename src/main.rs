@@ -1,7 +1,7 @@
 pub mod net;
 
 use clap::{Arg, ArgAction, Command};
-use std::{process::exit};
+use std::process::exit;
 
 fn cli() -> Command {
     Command::new("fluere")
@@ -86,7 +86,8 @@ async fn main() {
             }
             interface = args.get_one::<String>("interface").unwrap();
             println!("Interface {} selected", interface);
-            net::packet_capture(interface);
+            //net::packet_capture(interface);
+            net::flow_pnet::packet_capture(interface);
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
