@@ -11,7 +11,6 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
-
 use super::interface::get_interface;
 
 use crate::net;
@@ -70,7 +69,7 @@ pub fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .timeout(duration)
-        .buffer_size(10000000)
+        //.buffer_size(10000000)
         .open()
         .unwrap();
 
@@ -103,7 +102,7 @@ pub fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_
             continue;
         }
         //println!("frame: {:?}", frame);
-
+        //let next_hop = i.get_next_hop();
         //println!("ipv4: {:?}", ipv4);
         /*match ipv4.protocol {
             crate::net::types::ipv4::IPProtocol::UDP => handle_udp(i.payload()),
@@ -140,7 +139,6 @@ pub fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_
         if i.get_next_level_protocol() == pnet::packet::ip::IpNextHeaderProtocol(6) {
             let tcp = TcpPacket::new(i.payload()).unwrap();
             let tcp_flags = tcp.get_flags();
-            println!("tcp_flags: {:?}", tcp_flags);
             fin = tcp_flags & 0x01;
             syn = tcp_flags & 0x02;
             rst = tcp_flags & 0x04;
@@ -175,39 +173,43 @@ pub fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_
             protocol: i.get_next_level_protocol(),
         };
         //pushing packet in to active_flows if it is not present
+        //let cur_flow = active_flow.get(&key_value);
+        if active_flow.get(&key_value).is_none() {
+            active_flow
+                .entry(key_value)
+                .or_insert(net::types::netflowv5::V5Record::new(
+                    i.get_source(),
+                    i.get_destination(),
+                    Ipv4Addr::new(0, 0, 0, 0),
+                    0,
+                    0,
+                    0,
+                    0,
+                    packet.header.ts.tv_sec as u32,
+                    packet.header.ts.tv_sec as u32,
+                    src_port,
+                    dst_port,
+                    0,
+                    fin as u8,
+                    syn as u8,
+                    rst as u8,
+                    psh as u8,
+                    ack as u8,
+                    urg as u8,
+                    flags,
+                    i.get_next_level_protocol(),
+                    dscp_to_tos(i.get_dscp()),
+                    src_as,
+                    dst_as,
+                    src_mask,
+                    dst_mask,
+                    0,
+                ));
+            println!("flow established");
+        }
 
-        active_flow
-            .entry(key_value)
-            .or_insert(net::types::netflowv5::V5Record::new(
-                i.get_source(),
-                i.get_destination(),
-                Ipv4Addr::new(0, 0, 0, 0),
-                0,
-                0,
-                0,
-                0,
-                packet.header.ts.tv_sec as u32,
-                packet.header.ts.tv_sec as u32,
-                src_port,
-                dst_port,
-                0,
-                fin as u8,
-                syn as u8,
-                rst as u8,
-                psh as u8,
-                ack as u8,
-                urg as u8,
-                flags,
-                i.get_next_level_protocol(),
-                dscp_to_tos(i.get_dscp()),
-                src_as,
-                dst_as,
-                src_mask,
-                dst_mask,
-                0,
-            ));
-        let cur_dpkt = active_flow.get_mut(&key_value).unwrap().get_d_pkts();
-        let cur_octets = active_flow.get_mut(&key_value).unwrap().get_d_octets();
+        let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
+        let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
         //println!("active flows: {:?}", active_flow.len());
         //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
         active_flow
@@ -231,7 +233,7 @@ pub fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_
         for key in keys {
             let flow = active_flow.get(&key).unwrap();
             if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)) || fin == 1 {
-                println!("flow expired: {:?}", flow);
+                println!("flow expired");
                 records.push(*flow);
                 active_flow.remove(&key);
             }
