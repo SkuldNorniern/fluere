@@ -64,7 +64,7 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("timeout")
                         //.about("Select network interface to use")
-                        .default_value("300000")
+                        .default_value("1800000")
                         .short('t')
                         .long("timeout"),
                 ),
