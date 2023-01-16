@@ -63,7 +63,13 @@ pub struct V5Record {
     src_port: u16,
     dst_port: u16,
     pad1: u8,
-    tcp_flags: u8,
+    fin: u8,
+    syn: u8,
+    rst: u8,
+    psh: u8,
+    ack: u8,
+    urg: u8,
+    flags: u16,
     prot: IpNextHeaderProtocol,
     tos: u8,
     src_as: u16,
@@ -86,7 +92,13 @@ impl V5Record {
         src_port: u16,
         dst_port: u16,
         pad1: u8,
-        tcp_flags: u8,
+        fin: u8,
+        syn: u8,
+        rst: u8,
+        psh: u8,
+        ack: u8,
+        urg: u8,
+        flags: u16,
         prot: IpNextHeaderProtocol,
         tos: u8,
         src_as: u16,
@@ -108,7 +120,13 @@ impl V5Record {
             src_port,
             dst_port,
             pad1,
-            tcp_flags,
+            fin,
+            syn,
+            rst,
+            psh,
+            ack,
+            urg,
+            flags,
             prot,
             tos,
             src_as,
@@ -166,8 +184,26 @@ impl V5Record {
     pub fn get_pad1(&self) -> u8 {
         self.pad1
     }
-    pub fn get_tcp_flags(&self) -> u8 {
-        self.tcp_flags
+    pub fn get_fin(&self) -> u8 {
+        self.fin
+    }
+    pub fn get_syn(&self) -> u8 {
+        self.syn
+    }
+    pub fn get_rst(&self) -> u8 {
+        self.rst
+    }
+    pub fn get_psh(&self) -> u8 {
+        self.psh
+    }
+    pub fn get_ack(&self) -> u8 {
+        self.ack
+    }
+    pub fn get_urg(&self) -> u8 {
+        self.urg
+    }
+    pub fn get_flags(&self) -> u16 {
+        self.flags
     }
     pub fn get_prot(&self) -> IpNextHeaderProtocol {
         self.prot
