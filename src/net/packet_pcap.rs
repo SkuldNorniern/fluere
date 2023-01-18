@@ -13,7 +13,6 @@ pub fn pcap_capture(interface_name: &str, duration: i32) {
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .timeout(duration)
-        .buffer_size(10000000)
         .open()
         .unwrap();
 
