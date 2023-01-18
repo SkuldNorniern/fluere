@@ -1,4 +1,5 @@
 pub mod net;
+pub mod utils;
 
 use clap::{Arg, ArgAction, Command};
 use std::process::exit;
@@ -34,7 +35,7 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("timeout")
                         //.about("Select network interface to use")
-                        .default_value("300000")
+                        .default_value("1800000")
                         .short('t')
                         .long("timeout"),
                 )
@@ -99,7 +100,7 @@ fn cli() -> Command {
 async fn main() {
     let args = cli().get_matches();
     let _interfaces = net::list_interfaces();
-    let mut interface = "None";
+    //let mut interface = "None";
     match args.subcommand() {
         Some(("online", args)) => {
             println!("Online mode");
@@ -112,21 +113,24 @@ async fn main() {
                 exit(0);
             }
             let csv = args.get_one::<String>("csv").unwrap();
-            interface = args.get_one::<String>("interface").unwrap();
+            let interface = args.get_one::<String>("interface").unwrap();
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u32 = timeout.parse().unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
             let duration: i32 = duration.parse().unwrap();
             println!("Interface {} selected", interface);
             //net::packet_capture(interface);
-            net::flow_pnet::packet_capture(csv, interface, duration, timeout);
+            net::flow_pnet::packet_capture(csv, interface, duration, timeout).await;
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
             println!("Offline mode");
             let file = args.get_one::<String>("file").unwrap();
             let csv = args.get_one::<String>("csv").unwrap();
-            net::netflow_fileparse(file, csv);
+            let timeout = args.get_one::<String>("timeout").unwrap();
+            let timeout: u32 = timeout.parse().unwrap();
+            
+            net::netflow_fileparse(csv, file, timeout).await;
             //net::netflow(_file, _csv);
         }
         Some(("pcap", args)) => {
@@ -140,7 +144,7 @@ async fn main() {
                 exit(0);
             }
 
-            interface = args.get_one::<String>("interface").unwrap();
+            let interface = args.get_one::<String>("interface").unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
             let duration: i32 = duration.parse().unwrap();
             println!("Interface {} selected", interface);
@@ -152,45 +156,5 @@ async fn main() {
             exit(0);
         }
     }
-    /*
-    let _interfaces = net::list_interfaces();
-    let mut interface = "None";
-
-    //println!("{:?}", _args.;
-
-    if _args.get_one::<bool>("list").unwrap().eq(&true) {
-        for (i, interface) in _interfaces.iter().enumerate() {
-            println!("[{}]: {}",i ,interface.name);
-        }
-        exit(0);
-        //println!("List of interfaces {:?}", _interfaces);
-        //println!("List of network interfaces");
-    }
-
-    if _args.contains_id("interface"){
-        println!("Interface {} selected", _args.get_one::<String>("interface").unwrap());
-        interface = _args.get_one::<String>("interface").unwrap()
-    }
-
-    if interface == "None"{
-        println!("No interface selected");
-        exit(0);
-    }
-    */
-    /*if interface.is_none(){
-        let mut flag = 0;
-        for iface in _interfaces {
-            if iface.is_loopback() || !iface.is_up() || iface.mac.is_none() {
-                continue;
-            }
-            else {
-                interface = Some(iface.name.clone()).as_ref();
-                flag = 1;
-                break;
-            }
-        }
-        if flag == 0 {
-            panic!("No valid interfaces")
-        }
-    }*/
+    
 }
