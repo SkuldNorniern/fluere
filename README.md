@@ -1,4 +1,5 @@
-# fluere
+# Fluere
+## Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool
 <p align="center" align="right">
   Supported Platforms
 </p>
@@ -11,8 +12,6 @@
   Windows, MacOS, Linux All Supported! YAY! 
 </p>
  
-
-netflow capture
 
 ```
 Netflow Capture Tool
@@ -29,3 +28,70 @@ Options:
   -h, --help     Print help information
   -V, --version  Print version information
 ```
+
+
+## Description
+This tool is designed to capture network packets into pcap format and convert them to netflow data. It also allows for live capture and conversion of netflow data. The tool is cross-platform supported and can run on Windows, MacOS, and Linux operating systems.
+
+## Installation
+Download the latest release of the tool from the releases page.
+``` MacOS, Linux installation will be provided in the future ``` 
+
+- Windows
+
+Run the installer.exe file and check if the enviroment variable has been setup correctly (there is a bug)
+
+- MacOS
+WIP
+
+Use ths Cargo Build --release to get the program or Cargo run 
+- Linux
+WIP
+
+Use ths Cargo Build --release to get the program or Cargo run
+
+## Usage
+
+Run the tool by entering the ```fluere``` command in the terminal.
+
+list the interfaces using 
+``` 
+  fluere online -l
+```
+or 
+```
+  fluere pcap -l
+```
+
+Choose between capturing packets in pcap format or converting live netflow data.
+```
+  online
+  offline
+  pcap
+```
+
+Set the desired capture duration.
+
+```
+  -d 1000 // in ms
+```
+
+Set the name for the files
+
+```
+  -c file_name
+```
+
+The captured packets or netflow data will be saved in the "output" directory in the tool's installation location.
+
+## Additional Features
+
+Make sure to run the tool with administrator privileges on Linux operating systems.
+On linux you may need to install libpcap-dev or npcap on Windows
+Make sure to have enough storage space on your machine to save the captured packets or netflow data.
+
+## Support
+Please contact the developer at [skuldnorniern@gmail.com] or make a issue on the github for any support or bug reports. Thank you for using our tool!
+
+
+
