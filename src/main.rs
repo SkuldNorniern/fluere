@@ -120,7 +120,7 @@ async fn main() {
             let duration: i32 = duration.parse().unwrap();
             println!("Interface {} selected", interface);
             //net::packet_capture(interface);
-            net::flow_pnet::packet_capture(csv, interface, duration, timeout).await;
+            net::online_flows::packet_capture(csv, interface, duration, timeout).await;
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
