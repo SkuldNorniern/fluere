@@ -14,32 +14,23 @@ use pnet::packet::Packet;
 use super::interface::get_interface;
 
 use crate::utils::exporter;
-use crate::net::types::V5Record;
+use crate::net::types::{V5Record, Key};
 use crate::net::parser::dscp_to_tos;
 use crate::net::parser::parse_etherprotocol;
 use crate::net::parser::parse_ipv4;
+use crate::net::flow::flow_convert;
 
 use std::fs;
 use std::net::Ipv4Addr;
 use std::time::Instant;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct Key {
-    src_ip: std::net::Ipv4Addr,
-    src_port: u16,
-    dst_ip: std::net::Ipv4Addr,
-    dst_port: u16,
-    protocol: IpNextHeaderProtocol,
-}
-
 pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_timeout: u32) {
     let interface = get_interface(interface_name);
     let mut cap = Capture::from_device(interface)
         .unwrap()
-        .timeout(duration)
-        .immediate_mode(true)
-        //.buffer_size(10000000)
+        .promisc(true)
+        //.immediate_mode(true)
         .open()
         .unwrap();
 
@@ -65,9 +56,10 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
     while let Ok(packet) = cap.next_packet() {
         //println!("received packet");
         //println!("time: {}",packet.header.ts.tv_sec);
-        let e = EthernetPacket::new(packet.data).unwrap();
+        /*let e = EthernetPacket::new(packet.data).unwrap();
         let i = Ipv4Packet::new(e.payload()).unwrap();
-
+        
+         
         //let p : =
         let (_packet_data, _frame) = parse_etherprotocol(packet.data).unwrap();
         let (_frame_data, _ipv4) = parse_ipv4(_packet_data).unwrap();
@@ -94,7 +86,8 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
                 TcpPacket::new(i.payload()).unwrap().get_destination()
             }
             _ => continue, //panic!("Unknown protocol {:?}", i),
-        };
+        };*/
+        /*
         let mut fin = 0;
         let mut syn = 0;
         let mut rst = 0;
@@ -131,16 +124,28 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
         let doctets = i.get_total_length() as u32;
         //Destination address prefix mask bits
         let dst_mask = 0;
-        let key_value = Key {
+        */
+        /*let key_value = Key {
             src_ip,
             src_port,
             dst_ip,
             dst_port,
             protocol: i.get_next_level_protocol(),
+        };*/
+        let convert_result = flow_convert(packet.clone());
+        match convert_result{
+            Ok(_) => (),
+            Err(_) => continue,
         };
-
+        let (key_value, flowdata) = convert_result.unwrap();
         //pushing packet in to active_flows if it is not present
         if active_flow.get(&key_value).is_none() {
+            active_flow
+                .entry(key_value)
+                .or_insert(flowdata);
+            println!("flow established");
+        }
+        /*if active_flow.get(&key_value).is_none() {
             active_flow
                 .entry(key_value)
                 .or_insert(V5Record::new(
@@ -172,8 +177,9 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
                     0,
                 ));
             println!("flow established");
-        }
-        
+        }*/
+        let doctets = flowdata.get_d_octets();
+        let fin = flowdata.get_fin();
         let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
         let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
         //println!("active flows: {:?}", active_flow.len());
@@ -204,7 +210,7 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
                 active_flow.remove(&key);
             }
         }
-
+        
     }
     println!("Captured in {:?}", start.elapsed());
     
