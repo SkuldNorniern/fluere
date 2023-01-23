@@ -2,30 +2,35 @@ extern crate chrono;
 extern crate csv;
 
 use chrono::Local;
-use tokio::task;
 use pcap::Capture;
-use pnet::packet::ethernet::EthernetPacket;
-use pnet::packet::ip::IpNextHeaderProtocol;
-use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::tcp::TcpPacket;
-use pnet::packet::udp::UdpPacket;
-use pnet::packet::Packet;
+
+
+
+
+
+
+use tokio::task;
 
 use super::interface::get_interface;
 
-use crate::utils::exporter;
-use crate::net::types::{V5Record, Key};
-use crate::net::parser::dscp_to_tos;
-use crate::net::parser::parse_etherprotocol;
-use crate::net::parser::parse_ipv4;
 use crate::net::flow::flow_convert;
 
-use std::fs;
-use std::net::Ipv4Addr;
-use std::time::Instant;
-use std::collections::HashMap;
 
-pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32, flow_timeout: u32) {
+
+use crate::net::types::{Key, V5Record};
+use crate::utils::exporter;
+
+use std::collections::HashMap;
+use std::fs;
+
+use std::time::Instant;
+
+pub async fn packet_capture(
+    csv_file: &str,
+    interface_name: &str,
+    _duration: i32,
+    flow_timeout: u32,
+) {
     let interface = get_interface(interface_name);
     let mut cap = Capture::from_device(interface)
         .unwrap()
@@ -58,15 +63,15 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
         //println!("time: {}",packet.header.ts.tv_sec);
         /*let e = EthernetPacket::new(packet.data).unwrap();
         let i = Ipv4Packet::new(e.payload()).unwrap();
-        
-         
+
+
         //let p : =
         let (_packet_data, _frame) = parse_etherprotocol(packet.data).unwrap();
         let (_frame_data, _ipv4) = parse_ipv4(_packet_data).unwrap();
         if i.payload().is_empty() {
             continue;
         }
-        
+
         let src_ip = i.get_source();
         let dst_ip = i.get_destination();
         let src_port = match i.get_next_level_protocol() {
@@ -133,16 +138,14 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
             protocol: i.get_next_level_protocol(),
         };*/
         let convert_result = flow_convert(packet.clone());
-        match convert_result{
+        match convert_result {
             Ok(_) => (),
             Err(_) => continue,
         };
         let (key_value, flowdata) = convert_result.unwrap();
         //pushing packet in to active_flows if it is not present
         if active_flow.get(&key_value).is_none() {
-            active_flow
-                .entry(key_value)
-                .or_insert(flowdata);
+            active_flow.entry(key_value).or_insert(flowdata);
             println!("flow established");
         }
         /*if active_flow.get(&key_value).is_none() {
@@ -210,14 +213,13 @@ pub async fn packet_capture(csv_file: &str, interface_name: &str, duration: i32,
                 active_flow.remove(&key);
             }
         }
-        
     }
     println!("Captured in {:?}", start.elapsed());
-    
+
     let tasks = task::spawn(async {
-        exporter(records,file).await;
+        exporter(records, file).await;
     });
-    
+
     let result = tasks.await;
     println!("result: {:?}", result);
     //println!("records {:?}", records);

@@ -2,7 +2,6 @@ extern crate chrono;
 extern crate csv;
 
 use chrono::Local;
-use tokio::task;
 use pcap::Capture;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ip::IpNextHeaderProtocol;
@@ -10,17 +9,18 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
+use tokio::task;
 
-use crate::utils::exporter;
-use crate::net::types::V5Record;
 use crate::net::parser::dscp_to_tos;
 use crate::net::parser::parse_etherprotocol;
 use crate::net::parser::parse_ipv4;
+use crate::net::types::V5Record;
+use crate::utils::exporter;
 
+use std::collections::HashMap;
 use std::fs;
 use std::net::Ipv4Addr;
 use std::time::Instant;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Key {
@@ -40,7 +40,7 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
         Ok(_) => println!("Created directory: {}", file_dir),
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
-   
+
     let start = Instant::now();
     let file_path = format!(
         "{}/{}_{}.csv",
@@ -140,39 +140,37 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
 
         //pushing packet in to active_flows if it is not present
         if active_flow.get(&key_value).is_none() {
-            active_flow
-                .entry(key_value)
-                .or_insert(V5Record::new(
-                    i.get_source(),
-                    i.get_destination(),
-                    Ipv4Addr::new(0, 0, 0, 0),
-                    0,
-                    0,
-                    0,
-                    0,
-                    packet.header.ts.tv_sec as u32,
-                    packet.header.ts.tv_sec as u32,
-                    src_port,
-                    dst_port,
-                    0,
-                    fin as u8,
-                    syn as u8,
-                    rst as u8,
-                    psh as u8,
-                    ack as u8,
-                    urg as u8,
-                    flags,
-                    i.get_next_level_protocol(),
-                    dscp_to_tos(i.get_dscp()),
-                    src_as,
-                    dst_as,
-                    src_mask,
-                    dst_mask,
-                    0,
-                ));
+            active_flow.entry(key_value).or_insert(V5Record::new(
+                i.get_source(),
+                i.get_destination(),
+                Ipv4Addr::new(0, 0, 0, 0),
+                0,
+                0,
+                0,
+                0,
+                packet.header.ts.tv_sec as u32,
+                packet.header.ts.tv_sec as u32,
+                src_port,
+                dst_port,
+                0,
+                fin as u8,
+                syn as u8,
+                rst as u8,
+                psh as u8,
+                ack as u8,
+                urg as u8,
+                flags,
+                i.get_next_level_protocol(),
+                dscp_to_tos(i.get_dscp()),
+                src_as,
+                dst_as,
+                src_mask,
+                dst_mask,
+                0,
+            ));
             //println!("flow established");
         }
-        
+
         let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
         let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
         //println!("active flows: {:?}", active_flow.len());
@@ -205,9 +203,9 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
         }
     }
     println!("Captured in {:?}", start.elapsed());
-    
+
     let tasks = task::spawn(async {
-        exporter(records,file).await;
+        exporter(records, file).await;
     });
     let result = tasks.await;
     println!("result: {:?}", result);

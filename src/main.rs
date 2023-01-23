@@ -129,7 +129,7 @@ async fn main() {
             let csv = args.get_one::<String>("csv").unwrap();
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u32 = timeout.parse().unwrap();
-            
+
             net::netflow_fileparse(csv, file, timeout).await;
             //net::netflow(_file, _csv);
         }
@@ -156,5 +156,4 @@ async fn main() {
             exit(0);
         }
     }
-    
 }

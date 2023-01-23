@@ -1,7 +1,7 @@
 use crate::net::V5Record;
 use std::fs::File;
 
-pub async fn exporter(records:Vec<V5Record>, file: File){
+pub async fn exporter(records: Vec<V5Record>, file: File) {
     let mut wtr = csv::Writer::from_writer(file);
 
     wtr.write_record([
