@@ -1,7 +1,6 @@
 use pnet::packet::ip::IpNextHeaderProtocol;
 
 pub fn protocol_to_number(protocol: IpNextHeaderProtocol) -> u8 {
-
     match protocol {
         IpNextHeaderProtocol(0) => 0,
         IpNextHeaderProtocol(1) => 1,

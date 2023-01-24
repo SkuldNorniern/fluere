@@ -2,7 +2,6 @@ use pcap;
 
 use pnet::packet::ethernet::EthernetPacket;
 
-
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
@@ -19,7 +18,6 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
     let i = Ipv4Packet::new(e.payload()).unwrap();
     let protocol = protocol_to_number(i.get_next_level_protocol());
 
-    //let p : =
     let (_packet_data, _frame) = parse_etherprotocol(packet.data).unwrap();
 
     let (_frame_data, _ipv4) = parse_ipv4(_packet_data).unwrap();
