@@ -8,16 +8,15 @@ use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
-use crate::net::parser::dscp_to_tos;
-use crate::net::parser::parse_etherprotocol;
-use crate::net::parser::parse_ipv4;
 use crate::net::types::{Key, V5Record};
+use crate::net::parser::{protocol_to_number, parse_ipv4,dscp_to_tos,parse_etherprotocol};
 
 use std::net::Ipv4Addr;
 
 pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
     let e = EthernetPacket::new(packet.data).unwrap();
     let i = Ipv4Packet::new(e.payload()).unwrap();
+    let protocol = protocol_to_number(i.get_next_level_protocol());
 
     //let p : =
     let (_packet_data, _frame) = parse_etherprotocol(packet.data).unwrap();
@@ -28,30 +27,30 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
 
     let src_ip = i.get_source();
     let dst_ip = i.get_destination();
-    let src_port = match i.get_next_level_protocol() {
-        pnet::packet::ip::IpNextHeaderProtocol(17) => {
+    let src_port = match protocol {
+        17 => {
             UdpPacket::new(i.payload()).unwrap().get_source()
         }
-        pnet::packet::ip::IpNextHeaderProtocol(6) => {
+        6 => {
             TcpPacket::new(i.payload()).unwrap().get_source()
         }
         _ => {
             return Err(NetError::UnknownProtocol {
-                protocol: i.get_next_level_protocol().to_string(),
+                protocol: protocol.to_string(),
             })
         }
         //panic!("Unknown protocol {:?}", i),
     };
-    let dst_port = match i.get_next_level_protocol() {
-        pnet::packet::ip::IpNextHeaderProtocol(17) => {
+    let dst_port = match protocol {
+        17 => {
             UdpPacket::new(i.payload()).unwrap().get_destination()
         }
-        pnet::packet::ip::IpNextHeaderProtocol(6) => {
+        6 => {
             TcpPacket::new(i.payload()).unwrap().get_destination()
         }
         _ => {
             return Err(NetError::UnknownProtocol {
-                protocol: i.get_next_level_protocol().to_string(),
+                protocol: protocol.to_string(),
             })
         } //panic!("Unknown protocol {:?}", i),
     };
@@ -62,7 +61,7 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
     let mut ack = 0;
     let mut urg = 0;
     let mut flags = 0;
-    if i.get_next_level_protocol() == pnet::packet::ip::IpNextHeaderProtocol(6) {
+    if protocol == 6 {
         let tcp = TcpPacket::new(i.payload()).unwrap();
         let tcp_flags = tcp.get_flags();
         fin = tcp_flags & 0x01;
@@ -96,14 +95,14 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
         src_port,
         dst_ip,
         dst_port,
-        protocol: i.get_next_level_protocol(),
+        protocol,
     };
     let key_reverse_value = Key {
         dst_ip,
         dst_port,
         src_ip,
         src_port,
-        protocol: i.get_next_level_protocol(),
+        protocol,
     };
     Ok((
         key_value,
@@ -127,7 +126,7 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
             ack as u8,
             urg as u8,
             flags,
-            i.get_next_level_protocol(),
+            protocol,
             dscp_to_tos(i.get_dscp()),
             src_as,
             dst_as,
