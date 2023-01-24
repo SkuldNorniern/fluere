@@ -18,7 +18,10 @@ pub fn pcap_capture(interface_name: &str, duration: i32) {
 
     let date = Local::now();
     let file_dir = "./output";
-    fs::create_dir_all(file_dir.clone());
+    match fs::create_dir_all(<&str>::clone(&file_dir)) {
+        Ok(_) => println!("Created directory: {}", file_dir),
+        Err(error) => panic!("Problem creating directory: {:?}", error),
+    };
     let file_path = format!("{}/{}.pcap", file_dir, date.format("%Y-%m-%d_%H-%M-%S"));
     let mut file: pcap::Savefile = match cap.savefile(file_path) {
         Ok(f) => f,

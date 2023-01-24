@@ -8,11 +8,11 @@ use super::interface::get_interface;
 
 use crate::net::flow::flow_convert;
 use crate::net::types::{Key, V5Record};
-use crate::utils::{exporter, cur_time_file};
+use crate::utils::{cur_time_file, exporter};
 
 use std::collections::HashMap;
 use std::fs;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 pub async fn packet_capture(
     csv_file: &str,
@@ -29,9 +29,8 @@ pub async fn packet_capture(
         .open()
         .unwrap();
 
-    
     let file_dir = "./output";
-    match fs::create_dir_all(file_dir.clone()) {
+    match fs::create_dir_all(<&str>::clone(&file_dir)) {
         Ok(_) => println!("Created directory: {}", file_dir),
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
@@ -135,7 +134,7 @@ pub async fn packet_capture(
             active_flow.entry(key_value).or_insert(flowdata);
             println!("flow established");
         }
-        
+
         let doctets = flowdata.get_d_octets();
         let fin = flowdata.get_fin();
         let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();

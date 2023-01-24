@@ -2,14 +2,15 @@ use pcap;
 
 use pnet::packet::ethernet::EthernetPacket;
 
+
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
+use crate::net::parser::{dscp_to_tos, parse_etherprotocol, parse_ipv4, protocol_to_number};
 use crate::net::types::{Key, V5Record};
-use crate::net::parser::{protocol_to_number, parse_ipv4,dscp_to_tos,parse_etherprotocol};
 
 use std::net::Ipv4Addr;
 
@@ -20,6 +21,7 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
 
     //let p : =
     let (_packet_data, _frame) = parse_etherprotocol(packet.data).unwrap();
+
     let (_frame_data, _ipv4) = parse_ipv4(_packet_data).unwrap();
     if i.payload().is_empty() {
         return Err(NetError::EmptyPacket);
@@ -27,63 +29,46 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
 
     let src_ip = i.get_source();
     let dst_ip = i.get_destination();
-    let src_port = match protocol {
+
+    let (src_port, dst_port) = match protocol {
         17 => {
-            UdpPacket::new(i.payload()).unwrap().get_source()
+            let udp = UdpPacket::new(i.payload()).unwrap();
+
+            (udp.get_source(), udp.get_destination())
         }
         6 => {
-            TcpPacket::new(i.payload()).unwrap().get_source()
+            let tcp = TcpPacket::new(i.payload()).unwrap();
+
+            (tcp.get_source(), tcp.get_destination())
         }
-        _ => {
-            return Err(NetError::UnknownProtocol {
-                protocol: protocol.to_string(),
-            })
-        }
-        //panic!("Unknown protocol {:?}", i),
-    };
-    let dst_port = match protocol {
-        17 => {
-            UdpPacket::new(i.payload()).unwrap().get_destination()
-        }
-        6 => {
-            TcpPacket::new(i.payload()).unwrap().get_destination()
-        }
+        0 => (0, 0),
         _ => {
             return Err(NetError::UnknownProtocol {
                 protocol: protocol.to_string(),
             })
         } //panic!("Unknown protocol {:?}", i),
     };
-    let mut fin = 0;
-    let mut syn = 0;
-    let mut rst = 0;
-    let mut psh = 0;
-    let mut ack = 0;
-    let mut urg = 0;
-    let mut flags = 0;
-    if protocol == 6 {
-        let tcp = TcpPacket::new(i.payload()).unwrap();
-        let tcp_flags = tcp.get_flags();
-        fin = tcp_flags & 0x01;
-        syn = tcp_flags & 0x02;
-        rst = tcp_flags & 0x04;
-        psh = tcp_flags & 0x08;
-        ack = tcp_flags & 0x10;
-        urg = tcp_flags & 0x20;
-        flags = tcp_flags;
-    } else {
-        fin = 0;
-        syn = 0;
-        rst = 0;
-        psh = 0;
-        ack = 0;
-        urg = 0;
-        flags = 0;
-    }
+    // TCP flags
+    let (fin, syn, rst, psh, ack, urg, flags) = match protocol {
+        6 => {
+            let tcp = TcpPacket::new(i.payload()).unwrap();
+            let tcp_flags = tcp.get_flags();
 
-    //	Autonomous system number of the source, either origin or peer
+            (
+                tcp_flags & 0x01,
+                tcp_flags & 0x02,
+                tcp_flags & 0x04,
+                tcp_flags & 0x08,
+                tcp_flags & 0x10,
+                tcp_flags & 0x20,
+                tcp_flags,
+            )
+        }
+        _ => (0, 0, 0, 0, 0, 0, 0),
+    };
+
+    //	Autonomous system number of the source and destination, either origin or peer
     let src_as: u16 = 0;
-    //	Autonomous system number of the destination, either origin or peer
     let dst_as: u16 = 0;
     //Source address prefix mask bits
     let src_mask = 0;
@@ -97,7 +82,7 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
         dst_port,
         protocol,
     };
-    let key_reverse_value = Key {
+    let _key_reverse_value = Key {
         dst_ip,
         dst_port,
         src_ip,

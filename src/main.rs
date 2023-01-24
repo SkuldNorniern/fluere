@@ -126,10 +126,10 @@ async fn main() {
             let duration = args.get_one::<String>("duration").expect("default");
             let duration: u64 = duration.parse().unwrap();
             let interval = args.get_one::<String>("interval").expect("default");
-            let interval: u64 = interval.parse().unwrap(); 
+            let interval: u64 = interval.parse().unwrap();
             println!("Interface {} selected", interface);
             //net::packet_capture(interface);
-            net::online_flows::packet_capture(csv, interface, duration ,interval ,timeout).await;
+            net::online_flows::packet_capture(csv, interface, duration, interval, timeout).await;
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {

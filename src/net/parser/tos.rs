@@ -4,3 +4,7 @@ const TOS_MASK: u8 = 0b0000_0011;
 pub fn dscp_to_tos(dscp: u8) -> u8 {
     (dscp << 2) & TOS_MASK
 }
+
+pub fn tos_to_dscp(tos: u8) -> u8 {
+    (tos >> 2) & DSCP_MASK
+}

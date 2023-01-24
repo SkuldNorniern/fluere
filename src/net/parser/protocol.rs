@@ -1,8 +1,10 @@
 use pnet::packet::ip::IpNextHeaderProtocol;
 
-pub fn protocol_to_number(protocol: IpNextHeaderProtocol) -> u8{
-    let protocol_number = match protocol {
-        IpNextHeaderProtocol(1) =>1,
+pub fn protocol_to_number(protocol: IpNextHeaderProtocol) -> u8 {
+
+    match protocol {
+        IpNextHeaderProtocol(0) => 0,
+        IpNextHeaderProtocol(1) => 1,
         IpNextHeaderProtocol(2) => 2,
         IpNextHeaderProtocol(3) => 3,
         IpNextHeaderProtocol(4) => 4,
@@ -258,7 +260,5 @@ pub fn protocol_to_number(protocol: IpNextHeaderProtocol) -> u8{
         IpNextHeaderProtocol(254) => 254,
         IpNextHeaderProtocol(255) => 255,
         _ => 0,
-    };
-
-    protocol_number
+    }
 }

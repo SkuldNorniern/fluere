@@ -4,29 +4,28 @@ extern crate csv;
 use chrono::Local;
 use pcap::Capture;
 use pnet::packet::ethernet::EthernetPacket;
-use pnet::packet::ip::IpNextHeaderProtocol;
+
 use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::tcp::TcpPacket;
-use pnet::packet::udp::UdpPacket;
+
+
 use pnet::packet::Packet;
 use tokio::task;
 
 use crate::net::flow::flow_convert;
 use crate::net::types::{Key, V5Record};
-use crate::utils::{exporter, cur_time_file};
+use crate::utils::{exporter};
 
 use std::collections::HashMap;
 use std::fs;
-use std::net::Ipv4Addr;
-use std::time::Instant;
 
+use std::time::Instant;
 
 pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u32) {
     let mut cap = Capture::from_file(file_name).unwrap();
 
     let date = Local::now();
     let file_dir = "./output";
-    match fs::create_dir_all(file_dir.clone()) {
+    match fs::create_dir_all(<&str>::clone(&file_dir)) {
         Ok(_) => println!("Created directory: {}", file_dir),
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
@@ -48,10 +47,10 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
         //println!("received packet");
         //println!("time: {}",packet.header.ts.tv_sec);
         let e = EthernetPacket::new(packet.data).unwrap();
-        let i = Ipv4Packet::new(e.payload()).unwrap();
+        let _i = Ipv4Packet::new(e.payload()).unwrap();
 
         //let p : =
-        
+
         let convert_result = flow_convert(packet.clone());
         match convert_result {
             Ok(_) => (),
