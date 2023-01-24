@@ -1,34 +1,24 @@
-extern crate chrono;
 extern crate csv;
 
-use chrono::Local;
 use pcap::Capture;
-
-
-
-
-
 
 use tokio::task;
 
 use super::interface::get_interface;
 
 use crate::net::flow::flow_convert;
-
-
-
 use crate::net::types::{Key, V5Record};
-use crate::utils::exporter;
+use crate::utils::{exporter, cur_time_file};
 
 use std::collections::HashMap;
 use std::fs;
-
-use std::time::Instant;
+use std::time::{Instant, Duration};
 
 pub async fn packet_capture(
     csv_file: &str,
     interface_name: &str,
-    _duration: i32,
+    duration: u64,
+    interval: u64,
     flow_timeout: u32,
 ) {
     let interface = get_interface(interface_name);
@@ -39,20 +29,17 @@ pub async fn packet_capture(
         .open()
         .unwrap();
 
-    let date = Local::now();
+    
     let file_dir = "./output";
     match fs::create_dir_all(file_dir.clone()) {
         Ok(_) => println!("Created directory: {}", file_dir),
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
+
     let start = Instant::now();
-    let file_path = format!(
-        "{}/{}_{}.csv",
-        file_dir,
-        csv_file,
-        date.format("%Y-%m-%d_%H-%M-%S")
-    );
-    let file = fs::File::create(file_path).unwrap();
+    let mut last_export = Instant::now();
+    let file_path = cur_time_file(csv_file, file_dir).await;
+    let mut file = fs::File::create(file_path).unwrap();
     //let mut wtr = csv::Writer::from_writer(file);
 
     let mut records: Vec<V5Record> = Vec::new();
@@ -148,39 +135,7 @@ pub async fn packet_capture(
             active_flow.entry(key_value).or_insert(flowdata);
             println!("flow established");
         }
-        /*if active_flow.get(&key_value).is_none() {
-            active_flow
-                .entry(key_value)
-                .or_insert(V5Record::new(
-                    i.get_source(),
-                    i.get_destination(),
-                    Ipv4Addr::new(0, 0, 0, 0),
-                    0,
-                    0,
-                    0,
-                    0,
-                    packet.header.ts.tv_sec as u32,
-                    packet.header.ts.tv_sec as u32,
-                    src_port,
-                    dst_port,
-                    0,
-                    fin as u8,
-                    syn as u8,
-                    rst as u8,
-                    psh as u8,
-                    ack as u8,
-                    urg as u8,
-                    flags,
-                    i.get_next_level_protocol(),
-                    dscp_to_tos(i.get_dscp()),
-                    src_as,
-                    dst_as,
-                    src_mask,
-                    dst_mask,
-                    0,
-                ));
-            println!("flow established");
-        }*/
+        
         let doctets = flowdata.get_d_octets();
         let fin = flowdata.get_fin();
         let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
@@ -212,6 +167,25 @@ pub async fn packet_capture(
                 records.push(*flow);
                 active_flow.remove(&key);
             }
+        }
+        // Export flows if the interval has been reached
+        if last_export.elapsed() >= Duration::from_millis(interval) {
+            let cloned_records = records.clone();
+            let tasks = task::spawn(async {
+                exporter(cloned_records, file).await;
+            });
+            let file_path = cur_time_file(csv_file, file_dir).await;
+            file = fs::File::create(file_path).unwrap();
+
+            let result = tasks.await;
+            println!("result: {:?}", result);
+            //println!("records {:?}", records);
+            records.clear();
+            last_export = Instant::now();
+        }
+        // Check if the duration has been reached
+        if start.elapsed() >= Duration::from_millis(duration) {
+            break;
         }
     }
     println!("Captured in {:?}", start.elapsed());

@@ -35,9 +35,16 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("timeout")
                         //.about("Select network interface to use")
-                        .default_value("1800000")
+                        .default_value("600000")
                         .short('t')
                         .long("timeout"),
+                )
+                .arg(
+                    Arg::new("interval")
+                        //.about("Select network interface to use")
+                        .default_value("1800000")
+                        .short('I')
+                        .long("interval"),
                 )
                 .arg(
                     Arg::new("list")
@@ -65,7 +72,7 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("timeout")
                         //.about("Select network interface to use")
-                        .default_value("1800000")
+                        .default_value("600000")
                         .short('t')
                         .long("timeout"),
                 ),
@@ -117,10 +124,12 @@ async fn main() {
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u32 = timeout.parse().unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
-            let duration: i32 = duration.parse().unwrap();
+            let duration: u64 = duration.parse().unwrap();
+            let interval = args.get_one::<String>("interval").expect("default");
+            let interval: u64 = interval.parse().unwrap(); 
             println!("Interface {} selected", interface);
             //net::packet_capture(interface);
-            net::online_flows::packet_capture(csv, interface, duration, timeout).await;
+            net::online_flows::packet_capture(csv, interface, duration ,interval ,timeout).await;
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {

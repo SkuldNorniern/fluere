@@ -8,5 +8,5 @@ pub struct Key {
     pub src_port: u16,
     pub dst_ip: Ipv4Addr,
     pub dst_port: u16,
-    pub protocol: IpNextHeaderProtocol,
+    pub protocol: u8,
 }

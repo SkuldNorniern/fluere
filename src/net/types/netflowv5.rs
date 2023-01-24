@@ -1,7 +1,7 @@
 use std::net::Ipv4Addr;
 
 use pnet::packet::ip::IpNextHeaderProtocol;
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq , Eq)]
 pub struct V5Netflow {
     header: V5Header,
     records: Vec<V5Record>,
@@ -70,7 +70,7 @@ pub struct V5Record {
     ack: u8,
     urg: u8,
     flags: u16,
-    prot: IpNextHeaderProtocol,
+    prot: u8,
     tos: u8,
     src_as: u16,
     dst_as: u16,
@@ -99,7 +99,7 @@ impl V5Record {
         ack: u8,
         urg: u8,
         flags: u16,
-        prot: IpNextHeaderProtocol,
+        prot: u8,
         tos: u8,
         src_as: u16,
         dst_as: u16,
@@ -205,7 +205,7 @@ impl V5Record {
     pub fn get_flags(&self) -> u16 {
         self.flags
     }
-    pub fn get_prot(&self) -> IpNextHeaderProtocol {
+    pub fn get_prot(&self) -> u8 {
         self.prot
     }
     pub fn get_tos(&self) -> u8 {
