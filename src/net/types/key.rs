@@ -1,5 +1,3 @@
-
-
 use std::net::Ipv4Addr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

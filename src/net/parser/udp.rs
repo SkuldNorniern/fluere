@@ -2,6 +2,7 @@ use nom::{bytes::complete::take, IResult};
 
 use crate::net::types::Ports;
 use crate::net::types::Udp;
+use std::env::consts::OS;
 
 pub fn parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
     let (payload, source) = take(2usize)(payload)?;
@@ -32,10 +33,10 @@ mod tests {
 
     fn to_libc_timeval(ts: f64) -> libc::timeval {
         let secs = ts as c_long;
-        let usecs:i32 = ((ts - secs as f64) * 1_000_000.0) as i32;
+        let usecs= 100000; //dummy value
         libc::timeval {
             tv_sec: secs,
-            tv_usec: usecs,
+            tv_usec: usecs.into(), // On OS X this use i32 instead of i64 
         }
     }
     #[test]

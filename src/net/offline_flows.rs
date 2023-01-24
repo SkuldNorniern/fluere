@@ -7,13 +7,12 @@ use pnet::packet::ethernet::EthernetPacket;
 
 use pnet::packet::ipv4::Ipv4Packet;
 
-
 use pnet::packet::Packet;
 use tokio::task;
 
 use crate::net::flow::flow_convert;
 use crate::net::types::{Key, V5Record};
-use crate::utils::{exporter};
+use crate::utils::exporter;
 
 use std::collections::HashMap;
 use std::fs;

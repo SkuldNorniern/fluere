@@ -29,7 +29,7 @@ impl FluereHeader {
         sampling_interval: u16,
     ) -> FluereHeader {
         FluereHeader {
-            version: 5,
+            version: 1,
             count,
             sys_uptime,
             unix_secs,
