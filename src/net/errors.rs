@@ -1,6 +1,5 @@
 use snafu::prelude::*;
 
-
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum NetError {

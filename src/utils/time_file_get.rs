@@ -1,13 +1,13 @@
 use chrono::Local;
 
-pub async fn cur_time_file(name: &str, dir: &str) -> String{
+pub async fn cur_time_file(name: &str, dir: &str) -> String {
     let date = Local::now();
     let file_path = format!(
-            "{}/{}_{}.csv",
-            dir,
-            name,
-            date.format("%Y-%m-%d_%H-%M-%S").to_string()
-        );
-    
+        "{}/{}_{}.csv",
+        dir,
+        name,
+        date.format("%Y-%m-%d_%H-%M-%S")
+    );
+
     file_path
 }
