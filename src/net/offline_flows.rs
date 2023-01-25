@@ -12,7 +12,7 @@ use tokio::task;
 
 use crate::net::flow::flow_convert;
 use crate::net::types::{Key, V5Record};
-use crate::utils::exporter;
+use crate::utils::v5_exporter;
 
 use std::collections::HashMap;
 use std::fs;
@@ -43,7 +43,6 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
     let mut active_flow: HashMap<Key, V5Record> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
-        
         let e = EthernetPacket::new(packet.data).unwrap();
         let _i = Ipv4Packet::new(e.payload()).unwrap();
 
@@ -52,29 +51,23 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
             Ok(_) => (),
             Err(_) => continue,
         };
-        let (key_value,reverse_key, flowdata) = convert_result.unwrap();
+        let (key_value, reverse_key, flowdata) = convert_result.unwrap();
         let mut is_reverse = false;
-        //pushing packet in to active_flows if it is not present 
+        //pushing packet in to active_flows if it is not present
         if active_flow.get(&key_value).is_none() {
             if active_flow.get(&reverse_key).is_none() {
                 active_flow.insert(key_value, flowdata);
                 println!("flow established");
-            }
-            else {
+            } else {
                 is_reverse = true;
             }
-            //active_flow.entry(key_value).or_insert(flowdata);
-            println!("flow established");
         }
-        
 
         let doctets = flowdata.get_d_octets();
         let fin = flowdata.get_fin();
-        let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
-        let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
-        //println!("active flows: {:?}", active_flow.len());
-        //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
         if is_reverse {
+            let cur_dpkt = active_flow.get(&reverse_key).unwrap().get_d_pkts();
+            let cur_octets = active_flow.get(&reverse_key).unwrap().get_d_octets();
             active_flow
                 .get_mut(&reverse_key)
                 .unwrap()
@@ -87,8 +80,9 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
                 .get_mut(&reverse_key)
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
-        }
-        else {
+        } else {
+            let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
+            let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
             active_flow
                 .get_mut(&key_value)
                 .unwrap()
@@ -116,9 +110,9 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
     println!("Captured in {:?}", start.elapsed());
 
     let tasks = task::spawn(async {
-        exporter(records, file).await;
+        v5_exporter(records, file).await;
     });
-    
+
     let result = tasks.await;
     println!("result: {:?}", result);
 }

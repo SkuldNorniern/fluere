@@ -1,8 +1,8 @@
 mod ether;
+mod fluereflow;
 pub mod ipv4;
 mod key;
 mod netflowv5;
-mod fluereflow;
 mod protocols;
 //mod v4packet_pnet;
 
@@ -16,3 +16,5 @@ pub use netflowv5::V5Record;
 pub use protocols::Ports;
 pub use protocols::Udp;
 //pub use v4packet_pnet::C_Ipv4Packet;
+pub use fluereflow::FluereFlow;
+pub use fluereflow::FluereRecord;

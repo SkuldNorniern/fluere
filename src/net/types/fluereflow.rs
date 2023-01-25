@@ -1,6 +1,6 @@
 use std::net::Ipv4Addr;
 
-#[derive(Debug, Clone, PartialEq , Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FluereFlow {
     header: FluereHeader,
     records: Vec<FluereRecord>,
@@ -18,16 +18,7 @@ pub struct FluereHeader {
     unix_secs: u32,
 }
 impl FluereHeader {
-    pub fn new(
-        count: u16,
-        sys_uptime: u32,
-        unix_secs: u32,
-        unix_nsecs: u32,
-        flow_sequence: u32,
-        engine_type: u8,
-        engine_id: u8,
-        sampling_interval: u16,
-    ) -> FluereHeader {
+    pub fn new(version: u16, count: u16, sys_uptime: u32, unix_secs: u32) -> FluereHeader {
         FluereHeader {
             version: 1,
             count,
@@ -47,18 +38,23 @@ pub struct FluereRecord {
     last: u32,
     src_port: u16,
     dst_port: u16,
-    min_pkt:u64,
-    max_pkt:u64,
-    
-    fin: u8,
-    syn: u8,
-    rst: u8,
-    psh: u8,
-    ack: u8,
-    urg: u8,
-    flags: u16,
+    min_pkt: u32,
+    max_pkt: u32,
+    min_ttl: u8,
+    max_ttl: u8,
+    in_pkts: u32,
+    out_pkts: u32,
+    fin_cnt: u32,
+    syn_cnt: u32,
+    rst_cnt: u32,
+    psh_cnt: u32,
+    ack_cnt: u32,
+    urg_cnt: u32,
+    ece_cnt: u32,
+    cwr_cnt: u32,
+    ns_cnt: u32,
     prot: u8,
-    tos: u8
+    tos: u8,
 }
 impl FluereRecord {
     pub fn new(
@@ -70,13 +66,21 @@ impl FluereRecord {
         last: u32,
         src_port: u16,
         dst_port: u16,
-        fin: u8,
-        syn: u8,
-        rst: u8,
-        psh: u8,
-        ack: u8,
-        urg: u8,
-        flags: u16,
+        min_pkt: u32,
+        max_pkt: u32,
+        min_ttl: u8,
+        max_ttl: u8,
+        in_pkts: u32,
+        out_pkts: u32,
+        fin_cnt: u32,
+        syn_cnt: u32,
+        rst_cnt: u32,
+        psh_cnt: u32,
+        ack_cnt: u32,
+        urg_cnt: u32,
+        ece_cnt: u32,
+        cwr_cnt: u32,
+        ns_cnt: u32,
         prot: u8,
         tos: u8,
     ) -> FluereRecord {
@@ -89,17 +93,23 @@ impl FluereRecord {
             last,
             src_port,
             dst_port,
-            fin,
-            syn,
-            rst,
-            psh,
-            ack,
-            urg,
-            flags,
+            min_pkt,
+            max_pkt,
+            min_ttl,
+            max_ttl,
+            in_pkts,
+            out_pkts,
+            fin_cnt,
+            syn_cnt,
+            rst_cnt,
+            psh_cnt,
+            ack_cnt,
+            urg_cnt,
+            ece_cnt,
+            cwr_cnt,
+            ns_cnt,
             prot,
             tos,
-            min_pkt: todo!(),
-            max_pkt: todo!(),
         }
     }
     pub fn set_d_pkts(&mut self, d_pkts: u32) {
@@ -113,6 +123,51 @@ impl FluereRecord {
     }
     pub fn set_last(&mut self, last: u32) {
         self.last = last;
+    }
+    pub fn set_in_pkts(&mut self, in_pkts: u32) {
+        self.in_pkts = in_pkts;
+    }
+    pub fn set_out_pkts(&mut self, out_pkts: u32) {
+        self.out_pkts = out_pkts;
+    }
+    pub fn set_fin_cnt(&mut self, fin_cnt: u32) {
+        self.fin_cnt = fin_cnt;
+    }
+    pub fn set_syn_cnt(&mut self, syn_cnt: u32) {
+        self.syn_cnt = syn_cnt;
+    }
+    pub fn set_rst_cnt(&mut self, rst_cnt: u32) {
+        self.rst_cnt = rst_cnt;
+    }
+    pub fn set_psh_cnt(&mut self, psh_cnt: u32) {
+        self.psh_cnt = psh_cnt;
+    }
+    pub fn set_ack_cnt(&mut self, ack_cnt: u32) {
+        self.ack_cnt = ack_cnt;
+    }
+    pub fn set_urg_cnt(&mut self, urg_cnt: u32) {
+        self.urg_cnt = urg_cnt;
+    }
+    pub fn set_ece_cnt(&mut self, ece_cnt: u32) {
+        self.ece_cnt = ece_cnt;
+    }
+    pub fn set_cwr_cnt(&mut self, cwr_cnt: u32) {
+        self.cwr_cnt = cwr_cnt;
+    }
+    pub fn set_ns_cnt(&mut self, ns_cnt: u32) {
+        self.ns_cnt = ns_cnt;
+    }
+    pub fn set_min_pkt(&mut self, min_pkt: u32) {
+        self.min_pkt = min_pkt;
+    }
+    pub fn set_max_pkt(&mut self, max_pkt: u32) {
+        self.max_pkt = max_pkt;
+    }
+    pub fn set_min_ttl(&mut self, min_ttl: u8) {
+        self.min_ttl = min_ttl;
+    }
+    pub fn set_max_ttl(&mut self, max_ttl: u8) {
+        self.max_ttl = max_ttl;
     }
     pub fn get_source(&self) -> Ipv4Addr {
         self.source
@@ -138,26 +193,50 @@ impl FluereRecord {
     pub fn get_dst_port(&self) -> u16 {
         self.dst_port
     }
-    pub fn get_fin(&self) -> u8 {
-        self.fin
+    pub fn get_min_pkt(&self) -> u32 {
+        self.min_pkt
     }
-    pub fn get_syn(&self) -> u8 {
-        self.syn
+    pub fn get_max_pkt(&self) -> u32 {
+        self.max_pkt
     }
-    pub fn get_rst(&self) -> u8 {
-        self.rst
+    pub fn get_min_ttl(&self) -> u8 {
+        self.min_ttl
     }
-    pub fn get_psh(&self) -> u8 {
-        self.psh
+    pub fn get_max_ttl(&self) -> u8 {
+        self.max_ttl
     }
-    pub fn get_ack(&self) -> u8 {
-        self.ack
+    pub fn get_in_pkts(&self) -> u32 {
+        self.in_pkts
     }
-    pub fn get_urg(&self) -> u8 {
-        self.urg
+    pub fn get_out_pkts(&self) -> u32 {
+        self.out_pkts
     }
-    pub fn get_flags(&self) -> u16 {
-        self.flags
+    pub fn get_fin_cnt(&self) -> u32 {
+        self.fin_cnt
+    }
+    pub fn get_syn_cnt(&self) -> u32 {
+        self.syn_cnt
+    }
+    pub fn get_rst_cnt(&self) -> u32 {
+        self.rst_cnt
+    }
+    pub fn get_psh_cnt(&self) -> u32 {
+        self.psh_cnt
+    }
+    pub fn get_ack_cnt(&self) -> u32 {
+        self.ack_cnt
+    }
+    pub fn get_urg_cnt(&self) -> u32 {
+        self.urg_cnt
+    }
+    pub fn get_ece_cnt(&self) -> u32 {
+        self.ece_cnt
+    }
+    pub fn get_cwr_cnt(&self) -> u32 {
+        self.cwr_cnt
+    }
+    pub fn get_ns_cnt(&self) -> u32 {
+        self.ns_cnt
     }
     pub fn get_prot(&self) -> u8 {
         self.prot

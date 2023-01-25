@@ -22,7 +22,7 @@ pub fn dscp_to_tos(dscp: u8) -> Result<u8, ParseError> {
         46 => 184,
         48 => 192,
         56 => 224,
-        _ => return Err(ParseError::UnknownDSCP { dscp })
+        _ => return Err(ParseError::UnknownDSCP { dscp }),
     };
 
     Ok(tos)

@@ -33,10 +33,10 @@ mod tests {
 
     fn to_libc_timeval(ts: f64) -> libc::timeval {
         let secs = ts as c_long;
-        let usecs= 100000; //dummy value
+        let usecs = 100000; //dummy value
         libc::timeval {
             tv_sec: secs,
-            tv_usec: usecs.into(), // On OS X this use i32 instead of i64 
+            tv_usec: usecs.into(), // On OS X this use i32 instead of i64
         }
     }
     #[test]
