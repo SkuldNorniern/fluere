@@ -11,11 +11,18 @@ use crate::net::errors::NetError;
 use crate::net::parser::{dscp_to_tos, parse_etherprotocol, parse_ipv4, protocol_to_number};
 use crate::net::types::{FluereRecord, Key, MacAddress};
 
-use std::net::Ipv4Addr;
-
 pub fn fluereflow_convert(
     packet: pcap::Packet,
-) -> Result<(Key, Key,u32, (u32, u32, u32, u32, u32, u32, u32, u32, u32), FluereRecord), NetError> {
+) -> Result<
+    (
+        Key,
+        Key,
+        u32,
+        (u32, u32, u32, u32, u32, u32, u32, u32, u32),
+        FluereRecord,
+    ),
+    NetError,
+> {
     let e = EthernetPacket::new(packet.data).unwrap();
     let i = Ipv4Packet::new(e.payload()).unwrap();
     let protocol = protocol_to_number(i.get_next_level_protocol());
@@ -102,23 +109,22 @@ pub fn fluereflow_convert(
     let dst_mac = MacAddress::new(e.get_destination().into());
 
     let key_value = Key {
-        src_ip: src_ip.clone(),
-        src_port: src_port.clone(),
-        dst_ip: dst_ip.clone(),
-        dst_port: dst_port.clone(),
-        protocol: protocol.clone(),
-        src_mac: src_mac.clone(),
-        dst_mac: dst_mac.clone(),
+        src_ip,
+        src_port,
+        dst_ip,
+        dst_port,
+        protocol,
+        src_mac,
+        dst_mac,
     };
     let key_reverse_value = Key {
-        src_ip: dst_ip.clone(),
-        src_port: dst_port.clone(),
-        dst_ip: src_ip.clone(),
-        dst_port: src_port.clone(),
-        protocol: protocol.clone(),
-        src_mac: dst_mac.clone(),
-        dst_mac: src_mac.clone(),
-        
+        src_ip: dst_ip,
+        src_port: dst_port,
+        dst_ip: src_ip,
+        dst_port: src_port,
+        protocol,
+        src_mac: dst_mac,
+        dst_mac: src_mac,
     };
     let tos_convert_result = dscp_to_tos(i.get_dscp());
     let tos = match tos_convert_result {
