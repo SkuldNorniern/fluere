@@ -18,7 +18,7 @@ pub struct FluereHeader {
     unix_secs: u32,
 }
 impl FluereHeader {
-    pub fn new(version: u16, count: u16, sys_uptime: u32, unix_secs: u32) -> FluereHeader {
+    pub fn new(_version: u16, count: u16, sys_uptime: u32, unix_secs: u32) -> FluereHeader {
         FluereHeader {
             version: 1,
             count,

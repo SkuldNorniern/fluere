@@ -51,7 +51,7 @@ pub async fn packet_capture(
             Ok(_) => (),
             Err(_) => continue,
         };
-        let (key_value, reverse_key,doctets, flags, flowdata) = convert_result.unwrap();
+        let (key_value, reverse_key, doctets, flags, flowdata) = convert_result.unwrap();
         //pushing packet in to active_flows if it is not present
         if active_flow.get(&key_value).is_none() {
             if active_flow.get(&reverse_key).is_none() {
@@ -61,12 +61,11 @@ pub async fn packet_capture(
             } else {
                 is_reverse = true;
             }
-        }
-        else {
+        } else {
             is_reverse = false;
         }
 
-        let (fin , syn, rst, psh, ack, urg, ece, cwr,ns) = flags;
+        let (fin, syn, rst, psh, ack, urg, ece, cwr, ns) = flags;
         let pkt = flowdata.get_min_pkt();
         let ttl = flowdata.get_min_ttl();
         //println!("active flows: {:?}", active_flow.len());
@@ -89,7 +88,6 @@ pub async fn packet_capture(
             let cur_cwr = active_flow.get(&reverse_key).unwrap().get_cwr_cnt();
             let cur_ns = active_flow.get(&reverse_key).unwrap().get_ns_cnt();
             let cur_inbytes = active_flow.get(&reverse_key).unwrap().get_in_bytes();
-            
 
             active_flow
                 .get_mut(&reverse_key)
@@ -150,7 +148,7 @@ pub async fn packet_capture(
             active_flow
                 .get_mut(&reverse_key)
                 .unwrap()
-                .set_cwr_cnt(cur_cwr + cwr);    
+                .set_cwr_cnt(cur_cwr + cwr);
             active_flow
                 .get_mut(&reverse_key)
                 .unwrap()
@@ -181,7 +179,7 @@ pub async fn packet_capture(
             let cur_cwr = active_flow.get(&key_value).unwrap().get_cwr_cnt();
             let cur_ns = active_flow.get(&key_value).unwrap().get_ns_cnt();
             let cur_outbytes = active_flow.get(&key_value).unwrap().get_out_bytes();
-            
+
             active_flow
                 .get_mut(&key_value)
                 .unwrap()
@@ -241,7 +239,7 @@ pub async fn packet_capture(
             active_flow
                 .get_mut(&key_value)
                 .unwrap()
-                .set_cwr_cnt(cur_cwr + cwr);    
+                .set_cwr_cnt(cur_cwr + cwr);
             active_flow
                 .get_mut(&key_value)
                 .unwrap()
@@ -261,7 +259,10 @@ pub async fn packet_capture(
         //println!("flags : {:?},{:?},{:?},{:?},{:?},{:?},{:?} ",fin,syn,rst,psh,ack,urg,flags);
         for key in keys {
             let flow = active_flow.get(&key).unwrap();
-            if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)) || fin == 1 || rst == 1{
+            if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout))
+                || fin == 1
+                || rst == 1
+            {
                 println!("flow expired");
                 records.push(*flow);
                 active_flow.remove(&key);

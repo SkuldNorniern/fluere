@@ -30,7 +30,7 @@ mod tests {
         let usecs = 100000; //dummy value
         libc::timeval {
             tv_sec: secs,
-            tv_usec: usecs.into(), // On OS X this use i32 instead of i64
+            tv_usec: usecs, // On OS X this use i32 instead of i64
         }
     }
     #[test]
