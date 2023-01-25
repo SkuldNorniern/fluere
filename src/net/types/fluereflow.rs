@@ -44,6 +44,8 @@ pub struct FluereRecord {
     max_ttl: u8,
     in_pkts: u32,
     out_pkts: u32,
+    in_bytes: u32,
+    out_bytes: u32,
     fin_cnt: u32,
     syn_cnt: u32,
     rst_cnt: u32,
@@ -72,6 +74,8 @@ impl FluereRecord {
         max_ttl: u8,
         in_pkts: u32,
         out_pkts: u32,
+        in_bytes: u32,
+        out_bytes: u32,
         fin_cnt: u32,
         syn_cnt: u32,
         rst_cnt: u32,
@@ -99,6 +103,8 @@ impl FluereRecord {
             max_ttl,
             in_pkts,
             out_pkts,
+            in_bytes,
+            out_bytes,
             fin_cnt,
             syn_cnt,
             rst_cnt,
@@ -129,6 +135,12 @@ impl FluereRecord {
     }
     pub fn set_out_pkts(&mut self, out_pkts: u32) {
         self.out_pkts = out_pkts;
+    }
+    pub fn set_in_bytes(&mut self, in_bytes: u32) {
+        self.in_bytes = in_bytes;
+    }
+    pub fn set_out_bytes(&mut self, out_bytes: u32) {
+        self.out_bytes = out_bytes;
     }
     pub fn set_fin_cnt(&mut self, fin_cnt: u32) {
         self.fin_cnt = fin_cnt;
@@ -169,6 +181,7 @@ impl FluereRecord {
     pub fn set_max_ttl(&mut self, max_ttl: u8) {
         self.max_ttl = max_ttl;
     }
+
     pub fn get_source(&self) -> Ipv4Addr {
         self.source
     }
@@ -210,6 +223,12 @@ impl FluereRecord {
     }
     pub fn get_out_pkts(&self) -> u32 {
         self.out_pkts
+    }
+    pub fn get_in_bytes(&self) -> u32 {
+        self.in_bytes
+    }
+    pub fn get_out_bytes(&self) -> u32 {
+        self.out_bytes
     }
     pub fn get_fin_cnt(&self) -> u32 {
         self.fin_cnt

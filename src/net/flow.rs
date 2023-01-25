@@ -77,22 +77,23 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, Key, V5Record), NetErr
     let dst_mac = MacAddress::new(e.get_destination().into());
 
     let key_value = Key {
-        src_ip,
-        src_port,
-        dst_ip,
-        dst_port,
-        protocol,
-        src_mac,
-        dst_mac,
+        src_ip: src_ip.clone(),
+        src_port: src_port.clone(),
+        dst_ip: dst_ip.clone(),
+        dst_port: dst_port.clone(),
+        protocol: protocol.clone(),
+        src_mac: src_mac.clone(),
+        dst_mac: dst_mac.clone(),
     };
     let key_reverse_value = Key {
-        dst_ip,
-        dst_port,
-        src_ip,
-        src_port,
-        protocol,
-        dst_mac,
-        src_mac,
+        src_ip: dst_ip.clone(),
+        src_port: dst_port.clone(),
+        dst_ip: src_ip.clone(),
+        dst_port: src_port.clone(),
+        protocol: protocol.clone(),
+        src_mac: dst_mac.clone(),
+        dst_mac: src_mac.clone(),
+        
     };
     let tos_convert_result = dscp_to_tos(i.get_dscp());
     let tos = match tos_convert_result {
