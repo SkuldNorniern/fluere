@@ -43,24 +43,30 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
     let mut active_flow: HashMap<Key, V5Record> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
-        //println!("received packet");
-        //println!("time: {}",packet.header.ts.tv_sec);
+        
         let e = EthernetPacket::new(packet.data).unwrap();
         let _i = Ipv4Packet::new(e.payload()).unwrap();
-
-        //let p : =
 
         let convert_result = flow_convert(packet.clone());
         match convert_result {
             Ok(_) => (),
             Err(_) => continue,
         };
-        let (key_value, flowdata) = convert_result.unwrap();
-        //pushing packet in to active_flows if it is not present
+        let (key_value,reverse_key, flowdata) = convert_result.unwrap();
+        let mut is_reverse = false;
+        //pushing packet in to active_flows if it is not present 
         if active_flow.get(&key_value).is_none() {
-            active_flow.entry(key_value).or_insert(flowdata);
+            if active_flow.get(&reverse_key).is_none() {
+                active_flow.insert(key_value, flowdata);
+                println!("flow established");
+            }
+            else {
+                is_reverse = true;
+            }
+            //active_flow.entry(key_value).or_insert(flowdata);
             println!("flow established");
         }
+        
 
         let doctets = flowdata.get_d_octets();
         let fin = flowdata.get_fin();
@@ -68,24 +74,36 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
         let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
         //println!("active flows: {:?}", active_flow.len());
         //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
-        active_flow
-            .get_mut(&key_value)
-            .unwrap()
-            .set_d_pkts(cur_dpkt + 1);
-        active_flow
-            .get_mut(&key_value)
-            .unwrap()
-            .set_d_octets(cur_octets + doctets);
-        active_flow
-            .get_mut(&key_value)
-            .unwrap()
-            .set_last(packet.header.ts.tv_sec as u32);
-        //println!("after first: {:?}", active_flow.get(&key_value).unwrap().get_first());
-        //println!("after last: {:?}", active_flow.get(&key_value).unwrap().get_last());
-        //println!("packet_ts0: {:?}",packet.header.ts.tv_sec as u32);
+        if is_reverse {
+            active_flow
+                .get_mut(&reverse_key)
+                .unwrap()
+                .set_d_pkts(cur_dpkt + 1);
+            active_flow
+                .get_mut(&reverse_key)
+                .unwrap()
+                .set_d_octets(cur_octets + doctets);
+            active_flow
+                .get_mut(&reverse_key)
+                .unwrap()
+                .set_last(packet.header.ts.tv_sec as u32);
+        }
+        else {
+            active_flow
+                .get_mut(&key_value)
+                .unwrap()
+                .set_d_pkts(cur_dpkt + 1);
+            active_flow
+                .get_mut(&key_value)
+                .unwrap()
+                .set_d_octets(cur_octets + doctets);
+            active_flow
+                .get_mut(&key_value)
+                .unwrap()
+                .set_last(packet.header.ts.tv_sec as u32);
+        }
+
         let keys: Vec<Key> = active_flow.keys().cloned().collect();
-        //println!("keys: {:?}", keys);
-        //println!("flags : {:?},{:?},{:?},{:?},{:?},{:?},{:?} ",fin,syn,rst,psh,ack,urg,flags);
         for key in keys {
             let flow = active_flow.get(&key).unwrap();
             if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)) || fin == 1 {
@@ -100,6 +118,7 @@ pub async fn netflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u3
     let tasks = task::spawn(async {
         exporter(records, file).await;
     });
+    
     let result = tasks.await;
     println!("result: {:?}", result);
 }

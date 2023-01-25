@@ -3,10 +3,10 @@ use std::net::Ipv4Addr;
 #[derive(Debug, Clone, PartialEq , Eq)]
 pub struct FluereFlow {
     header: FluereHeader,
-    records: Vec<V5Record>,
+    records: Vec<FluereRecord>,
 }
 impl FluereFlow {
-    pub fn new(header: FluereHeader, records: Vec<FluereRecord>) -> V5Netflow {
+    pub fn new(header: FluereHeader, records: Vec<FluereRecord>) -> FluereFlow {
         FluereFlow { header, records }
     }
 }
@@ -47,6 +47,9 @@ pub struct FluereRecord {
     last: u32,
     src_port: u16,
     dst_port: u16,
+    min_pkt:u64,
+    max_pkt:u64,
+    
     fin: u8,
     syn: u8,
     rst: u8,
@@ -95,6 +98,8 @@ impl FluereRecord {
             flags,
             prot,
             tos,
+            min_pkt: todo!(),
+            max_pkt: todo!(),
         }
     }
     pub fn set_d_pkts(&mut self, d_pkts: u32) {

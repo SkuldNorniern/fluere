@@ -1,5 +1,5 @@
 use std::net::Ipv4Addr;
-use super::protocols::
+
 use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::{Ipv4Option, Ipv4Packet};
 use pnet::packet::Packet as PnetPacket;

@@ -9,11 +9,11 @@ use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
 use crate::net::parser::{dscp_to_tos, parse_etherprotocol, parse_ipv4, protocol_to_number};
-use crate::net::types::{Key, V5Record, MacAddress};
+use crate::net::types::{Key, V5Record};
 
 use std::net::Ipv4Addr;
 
-pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, Key, V5Record), NetError> {
+pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, V5Record), NetError> {
     let e = EthernetPacket::new(packet.data).unwrap();
     let i = Ipv4Packet::new(e.payload()).unwrap();
     let protocol = protocol_to_number(i.get_next_level_protocol());
@@ -73,35 +73,22 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, Key, V5Record), NetErr
     let _doctets = i.get_total_length() as u32;
     //Destination address prefix mask bits
     let dst_mask = 0;
-    let src_mac = MacAddress::new(e.get_source().into());
-    let dst_mac = MacAddress::new(e.get_destination().into());
-
     let key_value = Key {
         src_ip,
         src_port,
         dst_ip,
         dst_port,
         protocol,
-        src_mac,
-        dst_mac,
     };
-    let key_reverse_value = Key {
+    let _key_reverse_value = Key {
         dst_ip,
         dst_port,
         src_ip,
         src_port,
         protocol,
-        dst_mac,
-        src_mac,
     };
-    let tos_convert_result = dscp_to_tos(i.get_dscp());
-    let tos = match tos_convert_result {
-            Ok(_) => tos_convert_result.unwrap(),
-            Err(_) => 0,
-        };
     Ok((
         key_value,
-        key_reverse_value,
         V5Record::new(
             i.get_source(),
             i.get_destination(),
@@ -123,7 +110,7 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, Key, V5Record), NetErr
             urg as u8,
             flags,
             protocol,
-            tos,
+            dscp_to_tos(i.get_dscp()),
             src_as,
             dst_as,
             src_mask,

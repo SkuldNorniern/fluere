@@ -10,3 +10,9 @@ pub enum NetError {
     #[snafu(display("unknown IP version `{version}`"))]
     UnknownIPVersion { version: String },
 }
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum ParseError {
+    #[snafu(display("unexpected dscp `{dscp}`"))]
+    UnknownDSCP { dscp: u8 },
+}
