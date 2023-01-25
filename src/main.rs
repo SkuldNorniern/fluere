@@ -129,7 +129,8 @@ async fn main() {
             let interval: u64 = interval.parse().unwrap();
             println!("Interface {} selected", interface);
             //net::packet_capture(interface);
-            net::online_flows::packet_capture(csv, interface, duration, interval, timeout).await;
+            net::online_fluereflow::packet_capture(csv, interface, duration, interval, timeout)
+                .await;
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
@@ -139,7 +140,7 @@ async fn main() {
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u32 = timeout.parse().unwrap();
 
-            net::netflow_fileparse(csv, file, timeout).await;
+            net::fluereflow_fileparse(csv, file, timeout).await;
             //net::netflow(_file, _csv);
         }
         Some(("pcap", args)) => {

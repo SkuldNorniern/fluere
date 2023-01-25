@@ -8,7 +8,7 @@ use super::interface::get_interface;
 
 use crate::net::flow::flow_convert;
 use crate::net::types::{Key, V5Record};
-use crate::utils::{cur_time_file, exporter};
+use crate::utils::{cur_time_file, v5_exporter};
 
 use std::collections::HashMap;
 use std::fs;
@@ -45,7 +45,6 @@ pub async fn packet_capture(
     let mut active_flow: HashMap<Key, V5Record> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
-        
         //println!("received packet");
         //println!("time: {}",packet.header.ts.tv_sec);
         /*let e = EthernetPacket::new(packet.data).unwrap();
@@ -129,26 +128,26 @@ pub async fn packet_capture(
             Ok(_) => (),
             Err(_) => continue,
         };
-        let (key_value,reverse_key, flowdata) = convert_result.unwrap();
+        let (key_value, reverse_key, flowdata) = convert_result.unwrap();
         let mut is_reverse = false;
         //pushing packet in to active_flows if it is not present
         if active_flow.get(&key_value).is_none() {
             if active_flow.get(&reverse_key).is_none() {
                 active_flow.insert(key_value, flowdata);
                 println!("flow established");
-            }
-            else {
+            } else {
                 is_reverse = true;
             }
         }
 
         let doctets = flowdata.get_d_octets();
         let fin = flowdata.get_fin();
-        let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
-        let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
+
         //println!("active flows: {:?}", active_flow.len());
         //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
         if is_reverse {
+            let cur_dpkt = active_flow.get(&reverse_key).unwrap().get_d_pkts();
+            let cur_octets = active_flow.get(&reverse_key).unwrap().get_d_octets();
             active_flow
                 .get_mut(&reverse_key)
                 .unwrap()
@@ -161,8 +160,9 @@ pub async fn packet_capture(
                 .get_mut(&reverse_key)
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
-        }
-        else {
+        } else {
+            let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
+            let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
             active_flow
                 .get_mut(&key_value)
                 .unwrap()
@@ -176,9 +176,7 @@ pub async fn packet_capture(
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
         }
-        //println!("after first: {:?}", active_flow.get(&key_value).unwrap().get_first());
-        //println!("after last: {:?}", active_flow.get(&key_value).unwrap().get_last());
-        //println!("packet_ts0: {:?}",packet.header.ts.tv_sec as u32);
+
         let keys: Vec<Key> = active_flow.keys().cloned().collect();
         //println!("keys: {:?}", keys);
         //println!("flags : {:?},{:?},{:?},{:?},{:?},{:?},{:?} ",fin,syn,rst,psh,ack,urg,flags);
@@ -194,7 +192,7 @@ pub async fn packet_capture(
         if last_export.elapsed() >= Duration::from_millis(interval) {
             let cloned_records = records.clone();
             let tasks = task::spawn(async {
-                exporter(cloned_records, file).await;
+                v5_exporter(cloned_records, file).await;
             });
             let file_path = cur_time_file(csv_file, file_dir).await;
             file = fs::File::create(file_path).unwrap();
@@ -213,7 +211,7 @@ pub async fn packet_capture(
     println!("Captured in {:?}", start.elapsed());
 
     let tasks = task::spawn(async {
-        exporter(records, file).await;
+        v5_exporter(records, file).await;
     });
 
     let result = tasks.await;

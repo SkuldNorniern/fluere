@@ -9,11 +9,13 @@ use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
 use crate::net::parser::{dscp_to_tos, parse_etherprotocol, parse_ipv4, protocol_to_number};
-use crate::net::types::{Key, MacAddress, V5Record};
+use crate::net::types::{FluereRecord, Key, MacAddress};
 
 use std::net::Ipv4Addr;
 
-pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, Key, V5Record), NetError> {
+pub fn fluereflow_convert(
+    packet: pcap::Packet,
+) -> Result<(Key, Key,u32, (u32, u32, u32, u32, u32, u32, u32, u32, u32), FluereRecord), NetError> {
     let e = EthernetPacket::new(packet.data).unwrap();
     let i = Ipv4Packet::new(e.payload()).unwrap();
     let protocol = protocol_to_number(i.get_next_level_protocol());
@@ -46,33 +48,56 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, Key, V5Record), NetErr
             })
         } //panic!("Unknown protocol {:?}", i),
     };
-    // TCP flags
-    let (fin, syn, rst, psh, ack, urg, flags) = match protocol {
+    // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
+    let flags = match protocol {
         6 => {
             let tcp = TcpPacket::new(i.payload()).unwrap();
             let tcp_flags = tcp.get_flags();
 
             (
-                tcp_flags & 0x01,
-                tcp_flags & 0x02,
-                tcp_flags & 0x04,
-                tcp_flags & 0x08,
-                tcp_flags & 0x10,
-                tcp_flags & 0x20,
-                tcp_flags,
+                match tcp_flags & 0x01 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x02 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x04 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x08 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x10 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x20 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x40 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x80 {
+                    0 => 0,
+                    _ => 1,
+                },
+                match tcp_flags & 0x100 {
+                    0 => 0,
+                    _ => 1,
+                },
             )
         }
-        _ => (0, 0, 0, 0, 0, 0, 0),
+        _ => (0, 0, 0, 0, 0, 0, 0, 0, 0),
     };
 
     //	Autonomous system number of the source and destination, either origin or peer
-    let src_as: u16 = 0;
-    let dst_as: u16 = 0;
-    //Source address prefix mask bits
-    let src_mask = 0;
-    let _doctets = i.get_total_length() as u32;
-    //Destination address prefix mask bits
-    let dst_mask = 0;
+    let doctets = i.get_total_length() as u32;
     let src_mac = MacAddress::new(e.get_source().into());
     let dst_mac = MacAddress::new(e.get_destination().into());
 
@@ -102,33 +127,34 @@ pub fn flow_convert(packet: pcap::Packet) -> Result<(Key, Key, V5Record), NetErr
     Ok((
         key_value,
         key_reverse_value,
-        V5Record::new(
+        doctets,
+        flags,
+        FluereRecord::new(
             i.get_source(),
             i.get_destination(),
-            Ipv4Addr::new(0, 0, 0, 0),
-            0,
-            0,
             0,
             0,
             packet.header.ts.tv_sec as u32,
             packet.header.ts.tv_sec as u32,
             src_port,
             dst_port,
+            i.get_total_length() as u32,
+            i.get_total_length() as u32,
+            i.get_ttl(),
+            i.get_ttl(),
             0,
-            fin as u8,
-            syn as u8,
-            rst as u8,
-            psh as u8,
-            ack as u8,
-            urg as u8,
-            flags,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
             protocol,
             tos,
-            src_as,
-            dst_as,
-            src_mask,
-            dst_mask,
-            0,
         ),
     ))
 }
