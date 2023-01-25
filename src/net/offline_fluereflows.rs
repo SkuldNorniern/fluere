@@ -42,10 +42,10 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
             if active_flow.get(&reverse_key).is_none() {
                 active_flow.insert(key_value, flowdata);
                 is_reverse = false;
-                println!("flow established");
+                //println!("flow established");
             } else {
                 is_reverse = true;
-                println!("flow reversed");
+                //println!("flow reversed");
             }
         } else {
             is_reverse = false;

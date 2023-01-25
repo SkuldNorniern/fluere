@@ -6,7 +6,7 @@ use std::process::exit;
 
 fn cli() -> Command {
     Command::new("fluere")
-        .version("0.2.0")
+        .version("0.2.1")
         .author("Skuld Norniern. <skuldnorniern@gmail.com>")
         .about("Netflow Capture Tool")
         .subcommand_required(true)

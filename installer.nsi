@@ -1,6 +1,6 @@
 Name "Fluere Netflow Collector"
 # name installer
-OutFile "fluere-0.2.0-installer.exe"
+OutFile "fluere-0.2.1-installer.exe"
 
 InstallDir "$PROGRAMFILES\fluere"
 
