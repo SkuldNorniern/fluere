@@ -2,7 +2,7 @@ mod ether;
 pub mod ipv4;
 mod key;
 mod netflowv5;
-//mod netflowv5_serde;
+mod fluereflow;
 mod protocols;
 //mod v4packet_pnet;
 
