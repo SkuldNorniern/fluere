@@ -39,6 +39,7 @@ pub async fn packet_capture(
     let mut last_export = Instant::now();
     let file_path = cur_time_file(csv_file, file_dir).await;
     let mut file = fs::File::create(file_path).unwrap();
+    let mut is_reverse = false;
     //let mut wtr = csv::Writer::from_writer(file);
 
     let mut records: Vec<FluereRecord> = Vec::new();
@@ -51,15 +52,18 @@ pub async fn packet_capture(
             Err(_) => continue,
         };
         let (key_value, reverse_key,doctets, flags, flowdata) = convert_result.unwrap();
-        let mut is_reverse = false;
         //pushing packet in to active_flows if it is not present
         if active_flow.get(&key_value).is_none() {
             if active_flow.get(&reverse_key).is_none() {
                 active_flow.insert(key_value, flowdata);
+                is_reverse = false;
                 println!("flow established");
             } else {
                 is_reverse = true;
             }
+        }
+        else {
+            is_reverse = false;
         }
 
         let (fin , syn, rst, psh, ack, urg, ece, cwr,ns) = flags;
@@ -71,10 +75,10 @@ pub async fn packet_capture(
             let cur_dpkt = active_flow.get(&reverse_key).unwrap().get_d_pkts();
             let cur_inpkt = active_flow.get(&reverse_key).unwrap().get_in_pkts();
             let cur_octets = active_flow.get(&reverse_key).unwrap().get_d_octets();
-            let min_pkt = active_flow.get(&key_value).unwrap().get_min_pkt();
-            let max_pkt = active_flow.get(&key_value).unwrap().get_max_pkt();
-            let min_ttl = active_flow.get(&key_value).unwrap().get_min_ttl();
-            let max_ttl = active_flow.get(&key_value).unwrap().get_max_ttl();
+            let min_pkt = active_flow.get(&reverse_key).unwrap().get_min_pkt();
+            let max_pkt = active_flow.get(&reverse_key).unwrap().get_max_pkt();
+            let min_ttl = active_flow.get(&reverse_key).unwrap().get_min_ttl();
+            let max_ttl = active_flow.get(&reverse_key).unwrap().get_max_ttl();
             let cur_fin = active_flow.get(&reverse_key).unwrap().get_fin_cnt();
             let cur_syn = active_flow.get(&reverse_key).unwrap().get_syn_cnt();
             let cur_rst = active_flow.get(&reverse_key).unwrap().get_rst_cnt();
@@ -84,6 +88,8 @@ pub async fn packet_capture(
             let cur_ece = active_flow.get(&reverse_key).unwrap().get_ece_cnt();
             let cur_cwr = active_flow.get(&reverse_key).unwrap().get_cwr_cnt();
             let cur_ns = active_flow.get(&reverse_key).unwrap().get_ns_cnt();
+            let cur_inbytes = active_flow.get(&reverse_key).unwrap().get_in_bytes();
+            
 
             active_flow
                 .get_mut(&reverse_key)
@@ -152,6 +158,10 @@ pub async fn packet_capture(
             active_flow
                 .get_mut(&reverse_key)
                 .unwrap()
+                .set_in_bytes(cur_inbytes + doctets);
+            active_flow
+                .get_mut(&reverse_key)
+                .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
         } else {
             let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
@@ -170,7 +180,8 @@ pub async fn packet_capture(
             let cur_ece = active_flow.get(&key_value).unwrap().get_ece_cnt();
             let cur_cwr = active_flow.get(&key_value).unwrap().get_cwr_cnt();
             let cur_ns = active_flow.get(&key_value).unwrap().get_ns_cnt();
-
+            let cur_outbytes = active_flow.get(&key_value).unwrap().get_out_bytes();
+            
             active_flow
                 .get_mut(&key_value)
                 .unwrap()
@@ -238,6 +249,10 @@ pub async fn packet_capture(
             active_flow
                 .get_mut(&key_value)
                 .unwrap()
+                .set_out_bytes(cur_outbytes + doctets);
+            active_flow
+                .get_mut(&key_value)
+                .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
         }
 
@@ -268,7 +283,7 @@ pub async fn packet_capture(
             last_export = Instant::now();
         }
         // Check if the duration has been reached
-        if start.elapsed() >= Duration::from_millis(duration) {
+        if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
             break;
         }
     }
