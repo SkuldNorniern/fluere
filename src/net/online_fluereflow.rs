@@ -161,6 +161,12 @@ pub async fn packet_capture(
                 .get_mut(&reverse_key)
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
+
+            if fin ==1 || rst ==1{
+                println!("flow finished");
+                records.push(*active_flow.get(&reverse_key).unwrap());
+                active_flow.remove(&reverse_key);
+            }
         } else {
             let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
             let cur_outpkt = active_flow.get(&key_value).unwrap().get_out_pkts();
@@ -252,24 +258,28 @@ pub async fn packet_capture(
                 .get_mut(&key_value)
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
-        }
 
-        let keys: Vec<Key> = active_flow.keys().cloned().collect();
-        //println!("keys: {:?}", keys);
-        //println!("flags : {:?},{:?},{:?},{:?},{:?},{:?},{:?} ",fin,syn,rst,psh,ack,urg,flags);
-        for key in keys {
-            let flow = active_flow.get(&key).unwrap();
-            if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout))
-                || fin == 1
-                || rst == 1
-            {
-                println!("flow expired");
-                records.push(*flow);
-                active_flow.remove(&key);
+            if fin == 1 || rst ==1{
+                println!("flow finished");
+                records.push(*active_flow.get(&key_value).unwrap());
+                active_flow.remove(&key_value);
             }
         }
+
+        //println!("keys: {:?}", keys);
+        //println!("flags : {:?},{:?},{:?},{:?},{:?},{:?},{:?} ",fin,syn,rst,psh,ack,urg,flags);
+        
         // Export flows if the interval has been reached
         if last_export.elapsed() >= Duration::from_millis(interval) {
+            for (key, flow) in active_flow.clone().iter(){
+                //let flow = active_flow.get(&key).unwrap();
+                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)
+                {
+                    println!("flow expired");
+                    records.push(*flow);
+                    active_flow.remove(key);
+                }
+            }
             let cloned_records = records.clone();
             let tasks = task::spawn(async {
                 fluere_exporter(cloned_records, file).await;
@@ -285,6 +295,15 @@ pub async fn packet_capture(
         }
         // Check if the duration has been reached
         if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
+            for (key, flow) in active_flow.clone().iter(){
+                //let flow = active_flow.get(&key).unwrap();
+                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)
+                {
+                    println!("flow expired");
+                    records.push(*flow);
+                    active_flow.remove(key);
+                }
+            }
             break;
         }
     }
