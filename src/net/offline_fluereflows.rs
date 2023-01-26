@@ -147,6 +147,12 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
                 .get_mut(&reverse_key)
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
+
+            if fin==1 ||rst ==1{
+                //println!("flow finished");
+                records.push(*active_flow.get(&reverse_key).unwrap());
+                active_flow.remove(&reverse_key);
+            }
         } else {
             let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
             let cur_outpkt = active_flow.get(&key_value).unwrap().get_out_pkts();
@@ -238,25 +244,26 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
                 .get_mut(&key_value)
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
+
+            if fin == 1 || rst ==1{
+                //println!("flow finished");
+                records.push(*active_flow.get(&key_value).unwrap());
+                active_flow.remove(&key_value);
+            }
         }
 
-        let keys: Vec<Key> = active_flow.keys().cloned().collect();
-        //println!("keys: {:?}", keys);
-        //println!("flags : {:?},{:?},{:?},{:?},{:?},{:?},{:?} ",fin,syn,rst,psh,ack,urg,flags);
-        for key in keys {
-            let flow = active_flow.get(&key).unwrap();
-            if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout))
-                || fin == 1
-                || rst == 1
+        for (key, flow) in active_flow.clone().iter(){
+            //let flow = active_flow.get(&key).unwrap();
+            if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)
             {
                 //println!("flow expired");
                 records.push(*flow);
-                active_flow.remove(&key);
+                active_flow.remove(key);
             }
         }
     }
     println!("Converted in {:?}", start.elapsed());
-
+    
     let tasks = task::spawn(async {
         fluere_exporter(records, file).await;
     });
