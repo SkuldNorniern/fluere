@@ -20,6 +20,7 @@ pub async fn packet_capture(
     duration: u64,
     interval: u64,
     flow_timeout: u32,
+    verbose: u8,
 ) {
     let interface = get_interface(interface_name);
     let mut cap = Capture::from_device(interface)
@@ -45,6 +46,9 @@ pub async fn packet_capture(
     let mut active_flow: HashMap<Key, V5Record> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
+        if verbose >= 3 {
+            println!("received packet");
+        }
         //println!("received packet");
         //println!("time: {}",packet.header.ts.tv_sec);
         /*let e = EthernetPacket::new(packet.data).unwrap();
@@ -134,7 +138,9 @@ pub async fn packet_capture(
         if active_flow.get(&key_value).is_none() {
             if active_flow.get(&reverse_key).is_none() {
                 active_flow.insert(key_value, flowdata);
-                println!("flow established");
+                if verbose >= 2 {
+                    println!("flow established");
+                }
             } else {
                 is_reverse = true;
             }
@@ -183,7 +189,9 @@ pub async fn packet_capture(
         for key in keys {
             let flow = active_flow.get(&key).unwrap();
             if (flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)) || fin == 1 {
-                println!("flow expired");
+                if verbose >= 2 {
+                    println!("flow expired");
+                }
                 records.push(*flow);
                 active_flow.remove(&key);
             }
@@ -195,10 +203,12 @@ pub async fn packet_capture(
                 v5_exporter(cloned_records, file).await;
             });
             let file_path = cur_time_file(csv_file, file_dir).await;
-            file = fs::File::create(file_path).unwrap();
+            file = fs::File::create(file_path.clone()).unwrap();
 
             let result = tasks.await;
-            println!("result: {:?}", result);
+            if verbose >= 1 {
+                println!("Export {} result: {:?}",file_path, result);
+            }
             //println!("records {:?}", records);
             records.clear();
             last_export = Instant::now();
@@ -208,13 +218,16 @@ pub async fn packet_capture(
             break;
         }
     }
-    println!("Captured in {:?}", start.elapsed());
-
+    if verbose >= 1 {
+        println!("Captured in {:?}", start.elapsed());
+    }
     let tasks = task::spawn(async {
         v5_exporter(records, file).await;
     });
 
     let result = tasks.await;
-    println!("result: {:?}", result);
+    if verbose >= 1 {
+        println!("Exporting task excutation result: {:?}", result);
+    }
     //println!("records {:?}", records);
 }
