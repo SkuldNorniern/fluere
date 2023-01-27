@@ -47,6 +47,13 @@ fn cli() -> Command {
                         .long("interval"),
                 )
                 .arg(
+                    Arg::new("verbose")
+                        //.about("List of network interfaces")
+                        .default_value("1")
+                        .short('v')
+                        .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
+                )
+                .arg(
                     Arg::new("list")
                         //.about("List of network interfaces")
                         .short('l')
@@ -127,9 +134,11 @@ async fn main() {
             let duration: u64 = duration.parse().unwrap();
             let interval = args.get_one::<String>("interval").expect("default");
             let interval: u64 = interval.parse().unwrap();
+            let verbose = args.get_one::<String>("verbose").expect("default");
+            let verbose: u8 = verbose.parse().unwrap();
             println!("Interface {} selected", interface);
             //net::packet_capture(interface);
-            net::online_fluereflow::packet_capture(csv, interface, duration, interval, timeout)
+            net::online_fluereflow::packet_capture(csv, interface, duration, interval, timeout, verbose)
                 .await;
             //net::netflow(_interface);
         }

@@ -24,6 +24,7 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
     let start = Instant::now();
     let file_path = cur_time_file(csv_file, file_dir).await;
     let file = fs::File::create(file_path).unwrap();
+    
     let mut is_reverse = false;
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -148,11 +149,11 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
 
-            if fin==1 ||rst ==1{
+            //if fin==1 ||rst ==1{
                 //println!("flow finished");
-                records.push(*active_flow.get(&reverse_key).unwrap());
-                active_flow.remove(&reverse_key);
-            }
+                //records.push(*active_flow.get(&reverse_key).unwrap());
+                //active_flow.remove(&reverse_key);
+            //}
         } else {
             let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
             let cur_outpkt = active_flow.get(&key_value).unwrap().get_out_pkts();
@@ -245,14 +246,13 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
 
-            if fin == 1 || rst ==1{
+            //if fin == 1 || rst ==1{
                 //println!("flow finished");
-                records.push(*active_flow.get(&key_value).unwrap());
-                active_flow.remove(&key_value);
-            }
+                //records.push(*active_flow.get(&key_value).unwrap());
+                //active_flow.remove(&key_value);
+            //}
         }
-
-        for (key, flow) in active_flow.clone().iter(){
+        /*for (key, flow) in active_flow.clone().iter(){
             //let flow = active_flow.get(&key).unwrap();
             if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)
             {
@@ -260,10 +260,12 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
                 records.push(*flow);
                 active_flow.remove(key);
             }
-        }
+        }*/
     }
     println!("Converted in {:?}", start.elapsed());
-    
+    for (key, flow) in active_flow.clone().iter(){
+        records.push(*flow);
+    }
     let tasks = task::spawn(async {
         fluere_exporter(records, file).await;
     });
