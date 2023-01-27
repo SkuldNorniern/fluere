@@ -21,6 +21,7 @@ pub async fn packet_capture(
     duration: u64,
     interval: u64,
     flow_timeout: u32,
+    sleep_windows: u64,
     verbose: u8,
 ) {
     let interface = get_interface(interface_name);
@@ -292,14 +293,14 @@ pub async fn packet_capture(
             if verbose >= 3 {
                 println!("Slow down the loop for windows");
             }
-            sleep(Duration::from_millis(2)).await;
+            sleep(Duration::from_millis(sleep_windows)).await;
         }
 
         // Export flows if the interval has been reached
         if last_export.elapsed() >= Duration::from_millis(interval) {
             for (key, flow) in active_flow.clone().iter() {
                 //let flow = active_flow.get(&key).unwrap();
-                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout/1000) {
+                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout / 1000) {
                     if verbose >= 2 {
                         println!("flow expired");
                     }
@@ -340,6 +341,9 @@ pub async fn packet_capture(
     }
     if verbose >= 1 {
         println!("Captured in {:?}", start.elapsed());
+    }
+    for (_key, flow) in active_flow.clone().iter() {
+        records.push(*flow);
     }
     let tasks = task::spawn(async {
         fluere_exporter(records, file).await;
