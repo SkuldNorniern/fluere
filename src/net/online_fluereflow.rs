@@ -3,6 +3,7 @@ extern crate csv;
 use pcap::Capture;
 
 use tokio::task;
+use tokio::time::sleep;
 
 use super::interface::get_interface;
 
@@ -32,7 +33,11 @@ pub async fn packet_capture(
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => if verbose >= 1{println!("Created directory: {}", file_dir)},
+        Ok(_) => {
+            if verbose >= 1 {
+                println!("Created directory: {}", file_dir)
+            }
+        }
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
 
@@ -45,13 +50,13 @@ pub async fn packet_capture(
 
     let mut records: Vec<FluereRecord> = Vec::new();
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
-    let mut packet_count =0;
+    let mut packet_count = 0;
 
     while let Ok(packet) = cap.next_packet() {
         if verbose >= 3 {
             println!("received packet");
         }
-        
+
         let convert_result = fluereflow_convert(packet.clone());
         match convert_result {
             Ok(_) => (),
@@ -63,8 +68,8 @@ pub async fn packet_capture(
             if active_flow.get(&reverse_key).is_none() {
                 active_flow.insert(key_value, flowdata);
                 is_reverse = false;
-                if verbose >= 2{
-                println!("flow established");
+                if verbose >= 2 {
+                    println!("flow established");
                 }
             } else {
                 is_reverse = true;
@@ -170,8 +175,8 @@ pub async fn packet_capture(
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
 
-            if fin ==1 || rst ==1{
-                if verbose >= 2{
+            if fin == 1 || rst == 1 {
+                if verbose >= 2 {
                     println!("flow finished");
                 }
                 records.push(*active_flow.get(&reverse_key).unwrap());
@@ -269,8 +274,8 @@ pub async fn packet_capture(
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
 
-            if fin == 1 || rst ==1{
-                if verbose >= 2{
+            if fin == 1 || rst == 1 {
+                if verbose >= 2 {
                     println!("flow finished");
                 }
                 records.push(*active_flow.get(&key_value).unwrap());
@@ -283,26 +288,19 @@ pub async fn packet_capture(
 
         packet_count += 1;
         // slow down the loop for windows to avoid random shutdown
-        if packet_count % 10000 == 0 && cfg!(target_os = "windows") {
-            println!("Slow down the loop for windows");
-            for (key, flow) in active_flow.clone().iter(){
-                //let flow = active_flow.get(&key).unwrap();
-                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)
-                {
-                    //println!("flow expired");
-                    records.push(*flow);
-                    active_flow.remove(key);
-                }
-            }               
+        if packet_count % 10 == 0 && cfg!(target_os = "windows") {
+            if verbose >= 3 {
+                println!("Slow down the loop for windows");
+            }
+            sleep(Duration::from_millis(2)).await;
         }
 
         // Export flows if the interval has been reached
         if last_export.elapsed() >= Duration::from_millis(interval) {
-            for (key, flow) in active_flow.clone().iter(){
+            for (key, flow) in active_flow.clone().iter() {
                 //let flow = active_flow.get(&key).unwrap();
-                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)
-                {
-                    if verbose >= 2{
+                if flow.get_last() < (packet.header.ts.tv_usec as u32 - flow_timeout) {
+                    if verbose >= 2 {
                         println!("flow expired");
                     }
                     records.push(*flow);
@@ -318,21 +316,19 @@ pub async fn packet_capture(
 
             let result = tasks.await;
             if verbose >= 1 {
-                println!("Export {} result: {:?}",file_path, result);
+                println!("Export {} result: {:?}", file_path, result);
             }
             //println!("records {:?}", records);
             records.clear();
             last_export = Instant::now();
         }
 
-
         // Check if the duration has been reached
         if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
-            for (key, flow) in active_flow.clone().iter(){
+            for (key, flow) in active_flow.clone().iter() {
                 //let flow = active_flow.get(&key).unwrap();
-                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout)
-                {
-                    if verbose >= 2{
+                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout) {
+                    if verbose >= 2 {
                         println!("flow expired");
                     }
                     records.push(*flow);

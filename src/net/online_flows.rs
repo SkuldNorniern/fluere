@@ -207,7 +207,7 @@ pub async fn packet_capture(
 
             let result = tasks.await;
             if verbose >= 1 {
-                println!("Export {} result: {:?}",file_path, result);
+                println!("Export {} result: {:?}", file_path, result);
             }
             //println!("records {:?}", records);
             records.clear();

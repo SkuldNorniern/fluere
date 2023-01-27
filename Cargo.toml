@@ -1,6 +1,6 @@
 [package]
 name = "fluere"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 
@@ -12,7 +12,7 @@ tokio = { version = "1.22", features = ["full","macros", "rt-multi-thread"] }
 pnet = { version = "0.31.0", features = ["std"] }
 pnet_macros_support = "0.31.0"
 pnet_macros = "0.31.0"
-pcap = "1.0.0"
+pcap = "0.10.0"
 chrono = "0.4.23"
 libc = "0.2"
 byteorder = "1.4.3"
