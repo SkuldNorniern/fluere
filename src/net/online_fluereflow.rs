@@ -299,7 +299,7 @@ pub async fn packet_capture(
         if last_export.elapsed() >= Duration::from_millis(interval) {
             for (key, flow) in active_flow.clone().iter() {
                 //let flow = active_flow.get(&key).unwrap();
-                if flow.get_last() < (packet.header.ts.tv_usec as u32 - flow_timeout) {
+                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout/1000) {
                     if verbose >= 2 {
                         println!("flow expired");
                     }
