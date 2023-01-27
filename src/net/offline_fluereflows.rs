@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::time::Instant;
 
-pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout: u32) {
+pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout: u32) {
     let mut cap = Capture::from_file(file_name).unwrap();
 
     let file_dir = "./output";
@@ -24,7 +24,7 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
     let start = Instant::now();
     let file_path = cur_time_file(csv_file, file_dir).await;
     let file = fs::File::create(file_path).unwrap();
-    
+
     let mut is_reverse = false;
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -150,9 +150,9 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
                 .set_last(packet.header.ts.tv_sec as u32);
 
             //if fin==1 ||rst ==1{
-                //println!("flow finished");
-                //records.push(*active_flow.get(&reverse_key).unwrap());
-                //active_flow.remove(&reverse_key);
+            //println!("flow finished");
+            //records.push(*active_flow.get(&reverse_key).unwrap());
+            //active_flow.remove(&reverse_key);
             //}
         } else {
             let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
@@ -247,9 +247,9 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
                 .set_last(packet.header.ts.tv_sec as u32);
 
             //if fin == 1 || rst ==1{
-                //println!("flow finished");
-                //records.push(*active_flow.get(&key_value).unwrap());
-                //active_flow.remove(&key_value);
+            //println!("flow finished");
+            //records.push(*active_flow.get(&key_value).unwrap());
+            //active_flow.remove(&key_value);
             //}
         }
         /*for (key, flow) in active_flow.clone().iter(){
@@ -263,7 +263,7 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, flow_timeout:
         }*/
     }
     println!("Converted in {:?}", start.elapsed());
-    for (key, flow) in active_flow.clone().iter(){
+    for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }
     let tasks = task::spawn(async {

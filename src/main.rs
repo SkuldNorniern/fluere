@@ -6,7 +6,7 @@ use std::process::exit;
 
 fn cli() -> Command {
     Command::new("fluere")
-        .version("0.2.2")
+        .version("0.2.3")
         .author("Skuld Norniern. <skuldnorniern@gmail.com>")
         .about("Netflow Capture Tool")
         .subcommand_required(true)
@@ -136,10 +136,13 @@ async fn main() {
             let interval: u64 = interval.parse().unwrap();
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
-            println!("Interface {} selected", interface);
-            //net::packet_capture(interface);
-            net::online_fluereflow::packet_capture(csv, interface, duration, interval, timeout, verbose)
-                .await;
+            if verbose >= 1 {
+                println!("Interface {} selected", interface);
+            }//net::packet_capture(interface);
+            net::online_fluereflow::packet_capture(
+                csv, interface, duration, interval, timeout, verbose,
+            )
+            .await;
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
