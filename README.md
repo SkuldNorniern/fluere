@@ -1,6 +1,8 @@
 # Fluere
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere?ref=badge_shield)
 [![Rust](https://github.com/SkuldNorniern/fluere/actions/workflows/rust.yml/badge.svg)](https://github.com/SkuldNorniern/fluere/actions/workflows/rust.yml)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/9bb831ce9bab4ed394763bf9d6583773)](https://www.codacy.com/gh/SkuldNorniern/fluere/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=SkuldNorniern/fluere&amp;utm_campaign=Badge_Grade)
+
 ## Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool
 
 <p align="center" align="right">
@@ -40,15 +42,15 @@ This tool is designed to capture network packets into pcap format and convert th
 Download the latest release of the tool from the releases page.
 ``` MacOS, Linux installation will be provided in the future ``` 
 
-- Windows
+-  Windows
 
 Run the installer.exe file and check if the enviroment variable has been setup correctly (there is a bug)
 
-- MacOS
+-  MacOS
 WIP
 
 Use ths Cargo Build --release to get the program or Cargo run 
-- Linux
+-  Linux
 WIP
 
 Use ths Cargo Build --release to get the program or Cargo run
@@ -94,7 +96,7 @@ On linux you may need to install libpcap-dev or npcap on Windows
 Make sure to have enough storage space on your machine to save the captured packets or netflow data.
 
 ## Support
-Please contact the developer at [skuldnorniern@gmail.com] or make a issue on the github for any support or bug reports. Thank you for using our tool!
+Please contact the developer at skuldnorniern@gmail.com or make a issue on the github for any support or bug reports. Thank you for using our tool!
 
 
 
