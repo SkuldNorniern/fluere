@@ -1,8 +1,8 @@
 # Fluere
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere?ref=badge_shield)
-
+[![Rust](https://github.com/SkuldNorniern/fluere/actions/workflows/rust.yml/badge.svg)](https://github.com/SkuldNorniern/fluere/actions/workflows/rust.yml)
 ## Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool
-----
+
 <p align="center" align="right">
   Supported Platforms
 </p>
