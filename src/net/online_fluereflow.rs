@@ -12,6 +12,7 @@ use crate::net::types::{FluereRecord, Key};
 use crate::utils::{cur_time_file, fluere_exporter};
 
 use std::collections::HashMap;
+
 use std::fs;
 use std::time::{Duration, Instant};
 
@@ -174,9 +175,7 @@ pub async fn packet_capture(
                     expired_flows.push(*key);
                 }
             }
-            for key in expired_flows {
-                active_flow.remove(&key);
-            }
+            active_flow.retain(|key, _| !expired_flows.contains(key));
             let cloned_records = records.clone();
             let tasks = task::spawn(async {
                 fluere_exporter(cloned_records, file).await;
@@ -204,9 +203,7 @@ pub async fn packet_capture(
                     expired_flows.push(*key);
                 }
             }
-            for key in expired_flows {
-                active_flow.remove(&key);
-            }
+            active_flow.retain(|key, _| !expired_flows.contains(key));
             break;
         }
     }
