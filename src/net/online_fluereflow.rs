@@ -46,7 +46,7 @@ pub async fn packet_capture(
     let mut last_export = Instant::now();
     let file_path = cur_time_file(csv_file, file_dir).await;
     let mut file = fs::File::create(file_path.clone()).unwrap();
-  
+
     //let mut wtr = csv::Writer::from_writer(file);
 
     let mut records: Vec<FluereRecord> = Vec::new();
@@ -66,24 +66,18 @@ pub async fn packet_capture(
         let (key_value, reverse_key, doctets, flags, flowdata) = convert_result.unwrap();
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
-            None => {
-                match active_flow.get(&reverse_key) {
-                    None => {
-                        active_flow.insert(key_value, flowdata);
-                        if verbose >= 2 {
-                            println!("flow established");
-                        }
-
-                        false
-                    },
-                    Some(_) => {
-                        true
+            None => match active_flow.get(&reverse_key) {
+                None => {
+                    active_flow.insert(key_value, flowdata);
+                    if verbose >= 2 {
+                        println!("flow established");
                     }
+
+                    false
                 }
+                Some(_) => true,
             },
-            Some(_) => {
-                false
-            }
+            Some(_) => false,
         };
 
         let (fin, syn, rst, psh, ack, urg, ece, cwr, ns) = flags;
@@ -126,7 +120,7 @@ pub async fn packet_capture(
             }
         } else {
             let flow = active_flow.get_mut(&key_value).unwrap();
-            
+
             flow.set_d_pkts(flow.get_d_pkts() + 1);
             flow.set_out_pkts(flow.get_in_pkts() + 1);
             flow.set_out_bytes(flow.get_in_bytes() + doctets);
@@ -145,7 +139,7 @@ pub async fn packet_capture(
             flow.set_cwr_cnt(flow.get_cwr_cnt() + cwr);
             flow.set_ns_cnt(flow.get_ns_cnt() + ns);
             flow.set_last(packet.header.ts.tv_sec as u32);
-            
+
             if verbose >= 3 {
                 println!("foward flow updated");
             }
