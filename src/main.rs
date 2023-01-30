@@ -96,8 +96,7 @@ fn cli() -> Command {
                         .default_value("1")
                         .short('v')
                         .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
-                )
-                
+                ),
         )
         .subcommand(
             Command::new("pcap")
@@ -177,8 +176,8 @@ async fn main() {
             let timeout: u32 = timeout.parse().unwrap();
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
-            
-            net::fluereflow_fileparse(csv, file, timeout,verbose).await;
+
+            net::fluereflow_fileparse(csv, file, timeout, verbose).await;
             //net::netflow(_file, _csv);
         }
         Some(("pcap", args)) => {
