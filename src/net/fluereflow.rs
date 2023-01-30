@@ -8,7 +8,7 @@ use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
-use crate::net::parser::{dscp_to_tos, parse_etherprotocol, parse_ipv4, protocol_to_number};
+use crate::net::parser::{dscp_to_tos, parse_etherprotocol, parse_ipv4, protocol_to_number, parse_ports, parse_flags};
 use crate::net::types::{FluereRecord, Key, MacAddress};
 
 pub fn fluereflow_convert(
@@ -33,75 +33,18 @@ pub fn fluereflow_convert(
     if i.payload().is_empty() {
         return Err(NetError::EmptyPacket);
     }
-
     let src_ip = i.get_source();
     let dst_ip = i.get_destination();
 
-    let (src_port, dst_port) = match protocol {
-        17 => {
-            let udp = UdpPacket::new(i.payload()).unwrap();
-
-            (udp.get_source(), udp.get_destination())
-        }
-        6 => {
-            let tcp = TcpPacket::new(i.payload()).unwrap();
-
-            (tcp.get_source(), tcp.get_destination())
-        }
-        1 => (0, 0),
-        _ => {
-            return Err(NetError::UnknownProtocol {
-                protocol: protocol.to_string(),
-            })
-        } //panic!("Unknown protocol {:?}", i),
-    };
+    // ports parsing 
+    let parsed_ports = parse_ports(protocol, i.payload());
+    match parsed_ports {
+        Ok(_) => {}
+        Err(e) => return Err(e),
+    }
+    let (src_port, dst_port) = parsed_ports.unwrap();
     // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
-    let flags = match protocol {
-        6 => {
-            let tcp = TcpPacket::new(i.payload()).unwrap();
-            let tcp_flags = tcp.get_flags();
-
-            (
-                match tcp_flags & 0x01 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x02 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x04 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x08 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x10 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x20 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x40 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x80 {
-                    0 => 0,
-                    _ => 1,
-                },
-                match tcp_flags & 0x100 {
-                    0 => 0,
-                    _ => 1,
-                },
-            )
-        }
-        _ => (0, 0, 0, 0, 0, 0, 0, 0, 0),
-    };
+    let flags = parse_flags(protocol, i.payload());
 
     //	Autonomous system number of the source and destination, either origin or peer
     let doctets = i.get_total_length() as u32;
