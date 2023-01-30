@@ -258,6 +258,5 @@ pub fn protocol_to_number(protocol: IpNextHeaderProtocol) -> u8 {
         IpNextHeaderProtocol(253) => 253,
         IpNextHeaderProtocol(254) => 254,
         IpNextHeaderProtocol(255) => 255,
-        _ => 0,
     }
 }

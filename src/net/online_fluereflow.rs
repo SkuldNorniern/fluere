@@ -45,7 +45,7 @@ pub async fn packet_capture(
     let start = Instant::now();
     let mut last_export = Instant::now();
     let file_path = cur_time_file(csv_file, file_dir).await;
-    let mut file = fs::File::create(file_path).unwrap();
+    let mut file = fs::File::create(file_path.clone()).unwrap();
     let mut is_reverse = false;
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -312,13 +312,13 @@ pub async fn packet_capture(
             let tasks = task::spawn(async {
                 fluere_exporter(cloned_records, file).await;
             });
-            let file_path = cur_time_file(csv_file, file_dir).await;
-            file = fs::File::create(file_path.clone()).unwrap();
-
+            
             let result = tasks.await;
             if verbose >= 1 {
                 println!("Export {} result: {:?}", file_path, result);
             }
+            let file_path = cur_time_file(csv_file, file_dir).await;
+            file = fs::File::create(file_path.clone()).unwrap();
             //println!("records {:?}", records);
             records.clear();
             last_export = Instant::now();

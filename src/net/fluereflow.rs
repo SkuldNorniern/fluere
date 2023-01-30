@@ -3,12 +3,12 @@ use pcap;
 use pnet::packet::ethernet::EthernetPacket;
 
 use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::tcp::TcpPacket;
-use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
-use crate::net::parser::{dscp_to_tos, parse_etherprotocol, parse_ipv4, protocol_to_number, parse_ports, parse_flags};
+use crate::net::parser::{
+    dscp_to_tos, parse_etherprotocol, parse_flags, parse_ipv4, parse_ports, protocol_to_number,
+};
 use crate::net::types::{FluereRecord, Key, MacAddress};
 
 pub fn fluereflow_convert(
@@ -36,7 +36,7 @@ pub fn fluereflow_convert(
     let src_ip = i.get_source();
     let dst_ip = i.get_destination();
 
-    // ports parsing 
+    // ports parsing
     let parsed_ports = parse_ports(protocol, i.payload());
     match parsed_ports {
         Ok(_) => {}
