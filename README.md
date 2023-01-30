@@ -34,6 +34,9 @@ Options:
   -h, --help     Print help information
   -V, --version  Print version information
 ```
+<div align="center">
+    <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/main.png" alt="Help Image" width="770" height="401"></img>
+</div>
 
 ## Description
 
