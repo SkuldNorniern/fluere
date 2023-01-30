@@ -12,18 +12,22 @@ use std::collections::HashMap;
 use std::fs;
 use std::time::Instant;
 
-pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout: u32) {
+pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout: u32,verbose: u8) {
     let mut cap = Capture::from_file(file_name).unwrap();
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => println!("Created directory: {}", file_dir),
+        Ok(_) => {
+            if verbose >= 1 {
+                println!("Created directory: {}", file_dir)
+            }
+        }
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
 
     let start = Instant::now();
     let file_path = cur_time_file(csv_file, file_dir).await;
-    let file = fs::File::create(file_path).unwrap();
+    let file = fs::File::create(file_path.clone()).unwrap();
 
     let mut is_reverse = false;
     //let mut wtr = csv::Writer::from_writer(file);
@@ -149,11 +153,13 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
 
-            //if fin==1 ||rst ==1{
-            //println!("flow finished");
-            //records.push(*active_flow.get(&reverse_key).unwrap());
-            //active_flow.remove(&reverse_key);
-            //}
+            if fin == 1 || rst == 1 {
+                if verbose >= 2 {
+                    println!("flow finished");
+                }
+                records.push(*active_flow.get(&reverse_key).unwrap());
+                active_flow.remove(&reverse_key);
+            }
         } else {
             let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
             let cur_outpkt = active_flow.get(&key_value).unwrap().get_out_pkts();
@@ -246,11 +252,13 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout
                 .unwrap()
                 .set_last(packet.header.ts.tv_sec as u32);
 
-            //if fin == 1 || rst ==1{
-            //println!("flow finished");
-            //records.push(*active_flow.get(&key_value).unwrap());
-            //active_flow.remove(&key_value);
-            //}
+            if fin == 1 || rst == 1 {
+                if verbose >= 2 {
+                    println!("flow finished");
+                }
+                records.push(*active_flow.get(&key_value).unwrap());
+                active_flow.remove(&key_value);
+            }
         }
         /*for (key, flow) in active_flow.clone().iter(){
             //let flow = active_flow.get(&key).unwrap();
@@ -262,7 +270,9 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout
             }
         }*/
     }
-    println!("Converted in {:?}", start.elapsed());
+    if verbose >= 1 {
+        println!("Captured in {:?}", start.elapsed());
+    }
     for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }
@@ -271,6 +281,8 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout
     });
 
     let result = tasks.await;
-    println!("result: {:?}", result);
+    if verbose >= 1 {
+        println!("Export {} result: {:?}", file_path, result);
+    }
     //println!("records {:?}", records);
 }
