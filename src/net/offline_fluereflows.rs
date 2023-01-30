@@ -34,7 +34,6 @@ pub async fn fluereflow_fileparse(
     let file_path = cur_time_file(csv_file, file_dir).await;
     let file = fs::File::create(file_path.clone()).unwrap();
 
-    let mut is_reverse = false;
     //let mut wtr = csv::Writer::from_writer(file);
 
     let mut records: Vec<FluereRecord> = Vec::new();
@@ -48,18 +47,26 @@ pub async fn fluereflow_fileparse(
         };
         let (key_value, reverse_key, doctets, flags, flowdata) = convert_result.unwrap();
         //pushing packet in to active_flows if it is not present
-        if active_flow.get(&key_value).is_none() {
-            if active_flow.get(&reverse_key).is_none() {
-                active_flow.insert(key_value, flowdata);
-                is_reverse = false;
-                //println!("flow established");
-            } else {
-                is_reverse = true;
-                //println!("flow reversed");
+        let is_reverse = match active_flow.get(&key_value) {
+            None => {
+                match active_flow.get(&reverse_key) {
+                    None => {
+                        active_flow.insert(key_value, flowdata);
+                        if verbose >= 2 {
+                            println!("flow established");
+                        }
+
+                        false
+                    },
+                    Some(_) => {
+                        true
+                    }
+                }
+            },
+            Some(_) => {
+                false
             }
-        } else {
-            is_reverse = false;
-        }
+        };
 
         let (fin, syn, rst, psh, ack, urg, ece, cwr, ns) = flags;
         let pkt = flowdata.get_min_pkt();
@@ -67,96 +74,30 @@ pub async fn fluereflow_fileparse(
         //println!("active flows: {:?}", active_flow.len());
         //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
         if is_reverse {
-            let cur_dpkt = active_flow.get(&reverse_key).unwrap().get_d_pkts();
-            let cur_inpkt = active_flow.get(&reverse_key).unwrap().get_in_pkts();
-            let cur_octets = active_flow.get(&reverse_key).unwrap().get_d_octets();
-            let min_pkt = active_flow.get(&reverse_key).unwrap().get_min_pkt();
-            let max_pkt = active_flow.get(&reverse_key).unwrap().get_max_pkt();
-            let min_ttl = active_flow.get(&reverse_key).unwrap().get_min_ttl();
-            let max_ttl = active_flow.get(&reverse_key).unwrap().get_max_ttl();
-            let cur_fin = active_flow.get(&reverse_key).unwrap().get_fin_cnt();
-            let cur_syn = active_flow.get(&reverse_key).unwrap().get_syn_cnt();
-            let cur_rst = active_flow.get(&reverse_key).unwrap().get_rst_cnt();
-            let cur_psh = active_flow.get(&reverse_key).unwrap().get_psh_cnt();
-            let cur_ack = active_flow.get(&reverse_key).unwrap().get_ack_cnt();
-            let cur_urg = active_flow.get(&reverse_key).unwrap().get_urg_cnt();
-            let cur_ece = active_flow.get(&reverse_key).unwrap().get_ece_cnt();
-            let cur_cwr = active_flow.get(&reverse_key).unwrap().get_cwr_cnt();
-            let cur_ns = active_flow.get(&reverse_key).unwrap().get_ns_cnt();
-            let cur_inbytes = active_flow.get(&reverse_key).unwrap().get_in_bytes();
+            let flow = active_flow.get_mut(&reverse_key).unwrap();
 
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_d_pkts(cur_dpkt + 1);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_in_pkts(cur_inpkt + 1);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_d_octets(cur_octets + doctets);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_max_ttl(if max_ttl < ttl { ttl } else { max_ttl });
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_min_ttl(if min_ttl > ttl { ttl } else { min_ttl });
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_max_pkt(if max_pkt < pkt { pkt } else { max_pkt });
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_min_pkt(if min_pkt > pkt { pkt } else { min_pkt });
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_fin_cnt(cur_fin + fin);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_syn_cnt(cur_syn + syn);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_rst_cnt(cur_rst + rst);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_psh_cnt(cur_psh + psh);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_ack_cnt(cur_ack + ack);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_urg_cnt(cur_urg + urg);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_ece_cnt(cur_ece + ece);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_cwr_cnt(cur_cwr + cwr);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_ns_cnt(cur_ns + ns);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_in_bytes(cur_inbytes + doctets);
-            active_flow
-                .get_mut(&reverse_key)
-                .unwrap()
-                .set_last(packet.header.ts.tv_sec as u32);
+            flow.set_d_pkts(flow.get_d_pkts() + 1);
+            flow.set_in_pkts(flow.get_in_pkts() + 1);
+            flow.set_in_bytes(flow.get_in_bytes() + doctets);
+            flow.set_d_octets(flow.get_d_octets() + doctets);
+            flow.set_max_pkt(flow.get_max_pkt().max(pkt));
+            flow.set_min_pkt(flow.get_min_pkt().min(pkt));
+            flow.set_max_ttl(flow.get_max_ttl().max(ttl));
+            flow.set_min_ttl(flow.get_min_ttl().min(ttl));
+            flow.set_fin_cnt(flow.get_fin_cnt() + fin);
+            flow.set_syn_cnt(flow.get_syn_cnt() + syn);
+            flow.set_rst_cnt(flow.get_rst_cnt() + rst);
+            flow.set_psh_cnt(flow.get_psh_cnt() + psh);
+            flow.set_ack_cnt(flow.get_ack_cnt() + ack);
+            flow.set_urg_cnt(flow.get_urg_cnt() + urg);
+            flow.set_ece_cnt(flow.get_ece_cnt() + ece);
+            flow.set_cwr_cnt(flow.get_cwr_cnt() + cwr);
+            flow.set_ns_cnt(flow.get_ns_cnt() + ns);
+            flow.set_last(packet.header.ts.tv_sec as u32);
+
+            if verbose >= 2 {
+                println!("reverse flow updated");
+            }
 
             if fin == 1 || rst == 1 {
                 if verbose >= 2 {
@@ -166,96 +107,26 @@ pub async fn fluereflow_fileparse(
                 active_flow.remove(&reverse_key);
             }
         } else {
-            let cur_dpkt = active_flow.get(&key_value).unwrap().get_d_pkts();
-            let cur_outpkt = active_flow.get(&key_value).unwrap().get_out_pkts();
-            let cur_octets = active_flow.get(&key_value).unwrap().get_d_octets();
-            let min_pkt = active_flow.get(&key_value).unwrap().get_min_pkt();
-            let max_pkt = active_flow.get(&key_value).unwrap().get_max_pkt();
-            let min_ttl = active_flow.get(&key_value).unwrap().get_min_ttl();
-            let max_ttl = active_flow.get(&key_value).unwrap().get_max_ttl();
-            let cur_fin = active_flow.get(&key_value).unwrap().get_fin_cnt();
-            let cur_syn = active_flow.get(&key_value).unwrap().get_syn_cnt();
-            let cur_rst = active_flow.get(&key_value).unwrap().get_rst_cnt();
-            let cur_psh = active_flow.get(&key_value).unwrap().get_psh_cnt();
-            let cur_ack = active_flow.get(&key_value).unwrap().get_ack_cnt();
-            let cur_urg = active_flow.get(&key_value).unwrap().get_urg_cnt();
-            let cur_ece = active_flow.get(&key_value).unwrap().get_ece_cnt();
-            let cur_cwr = active_flow.get(&key_value).unwrap().get_cwr_cnt();
-            let cur_ns = active_flow.get(&key_value).unwrap().get_ns_cnt();
-            let cur_outbytes = active_flow.get(&key_value).unwrap().get_out_bytes();
-
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_d_pkts(cur_dpkt + 1);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_out_pkts(cur_outpkt + 1);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_d_octets(cur_octets + doctets);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_max_ttl(if max_ttl < ttl { ttl } else { max_ttl });
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_min_ttl(if min_ttl > ttl { ttl } else { min_ttl });
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_max_pkt(if max_pkt < pkt { pkt } else { max_pkt });
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_min_pkt(if min_pkt > pkt { pkt } else { min_pkt });
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_fin_cnt(cur_fin + fin);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_syn_cnt(cur_syn + syn);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_rst_cnt(cur_rst + rst);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_psh_cnt(cur_psh + psh);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_ack_cnt(cur_ack + ack);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_urg_cnt(cur_urg + urg);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_ece_cnt(cur_ece + ece);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_cwr_cnt(cur_cwr + cwr);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_ns_cnt(cur_ns + ns);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_out_bytes(cur_outbytes + doctets);
-            active_flow
-                .get_mut(&key_value)
-                .unwrap()
-                .set_last(packet.header.ts.tv_sec as u32);
+            let flow = active_flow.get_mut(&key_value).unwrap();
+            
+            flow.set_d_pkts(flow.get_d_pkts() + 1);
+            flow.set_out_pkts(flow.get_in_pkts() + 1);
+            flow.set_out_bytes(flow.get_in_bytes() + doctets);
+            flow.set_d_octets(flow.get_d_octets() + doctets);
+            flow.set_max_pkt(flow.get_max_pkt().max(pkt));
+            flow.set_min_pkt(flow.get_min_pkt().min(pkt));
+            flow.set_max_ttl(flow.get_max_ttl().max(ttl));
+            flow.set_min_ttl(flow.get_min_ttl().min(ttl));
+            flow.set_fin_cnt(flow.get_fin_cnt() + fin);
+            flow.set_syn_cnt(flow.get_syn_cnt() + syn);
+            flow.set_rst_cnt(flow.get_rst_cnt() + rst);
+            flow.set_psh_cnt(flow.get_psh_cnt() + psh);
+            flow.set_ack_cnt(flow.get_ack_cnt() + ack);
+            flow.set_urg_cnt(flow.get_urg_cnt() + urg);
+            flow.set_ece_cnt(flow.get_ece_cnt() + ece);
+            flow.set_cwr_cnt(flow.get_cwr_cnt() + cwr);
+            flow.set_ns_cnt(flow.get_ns_cnt() + ns);
+            flow.set_last(packet.header.ts.tv_sec as u32);
 
             if fin == 1 || rst == 1 {
                 if verbose >= 2 {
