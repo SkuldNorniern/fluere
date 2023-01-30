@@ -1,7 +1,7 @@
 use pcap;
 
-use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ethernet::EtherTypes::Ipv4;
+use pnet::packet::ethernet::EthernetPacket;
 
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
@@ -26,9 +26,13 @@ pub fn fluereflow_convert(
 > {
     let e = EthernetPacket::new(packet.data).unwrap();
     //println!("Ethernet packet: {:?}", e.get_ethertype());
-    match e.get_ethertype(){
-        Ipv4=> {},
-        _ => return Err(NetError::UnknownProtocol{protocol: e.get_ethertype().to_string()}),
+    match e.get_ethertype() {
+        Ipv4 => {}
+        _ => {
+            return Err(NetError::UnknownProtocol {
+                protocol: e.get_ethertype().to_string(),
+            })
+        }
     }
     let i = Ipv4Packet::new(e.payload()).unwrap();
     if i.payload().is_empty() {
@@ -39,7 +43,7 @@ pub fn fluereflow_convert(
     let (_packet_data, _frame) = parse_etherprotocol(packet.data).unwrap();
 
     let (_frame_data, _ipv4) = parse_ipv4(_packet_data).unwrap();
-    
+
     let src_ip = i.get_source();
     let dst_ip = i.get_destination();
 

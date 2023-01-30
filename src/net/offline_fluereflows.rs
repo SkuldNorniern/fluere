@@ -48,24 +48,18 @@ pub async fn fluereflow_fileparse(
         let (key_value, reverse_key, doctets, flags, flowdata) = convert_result.unwrap();
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
-            None => {
-                match active_flow.get(&reverse_key) {
-                    None => {
-                        active_flow.insert(key_value, flowdata);
-                        if verbose >= 2 {
-                            println!("flow established");
-                        }
-
-                        false
-                    },
-                    Some(_) => {
-                        true
+            None => match active_flow.get(&reverse_key) {
+                None => {
+                    active_flow.insert(key_value, flowdata);
+                    if verbose >= 2 {
+                        println!("flow established");
                     }
+
+                    false
                 }
+                Some(_) => true,
             },
-            Some(_) => {
-                false
-            }
+            Some(_) => false,
         };
 
         let (fin, syn, rst, psh, ack, urg, ece, cwr, ns) = flags;
@@ -108,7 +102,7 @@ pub async fn fluereflow_fileparse(
             }
         } else {
             let flow = active_flow.get_mut(&key_value).unwrap();
-            
+
             flow.set_d_pkts(flow.get_d_pkts() + 1);
             flow.set_out_pkts(flow.get_in_pkts() + 1);
             flow.set_out_bytes(flow.get_in_bytes() + doctets);
@@ -150,7 +144,7 @@ pub async fn fluereflow_fileparse(
         println!("Captured in {:?}", start.elapsed());
     }
     println!("Active flow {:?}", active_flow.len());
-    println!("Ended flow {:?}",records.len());
+    println!("Ended flow {:?}", records.len());
     for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }
