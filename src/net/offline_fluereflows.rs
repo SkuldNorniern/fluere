@@ -12,7 +12,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::time::Instant;
 
-pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout: u32,verbose: u8) {
+pub async fn fluereflow_fileparse(
+    csv_file: &str,
+    file_name: &str,
+    _flow_timeout: u32,
+    verbose: u8,
+) {
     let mut cap = Capture::from_file(file_name).unwrap();
 
     let file_dir = "./output";
@@ -273,6 +278,8 @@ pub async fn fluereflow_fileparse(csv_file: &str, file_name: &str, _flow_timeout
     if verbose >= 1 {
         println!("Captured in {:?}", start.elapsed());
     }
+    println!("Active flow {:?}", active_flow.len());
+    println!("Ended flow {:?}",records.len());
     for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }

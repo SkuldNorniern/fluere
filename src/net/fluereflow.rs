@@ -1,6 +1,8 @@
 use pcap;
 
 use pnet::packet::ethernet::EthernetPacket;
+use pnet::packet::ethernet::EtherTypes::Ipv4;
+use pnet::packet::ethernet::EtherTypes::Ipv6;
 
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
@@ -24,6 +26,11 @@ pub fn fluereflow_convert(
     NetError,
 > {
     let e = EthernetPacket::new(packet.data).unwrap();
+    //println!("Ethernet packet: {:?}", e.get_ethertype());
+    match e.get_ethertype(){
+        Ipv4=> {},
+        _ => return Err(NetError::UnknownProtocol{protocol: e.get_ethertype().to_string()}),
+    }
     let i = Ipv4Packet::new(e.payload()).unwrap();
     let protocol = protocol_to_number(i.get_next_level_protocol());
 

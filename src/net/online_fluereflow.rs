@@ -312,7 +312,7 @@ pub async fn packet_capture(
             let tasks = task::spawn(async {
                 fluere_exporter(cloned_records, file).await;
             });
-            
+
             let result = tasks.await;
             if verbose >= 1 {
                 println!("Export {} result: {:?}", file_path, result);
