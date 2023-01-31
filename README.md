@@ -29,7 +29,6 @@ This tool is designed to capture network packets into pcap format and convert th
 ## Installation
 
 Download the latest release of the tool from the releases page.
-`MacOS installation will be provided in the future`
 
 - Windows
 
