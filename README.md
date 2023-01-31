@@ -29,21 +29,25 @@ This tool is designed to capture network packets into pcap format and convert th
 ## Installation
 
 Download the latest release of the tool from the releases page.
-`MacOS, Linux installation will be provided in the future`
+`MacOS installation will be provided in the future`
 
 - Windows
 
-Run the installer.exe file and check if the enviroment variable has been setup correctly (there is a bug)
+  - Run the installer.exe file and check if the enviroment variable has been setup correctly (there is a bug)
 
 - MacOS
-  WIP
 
-Use ths Cargo Build --release to get the program or Cargo run
+  - WIP
+
+  - Use ths Cargo Build --release to get the program or Cargo run
 
 - Linux
-  WIP
 
-Use ths Cargo Build --release to get the program or Cargo run
+  - Debian
+
+    ```
+    sudo dpkg -i fluere_x.x.x_amd64.deb
+    ```
 
 ## Usage
 
