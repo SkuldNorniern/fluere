@@ -37,9 +37,12 @@ Download the latest release of the tool from the releases page.
 
 - MacOS
 
-  - WIP
+  - Intel
 
-  - Use ths Cargo Build --release to get the program or Cargo run
+    ```
+    brew tap SkuldNorniern/fluere
+    brew install fluere
+    ```
 
 - Linux
 
