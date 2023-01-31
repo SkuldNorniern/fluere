@@ -15,7 +15,7 @@
   <img alt="Linux" src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black"/>
 </p>
 <p align="center" align="right">
-  Windows, MacOS, Linux All Supported! YAY! 
+  Windows, MacOS, and Linux are All Supported! YAY!
 </p>
 
 <div align="center">
@@ -24,15 +24,16 @@
 
 ## Description
 
-This tool is designed to capture network packets into pcap format and convert them to netflow data. It also allows for live capture and conversion of netflow data. The tool is cross-platform supported and can run on Windows, MacOS, and Linux operating systems.
+This tool is designed to capture network packets into pcap format and convert them to NetFlow data. It also allows for live capture and conversion of NetFlow data. The tool is cross-platform supported and can run on Windows, MacOS, and Linux operating systems.
 
 ## Installation
+you need to install libpcap on Linux and macOS or npcap on Windows
 
 Download the latest release of the tool from the releases page.
 
 - Windows
 
-  - Run the installer.exe file and check if the enviroment variable has been setup correctly (there is a bug)
+  - Run the installer.exe file and check if the environment variable has been set up correctly (there is a bug)
 
 - MacOS
 
@@ -67,7 +68,7 @@ or
   fluere pcap -l
 ```
 
-Choose between capturing packets in pcap format or converting live netflow data.
+Choose between capturing packets in pcap format or converting live NetFlow data.
 
 ```
   online
@@ -91,9 +92,8 @@ The captured packets or netflow data will be saved in the "output" directory in 
 
 ## Additional Features
 
-Make sure to run the tool with administrator privileges on Linux operating systems.
-On linux you may need to install libpcap-dev or npcap on Windows
-Make sure to have enough storage space on your machine to save the captured packets or netflow data.
+Make sure to run the tool with administrator privileges on Linux and macOS operating systems.
+Make sure to have enough storage space on your machine to save the captured packets or NetFlow data.
 
 ## Support
 
