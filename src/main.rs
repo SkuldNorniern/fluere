@@ -49,7 +49,7 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("sleep_windows")
                         //.about("Select network interface to use")
-                        .default_value("2")
+                        .default_value("0")
                         .short('s')
                         .long("sleep"),
                 )
@@ -102,6 +102,12 @@ fn cli() -> Command {
             Command::new("pcap")
                 .about("collect pcket and save to .pcap file")
                 .arg(
+                    Arg::new("pcap")
+                        //.about("name of the exported csv file")
+                        .short('p')
+                        .long("pcap"),
+                )
+                .arg(
                     Arg::new("interface")
                         //.about("Select network interface to use")
                         .short('i')
@@ -115,11 +121,32 @@ fn cli() -> Command {
                         .long("duration"),
                 )
                 .arg(
+                    Arg::new("interval")
+                        //.about("Select network interface to use")
+                        .default_value("1800000")
+                        .short('I')
+                        .long("interval"),
+                )
+                .arg(
+                    Arg::new("sleep_windows")
+                        //.about("Select network interface to use")
+                        .default_value("0")
+                        .short('s')
+                        .long("sleep"),
+                )
+                .arg(
                     Arg::new("list")
                         //.about("List of network interfaces")
                         .short('l')
                         .long("list")
                         .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("verbose")
+                        //.about("List of network interfaces")
+                        .default_value("1")
+                        .short('v')
+                        .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
                 ),
         )
 }
@@ -191,12 +218,22 @@ async fn main() {
                 exit(0);
             }
 
+            let pcap = args.get_one::<String>("pcap").unwrap();
             let interface = args.get_one::<String>("interface").unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
-            let duration: i32 = duration.parse().unwrap();
-            println!("Interface {} selected", interface);
+            let duration: u64 = duration.parse().unwrap();
+            let interval = args.get_one::<String>("interval").expect("default");
+            let interval: u64 = interval.parse().unwrap();
+            let sleep_windows = args.get_one::<String>("sleep_windows").expect("default");
+            let sleep_windows: u64 = sleep_windows.parse().unwrap();
+            let verbose = args.get_one::<String>("verbose").expect("default");
+            let verbose: u8 = verbose.parse().unwrap();
 
-            net::pcap_capture(interface, duration);
+            if verbose >= 1 {
+                println!("Interface {} selected", interface);
+            }
+
+            net::pcap_capture(pcap, interface, duration, interval, sleep_windows, verbose).await;
         }
         _ => {
             println!("No mode selected");

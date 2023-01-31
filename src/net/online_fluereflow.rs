@@ -45,7 +45,7 @@ pub async fn packet_capture(
 
     let start = Instant::now();
     let mut last_export = Instant::now();
-    let file_path = cur_time_file(csv_file, file_dir).await;
+    let file_path = cur_time_file(csv_file, file_dir, ".csv").await;
     let mut file = fs::File::create(file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
@@ -185,7 +185,7 @@ pub async fn packet_capture(
             if verbose >= 1 {
                 println!("Export {} result: {:?}", file_path, result);
             }
-            let file_path = cur_time_file(csv_file, file_dir).await;
+            let file_path = cur_time_file(csv_file, file_dir, ".csv").await;
             file = fs::File::create(file_path.clone()).unwrap();
             records.clear();
             last_export = Instant::now();
