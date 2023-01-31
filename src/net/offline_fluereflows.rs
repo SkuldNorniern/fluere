@@ -31,7 +31,7 @@ pub async fn fluereflow_fileparse(
     };
 
     let start = Instant::now();
-    let file_path = cur_time_file(csv_file, file_dir).await;
+    let file_path = cur_time_file(csv_file, file_dir, ".csv").await;
     let file = fs::File::create(file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
