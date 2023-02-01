@@ -2,9 +2,9 @@ use std::net::Ipv4Addr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IPProtocol {
-    ICMP,
-    TCP,
-    UDP,
+    Icmp,
+    Tcp,
+    Udp,
     Other(u8),
 }
 
@@ -27,9 +27,9 @@ pub struct IPv4 {
 impl From<u8> for IPProtocol {
     fn from(raw: u8) -> Self {
         match raw {
-            1 => IPProtocol::ICMP,
-            6 => IPProtocol::TCP,
-            17 => IPProtocol::UDP,
+            1 => IPProtocol::Icmp,
+            6 => IPProtocol::Tcp,
+            17 => IPProtocol::Udp,
             other => IPProtocol::Other(other),
         }
     }
