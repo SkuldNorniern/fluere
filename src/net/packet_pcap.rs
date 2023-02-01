@@ -1,6 +1,5 @@
 extern crate chrono;
 
-
 use pcap::Capture;
 use std::fs;
 

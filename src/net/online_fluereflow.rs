@@ -12,7 +12,6 @@ use crate::net::types::{FluereRecord, Key};
 use crate::utils::{cur_time_file, fluere_exporter};
 
 use std::collections::HashMap;
-
 use std::fs;
 use std::time::{Duration, Instant};
 

@@ -6,7 +6,6 @@ edition = "2021"
 description = "Fluere is a cross-platform network tool aimed at pcap sniffing, netflow dump."
 readme = "README.md"
 license = "Apache-2.0"
-license-file = "LICENSE"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

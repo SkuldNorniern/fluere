@@ -116,7 +116,7 @@ mod tests {
         assert_eq!(etherprot.flags, 0);
         assert_eq!(etherprot.fragment_offset, 0);
         assert_eq!(etherprot.ttl, 128);
-        assert_eq!(etherprot.protocol, IPProtocol::UDP);
+        assert_eq!(etherprot.protocol, IPProtocol::Udp);
         assert_eq!(etherprot.checksum, 0);
         assert_eq!(etherprot.source_addr.to_string(), "192.168.50.241");
         assert_eq!(etherprot.dest_addr.to_string(), "1.209.175.116");
