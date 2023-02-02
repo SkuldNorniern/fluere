@@ -1,7 +1,6 @@
 use pcap;
 
-use pnet::packet::ethernet::EtherTypes::Ipv4;
-use pnet::packet::ethernet::EtherTypes::Ipv6;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
@@ -19,21 +18,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     let src_mac = MacAddress::new(ethernet_packet.get_source().into());
     let dst_mac = MacAddress::new(ethernet_packet.get_destination().into());
     let (src_ip, dst_ip, src_port, dst_port, protocol) = match ethernet_packet.get_ethertype() {
-        Ipv4 => {
-            let i = Ipv4Packet::new(ethernet_packet.payload().clone()).unwrap();
-            if i.payload().is_empty() {
-                return Err(NetError::EmptyPacket);
-            }
-
-            let ipv4 = ipv4_keys(i);
-            match ipv4 {
-                Ok(_) => {}
-                Err(e) => return Err(e),
-            }
-
-            ipv4.unwrap()
-        }
-        Ipv6 => {
+        EtherTypes::Ipv6 => {
             let i = Ipv6Packet::new(ethernet_packet.payload().clone()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
@@ -46,6 +31,20 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             }
 
             ipv6.unwrap()
+        }
+        EtherTypes::Ipv4 => {
+            let i = Ipv4Packet::new(ethernet_packet.payload().clone()).unwrap();
+            if i.payload().is_empty() {
+                return Err(NetError::EmptyPacket);
+            }
+
+            let ipv4 = ipv4_keys(i);
+            match ipv4 {
+                Ok(_) => {}
+                Err(e) => return Err(e),
+            }
+
+            ipv4.unwrap()
         }
         _ => {
             return Err(NetError::UnknownProtocol {
