@@ -7,9 +7,7 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
-use crate::net::parser::{
-    dscp_to_tos, parse_flags, parse_ports, protocol_to_number,
-};
+use crate::net::parser::{dscp_to_tos, parse_flags, parse_ports, protocol_to_number};
 use crate::net::types::FluereRecord;
 
 pub fn fluereflow_convert(
@@ -23,7 +21,7 @@ pub fn fluereflow_convert(
     NetError,
 > {
     let ethernet_packet = EthernetPacket::new(packet.data).unwrap();
-    
+
     let time = packet.header.ts.tv_sec as u32;
     let record_result = match ethernet_packet.get_ethertype() {
         Ipv4 => {
@@ -31,16 +29,16 @@ pub fn fluereflow_convert(
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
             }
-            
-            ipv4_packet(time,i)
+
+            ipv4_packet(time, i)
         }
-        Ipv6 =>{
+        _Ipv6 => {
             let i = Ipv6Packet::new(ethernet_packet.payload().clone()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
             }
 
-            ipv6_packet(time,i)
+            ipv6_packet(time, i)
         }
         _ => {
             return Err(NetError::UnknownProtocol {
@@ -54,12 +52,21 @@ pub fn fluereflow_convert(
         Err(e) => return Err(e),
     }
     let (doctets, flags, record) = record_result.unwrap();
-    
+
     Ok((doctets, flags, record))
 }
 
-fn ipv4_packet(time:u32, packet: Ipv4Packet)->Result<(u32,(u32, u32, u32, u32, u32, u32, u32, u32, u32),FluereRecord),NetError>{
-    
+fn ipv4_packet(
+    time: u32,
+    packet: Ipv4Packet,
+) -> Result<
+    (
+        u32,
+        (u32, u32, u32, u32, u32, u32, u32, u32, u32),
+        FluereRecord,
+    ),
+    NetError,
+> {
     let protocol = protocol_to_number(packet.get_next_level_protocol());
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
@@ -117,8 +124,17 @@ fn ipv4_packet(time:u32, packet: Ipv4Packet)->Result<(u32,(u32, u32, u32, u32, u
     ))
 }
 
-fn ipv6_packet(time:u32, packet: Ipv6Packet)->Result<(u32,(u32, u32, u32, u32, u32, u32, u32, u32, u32),FluereRecord),NetError>{
-    
+fn ipv6_packet(
+    time: u32,
+    packet: Ipv6Packet,
+) -> Result<
+    (
+        u32,
+        (u32, u32, u32, u32, u32, u32, u32, u32, u32),
+        FluereRecord,
+    ),
+    NetError,
+> {
     let protocol = protocol_to_number(packet.get_next_header());
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
@@ -135,14 +151,14 @@ fn ipv6_packet(time:u32, packet: Ipv6Packet)->Result<(u32,(u32, u32, u32, u32, u
 
     //	Autonomous system number of the source and destination, either origin or peer
     let doctets = packet.get_payload_length() as u32;
-    //first six bits in the 8-bit Traffic Class field 
+    //first six bits in the 8-bit Traffic Class field
     let dscp = packet.get_traffic_class() >> 2;
     let tos_convert_result = dscp_to_tos(dscp);
     let tos = match tos_convert_result {
         Ok(_) => tos_convert_result.unwrap(),
         Err(_) => 0,
     };
-    
+
     Ok((
         doctets,
         flags,
