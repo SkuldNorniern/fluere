@@ -19,7 +19,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     let dst_mac = MacAddress::new(ethernet_packet.get_destination().into());
     let (src_ip, dst_ip, src_port, dst_port, protocol) = match ethernet_packet.get_ethertype() {
         EtherTypes::Ipv6 => {
-            let i = Ipv6Packet::new(ethernet_packet.payload().clone()).unwrap();
+            let i = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
             }
@@ -33,7 +33,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             ipv6.unwrap()
         }
         EtherTypes::Ipv4 => {
-            let i = Ipv4Packet::new(ethernet_packet.payload().clone()).unwrap();
+            let i = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
             }

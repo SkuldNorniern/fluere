@@ -230,7 +230,7 @@ async fn main() {
             let verbose: u8 = verbose.parse().unwrap();
 
             if verbose >= 1 {
-                println!("Interface {} selected", interface);
+                println!("Interface {interface} selected");
             }
 
             net::pcap_capture(pcap, interface, duration, interval, sleep_windows, verbose).await;
