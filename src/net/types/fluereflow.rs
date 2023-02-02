@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::net::IpAddr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FluereFlow {
@@ -30,8 +30,8 @@ impl FluereHeader {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FluereRecord {
-    source: Ipv4Addr,
-    destination: Ipv4Addr,
+    source: IpAddr,
+    destination: IpAddr,
     d_pkts: u32,
     d_octets: u32,
     first: u32,
@@ -60,8 +60,8 @@ pub struct FluereRecord {
 }
 impl FluereRecord {
     pub fn new(
-        source: Ipv4Addr,
-        destination: Ipv4Addr,
+        source: IpAddr,
+        destination: IpAddr,
         d_pkts: u32,
         d_octets: u32,
         first: u32,
@@ -182,10 +182,10 @@ impl FluereRecord {
         self.max_ttl = max_ttl;
     }
 
-    pub fn get_source(&self) -> Ipv4Addr {
+    pub fn get_source(&self) -> IpAddr {
         self.source
     }
-    pub fn get_destination(&self) -> Ipv4Addr {
+    pub fn get_destination(&self) -> IpAddr {
         self.destination
     }
     pub fn get_d_pkts(&self) -> u32 {

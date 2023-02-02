@@ -5,6 +5,7 @@ mod ports;
 mod protocol;
 mod tos;
 mod udp;
+mod keys;
 
 pub use etherprotocol::parse_etherprotocol;
 pub use flags::parse_flags;
@@ -13,3 +14,4 @@ pub use ports::parse_ports;
 pub use protocol::protocol_to_number;
 pub use tos::dscp_to_tos;
 pub use udp::parse_udp;
+pub use keys::parse_keys;
