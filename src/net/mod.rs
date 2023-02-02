@@ -13,4 +13,3 @@ pub use interface::list_interfaces;
 pub use offline_fluereflows::fluereflow_fileparse;
 pub use packet_pcap::pcap_capture;
 pub use types::FluereRecord;
-pub use types::V5Record;

@@ -16,6 +16,7 @@ pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError>
 
             return Ok((tcp.get_source(), tcp.get_destination()));
         }
+        2 => return Ok((0, 0)),
         1 => return Ok((0, 0)),
         0 => return Ok((0, 0)),
         _ => {}
