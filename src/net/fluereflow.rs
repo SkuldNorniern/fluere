@@ -1,7 +1,6 @@
 use pcap;
 
-use pnet::packet::ethernet::EtherTypes::Ipv4;
-use pnet::packet::ethernet::EtherTypes::Ipv6;
+use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
@@ -25,7 +24,7 @@ pub fn fluereflow_convert(
 
     let time = packet.header.ts.tv_sec as u32;
     let record_result = match ethernet_packet.get_ethertype() {
-        Ipv4 => {
+        EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload().clone()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
@@ -33,7 +32,7 @@ pub fn fluereflow_convert(
 
             ipv4_packet(time, i)
         }
-        Ipv6 => {
+        EtherTypes::Ipv6 => {
             let i = Ipv6Packet::new(ethernet_packet.payload().clone()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
