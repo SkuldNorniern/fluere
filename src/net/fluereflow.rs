@@ -25,7 +25,7 @@ pub fn fluereflow_convert(
     let time = packet.header.ts.tv_sec as u32;
     let record_result = match ethernet_packet.get_ethertype() {
         EtherTypes::Ipv4 => {
-            let i = Ipv4Packet::new(ethernet_packet.payload().clone()).unwrap();
+            let i = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
             }
@@ -33,7 +33,7 @@ pub fn fluereflow_convert(
             ipv4_packet(time, i)
         }
         EtherTypes::Ipv6 => {
-            let i = Ipv6Packet::new(ethernet_packet.payload().clone()).unwrap();
+            let i = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
             }
