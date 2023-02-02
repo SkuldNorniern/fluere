@@ -5,6 +5,7 @@ use crate::net::errors::NetError;
 
 pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError> {
     match protocol {
+        58 => return Ok((0, 0)),
         17 => {
             let udp = UdpPacket::new(payload).unwrap();
 
