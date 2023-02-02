@@ -7,6 +7,7 @@ use tokio::task;
 use crate::net::fluereflow::fluereflow_convert;
 use crate::net::types::{FluereRecord, Key};
 use crate::utils::{cur_time_file, fluere_exporter};
+use crate::net::parser::parse_keys;
 
 use std::collections::HashMap;
 use std::fs;
@@ -40,12 +41,19 @@ pub async fn fluereflow_fileparse(
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
-        let convert_result = fluereflow_convert(packet.clone());
-        match convert_result {
+        let parsed_keys = parse_keys(packet.clone());
+        match parsed_keys {
             Ok(_) => (),
             Err(_) => continue,
         };
-        let (key_value, reverse_key, doctets, flags, flowdata) = convert_result.unwrap();
+        let (key_value, reverse_key) = parsed_keys.unwrap();
+        let flow_convert_result = fluereflow_convert(packet.clone());
+        match flow_convert_result {
+            Ok(_) => (),
+            Err(_) => continue,
+        };
+        let (doctets, flags, flowdata) = flow_convert_result.unwrap();
+        
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
             None => match active_flow.get(&reverse_key) {
