@@ -1,6 +1,6 @@
 Name "Fluere Netflow Collector"
 # name installer
-OutFile "fluere-0.3.0-installer.exe"
+OutFile "fluere-0.3.1-installer.exe"
 
 InstallDir "$PROGRAMFILES\fluere"
 
@@ -24,7 +24,7 @@ Section
     SetOutPath $INSTDIR
     DetailPrint "Created directory"
     
-    File ./target\release\fluere.exe
+    File ../target\release\fluere.exe
     DetailPrint "Added fluere.exe"
 
     WriteRegStr HKLM SOFTWARE\Fluere "Install_Dir" "$INSTDIR"

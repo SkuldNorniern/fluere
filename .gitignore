@@ -27,4 +27,5 @@ Cargo.lock
 *.deb
 *.rpm
 
-
+# Test config file
+config.toml
