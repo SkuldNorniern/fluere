@@ -5,9 +5,9 @@ use pcap::Capture;
 use tokio::task;
 
 use crate::net::fluereflow::fluereflow_convert;
+use crate::net::parser::parse_keys;
 use crate::net::types::{FluereRecord, Key};
 use crate::utils::{cur_time_file, fluere_exporter};
-use crate::net::parser::parse_keys;
 
 use std::collections::HashMap;
 use std::fs;
@@ -53,7 +53,7 @@ pub async fn fluereflow_fileparse(
             Err(_) => continue,
         };
         let (doctets, flags, flowdata) = flow_convert_result.unwrap();
-        
+
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
             None => match active_flow.get(&reverse_key) {

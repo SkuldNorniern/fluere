@@ -70,7 +70,7 @@ pub async fn packet_capture(
             Err(_) => continue,
         };
         let (doctets, flags, flowdata) = flow_convert_result.unwrap();
-        
+
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
             None => match active_flow.get(&reverse_key) {
