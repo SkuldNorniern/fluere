@@ -161,11 +161,11 @@ pub async fn packet_capture(
 
         packet_count += 1;
         // slow down the loop for windows to avoid random shutdown
-        if packet_count % 10 == 0 && cfg!(target_os = "windows") {
+        if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
             if verbose >= 3 {
                 println!("Slow down the loop for windows");
             }
-            sleep(Duration::from_millis(sleep_windows)).await;
+            sleep(Duration::from_millis(0)).await;
         }
 
         // Export flows if the interval has been reached

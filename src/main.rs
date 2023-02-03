@@ -51,7 +51,7 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("sleep_windows")
                         //.about("Select network interface to use")
-                        .default_value("0")
+                        .default_value("10")
                         .short('s')
                         .long("sleep"),
                 )
@@ -132,7 +132,7 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("sleep_windows")
                         //.about("Select network interface to use")
-                        .default_value("0")
+                        .default_value("10")
                         .short('s')
                         .long("sleep"),
                 )
