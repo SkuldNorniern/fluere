@@ -45,7 +45,7 @@ pub async fn packet_capture(
 
     let start = Instant::now();
     let mut last_export = Instant::now();
-    let file_path = cur_time_file(csv_file, file_dir, ".csv").await;
+    let mut file_path = cur_time_file(csv_file, file_dir, ".csv").await;
     let mut file = fs::File::create(file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
@@ -169,7 +169,7 @@ pub async fn packet_capture(
         }
 
         // Export flows if the interval has been reached
-        if last_export.elapsed() >= Duration::from_millis(interval) {
+        if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0{
             let mut expired_flows = vec![];
             for (key, flow) in active_flow.iter() {
                 if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout / 1000) {
@@ -190,7 +190,7 @@ pub async fn packet_capture(
             if verbose >= 1 {
                 println!("Export {} result: {:?}", file_path, result);
             }
-            let file_path = cur_time_file(csv_file, file_dir, ".csv").await;
+            file_path = cur_time_file(csv_file, file_dir, ".csv").await;
             file = fs::File::create(file_path.clone()).unwrap();
             records.clear();
             last_export = Instant::now();

@@ -156,7 +156,6 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() {
     let args = cli().get_matches();
-    list_interface_names();
     let _interfaces = net::list_interfaces();
     //let mut interface = "None";
     match args.subcommand() {
