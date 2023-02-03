@@ -1,7 +1,9 @@
 pub mod net;
 pub mod utils;
+pub mod config;
 
 use clap::{Arg, ArgAction, Command};
+use net::list_interface_names;
 use std::process::exit;
 
 fn cli() -> Command {
@@ -154,6 +156,7 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() {
     let args = cli().get_matches();
+    list_interface_names();
     let _interfaces = net::list_interfaces();
     //let mut interface = "None";
     match args.subcommand() {

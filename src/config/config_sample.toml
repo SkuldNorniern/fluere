@@ -1,0 +1,16 @@
+[plugins]
+enabled = 0
+
+[[in_process_plugin]]
+plugins = [
+    {name = "example_in_process_plugin", path = "./plugins/example_in_process_plugin.dll"},
+]
+
+[[external_program_plugin]]
+plugins = [
+    {name = "example_external_program", path = "/path/to/example_external_program"},
+]
+
+[flow_drop]
+formulas = [
+]

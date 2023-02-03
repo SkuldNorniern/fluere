@@ -10,6 +10,7 @@ mod types;
 //pub use flows::packet_capture;
 pub use fluereflow::fluereflow_convert;
 pub use interface::list_interfaces;
+pub use interface::list_interface_names;
 pub use offline_fluereflows::fluereflow_fileparse;
 pub use packet_pcap::pcap_capture;
 pub use types::FluereRecord;

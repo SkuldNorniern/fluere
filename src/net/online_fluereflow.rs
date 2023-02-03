@@ -9,7 +9,7 @@ use super::interface::get_interface;
 
 use crate::net::fluereflow::fluereflow_convert;
 use crate::net::parser::parse_keys;
-use crate::net::types::{FluereRecord, Key};
+use crate::net::types::{FluereRecord, Key, TcpFlags};
 use crate::utils::{cur_time_file, fluere_exporter};
 
 use std::collections::HashMap;
@@ -69,8 +69,8 @@ pub async fn packet_capture(
             Ok(_) => (),
             Err(_) => continue,
         };
-        let (doctets, flags, flowdata) = flow_convert_result.unwrap();
-
+        let (doctets, raw_flags, flowdata) = flow_convert_result.unwrap();
+        let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
             None => match active_flow.get(&reverse_key) {
@@ -87,7 +87,6 @@ pub async fn packet_capture(
             Some(_) => false,
         };
 
-        let (fin, syn, rst, psh, ack, urg, ece, cwr, ns) = flags;
         let pkt = flowdata.get_min_pkt();
         let ttl = flowdata.get_min_ttl();
         //println!("active flows: {:?}", active_flow.len());
@@ -103,22 +102,22 @@ pub async fn packet_capture(
             flow.set_min_pkt(flow.get_min_pkt().min(pkt));
             flow.set_max_ttl(flow.get_max_ttl().max(ttl));
             flow.set_min_ttl(flow.get_min_ttl().min(ttl));
-            flow.set_fin_cnt(flow.get_fin_cnt() + fin);
-            flow.set_syn_cnt(flow.get_syn_cnt() + syn);
-            flow.set_rst_cnt(flow.get_rst_cnt() + rst);
-            flow.set_psh_cnt(flow.get_psh_cnt() + psh);
-            flow.set_ack_cnt(flow.get_ack_cnt() + ack);
-            flow.set_urg_cnt(flow.get_urg_cnt() + urg);
-            flow.set_ece_cnt(flow.get_ece_cnt() + ece);
-            flow.set_cwr_cnt(flow.get_cwr_cnt() + cwr);
-            flow.set_ns_cnt(flow.get_ns_cnt() + ns);
+            flow.set_fin_cnt(flow.get_fin_cnt() + flags.fin as u32);
+            flow.set_syn_cnt(flow.get_syn_cnt() + flags.syn as u32);
+            flow.set_rst_cnt(flow.get_rst_cnt() + flags.rst as u32);
+            flow.set_psh_cnt(flow.get_psh_cnt() + flags.psh as u32);
+            flow.set_ack_cnt(flow.get_ack_cnt() + flags.ack as u32);
+            flow.set_urg_cnt(flow.get_urg_cnt() + flags.urg as u32);
+            flow.set_ece_cnt(flow.get_ece_cnt() + flags.ece as u32);
+            flow.set_cwr_cnt(flow.get_cwr_cnt() + flags.cwr as u32);
+            flow.set_ns_cnt(flow.get_ns_cnt() + flags.ns as u32);
             flow.set_last(packet.header.ts.tv_sec as u32);
 
             if verbose >= 3 {
                 println!("reverse flow updated");
             }
 
-            if fin == 1 || rst == 1 {
+            if flags.fin == 1 || flags.rst == 1 {
                 if verbose >= 2 {
                     println!("flow finished");
                 }
@@ -136,22 +135,22 @@ pub async fn packet_capture(
             flow.set_min_pkt(flow.get_min_pkt().min(pkt));
             flow.set_max_ttl(flow.get_max_ttl().max(ttl));
             flow.set_min_ttl(flow.get_min_ttl().min(ttl));
-            flow.set_fin_cnt(flow.get_fin_cnt() + fin);
-            flow.set_syn_cnt(flow.get_syn_cnt() + syn);
-            flow.set_rst_cnt(flow.get_rst_cnt() + rst);
-            flow.set_psh_cnt(flow.get_psh_cnt() + psh);
-            flow.set_ack_cnt(flow.get_ack_cnt() + ack);
-            flow.set_urg_cnt(flow.get_urg_cnt() + urg);
-            flow.set_ece_cnt(flow.get_ece_cnt() + ece);
-            flow.set_cwr_cnt(flow.get_cwr_cnt() + cwr);
-            flow.set_ns_cnt(flow.get_ns_cnt() + ns);
+            flow.set_fin_cnt(flow.get_fin_cnt() + flags.fin as u32);
+            flow.set_syn_cnt(flow.get_syn_cnt() + flags.syn as u32);
+            flow.set_rst_cnt(flow.get_rst_cnt() + flags.rst as u32);
+            flow.set_psh_cnt(flow.get_psh_cnt() + flags.psh as u32);
+            flow.set_ack_cnt(flow.get_ack_cnt() + flags.ack as u32);
+            flow.set_urg_cnt(flow.get_urg_cnt() + flags.urg as u32);
+            flow.set_ece_cnt(flow.get_ece_cnt() + flags.ece as u32);
+            flow.set_cwr_cnt(flow.get_cwr_cnt() + flags.cwr as u32);
+            flow.set_ns_cnt(flow.get_ns_cnt() + flags.ns as u32);
             flow.set_last(packet.header.ts.tv_sec as u32);
 
             if verbose >= 3 {
                 println!("foward flow updated");
             }
 
-            if fin == 1 || rst == 1 {
+            if flags.fin == 1 || flags.rst == 1 {
                 if verbose >= 2 {
                     println!("flow finished");
                 }

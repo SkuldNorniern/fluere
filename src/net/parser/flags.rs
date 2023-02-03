@@ -1,12 +1,12 @@
 use pnet::packet::tcp::TcpPacket;
 
-pub fn parse_flags(protocol: u8, payload: &[u8]) -> (u32, u32, u32, u32, u32, u32, u32, u32, u32) {
+pub fn parse_flags(protocol: u8, payload: &[u8]) -> [u8; 9] {
     let flags = match protocol {
         6 => {
             let tcp = TcpPacket::new(payload).unwrap();
             let tcp_flags = tcp.get_flags();
 
-            (
+            [
                 match tcp_flags & 0x01 {
                     0 => 0,
                     _ => 1,
@@ -43,9 +43,9 @@ pub fn parse_flags(protocol: u8, payload: &[u8]) -> (u32, u32, u32, u32, u32, u3
                     0 => 0,
                     _ => 1,
                 },
-            )
+            ]
         }
-        _ => (0, 0, 0, 0, 0, 0, 0, 0, 0),
+        _ => [0; 9],
     };
 
     flags
