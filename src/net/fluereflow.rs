@@ -8,14 +8,14 @@ use pnet::packet::Packet;
 
 use crate::net::errors::NetError;
 use crate::net::parser::{dscp_to_tos, parse_flags, parse_ports, protocol_to_number};
-use crate::net::types::FluereRecord;
+use crate::net::types::{FluereRecord,TcpFlags};
 
 pub fn fluereflow_convert(
     packet: pcap::Packet,
 ) -> Result<
     (
         u32,
-        (u32, u32, u32, u32, u32, u32, u32, u32, u32),
+        [u8; 9],
         FluereRecord,
     ),
     NetError,
@@ -51,9 +51,8 @@ pub fn fluereflow_convert(
         Ok(_) => {}
         Err(e) => return Err(e),
     }
-    let (doctets, flags, record) = record_result.unwrap();
-
-    Ok((doctets, flags, record))
+    let (doctets, raw_flags, record) = record_result.unwrap();
+    Ok((doctets, raw_flags, record))
 }
 
 fn ipv4_packet(
@@ -62,7 +61,7 @@ fn ipv4_packet(
 ) -> Result<
     (
         u32,
-        (u32, u32, u32, u32, u32, u32, u32, u32, u32),
+        [u8; 9],
         FluereRecord,
     ),
     NetError,
@@ -130,7 +129,7 @@ fn ipv6_packet(
 ) -> Result<
     (
         u32,
-        (u32, u32, u32, u32, u32, u32, u32, u32, u32),
+        [u8; 9],
         FluereRecord,
     ),
     NetError,
