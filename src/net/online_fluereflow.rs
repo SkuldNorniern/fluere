@@ -171,6 +171,7 @@ pub async fn packet_capture(
         // Export flows if the interval has been reached
         if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0{
             let mut expired_flows = vec![];
+            packet_count = 0;
             for (key, flow) in active_flow.iter() {
                 if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout / 1000) {
                     if verbose >= 2 {

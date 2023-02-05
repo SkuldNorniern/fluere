@@ -1,10 +1,12 @@
 pub mod net;
 pub mod utils;
 pub mod config;
+pub mod plugin;
 
 use clap::{Arg, ArgAction, Command};
 use net::list_interface_names;
-use std::process::exit;
+use std::process::exit; 
+use plugin::scan_plugins;
 
 fn cli() -> Command {
     Command::new("fluere")
@@ -157,6 +159,7 @@ fn cli() -> Command {
 async fn main() {
     let args = cli().get_matches();
     let _interfaces = net::list_interfaces();
+    scan_plugins("plugins");
     //let mut interface = "None";
     match args.subcommand() {
         Some(("online", args)) => {
