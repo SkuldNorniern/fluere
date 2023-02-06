@@ -1,4 +1,4 @@
-use crate::net::FluereRecord;
+use fluereflow::FluereRecord;
 use std::fs::File;
 
 pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) {

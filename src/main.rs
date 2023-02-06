@@ -7,6 +7,7 @@ use clap::{Arg, ArgAction, Command};
 use net::list_interface_names;
 use std::process::exit; 
 use plugin::scan_plugins;
+use config::generate_config;
 
 fn cli() -> Command {
     Command::new("fluere")
@@ -159,7 +160,12 @@ fn cli() -> Command {
 async fn main() {
     let args = cli().get_matches();
     let _interfaces = net::list_interfaces();
-    scan_plugins("plugins");
+    let plugins = scan_plugins("plugins");
+    println!("Plugins: {:?}", plugins);
+    match generate_config() {
+        Ok(_) => println!("Config file generated"),
+        Err(e) => println!("Error: {e}"),
+    }
     //let mut interface = "None";
     match args.subcommand() {
         Some(("online", args)) => {

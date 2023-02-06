@@ -1,12 +1,11 @@
 extern crate csv;
 
 use pcap::Capture;
-
 use tokio::task;
+use fluereflow::FluereRecord;
 
-use crate::net::fluereflow::fluereflow_convert;
-use crate::net::parser::parse_keys;
-use crate::net::types::{FluereRecord, Key,TcpFlags};
+use crate::net::parser::{parse_keys, parse_fluereflow};
+use crate::net::types::{Key, TcpFlags};
 use crate::utils::{cur_time_file, fluere_exporter};
 
 use std::collections::HashMap;
@@ -47,7 +46,7 @@ pub async fn fluereflow_fileparse(
             Err(_) => continue,
         };
         let (key_value, reverse_key) = parsed_keys.unwrap();
-        let flow_convert_result = fluereflow_convert(packet.clone());
+        let flow_convert_result = parse_fluereflow(packet.clone());
         match flow_convert_result {
             Ok(_) => (),
             Err(_) => continue,

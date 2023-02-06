@@ -5,12 +5,12 @@ use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::Packet;
+use fluereflow::FluereRecord;
 
 use crate::net::errors::NetError;
 use crate::net::parser::{dscp_to_tos, parse_flags, parse_ports, protocol_to_number};
-use crate::net::types::{FluereRecord,TcpFlags};
 
-pub fn fluereflow_convert(
+pub fn parse_fluereflow(
     packet: pcap::Packet,
 ) -> Result<
     (

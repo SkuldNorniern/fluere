@@ -1,4 +1,4 @@
-name: Rust
+name: Build Test
 
 on:
   push:
@@ -19,7 +19,9 @@ jobs:
     - name: Install libpcap
       run: sudo apt-get install -y libpcap-dev
     - name: Build fluere-plugin
-      run: cd plugin; cargo build --release
+      run: cd plugin; cargo build --release --verbose
+    - name: Build fluereflow
+      run: cd fluereflow cargo build --release --verbose
     - name: Build
       run: cargo build --release --verbose
     - name: Run tests
