@@ -1,12 +1,11 @@
 use std::fs;
-use std::path::Path;
 
 pub fn scan_plugins(folder: &str) -> Vec<String> {
     let mut plugins = vec![];
     let entries = match fs::read_dir(folder) {
         Ok(entries) => entries,
         Err(e) => {
-            println!("Error reading plugins folder: {}", e);
+            println!("Error reading plugins folder: {e}");
             return plugins;
         }
     };
@@ -15,7 +14,7 @@ pub fn scan_plugins(folder: &str) -> Vec<String> {
         let entry = match entry {
             Ok(entry) => entry,
             Err(e) => {
-                println!("Error reading plugin: {}", e);
+                println!("Error reading plugin: {e}");
                 continue;
             }
         };

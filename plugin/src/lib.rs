@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 
 // A trait that all plugins must implement
 trait Plugin {
@@ -74,16 +72,4 @@ impl PluginManager {
             plugin.run();
         }
     }
-}
-
-fn main() {
-    let mut plugin_manager = PluginManager::new();
-
-    let in_process_plugin = InProcessPlugin::new(String::from("example_in_process_plugin"), String::from("./plugins/example_in_process_plugin.dll"));
-    plugin_manager.add_in_process_plugin(in_process_plugin);
-
-    let external_program_plugin = ExternalProgramPlugin::new(String::from("example_external_program"), String::from("/path/to/example_external_program"));
-    plugin_manager.add_external_program_plugin(external_program_plugin);
-
-    plugin_manager.run_plugins();
 }

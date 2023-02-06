@@ -1,0 +1,12 @@
+[package]
+name = "fluereflow"
+version = "0.1.0"
+authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
+edition = "2021"
+description = "Customized flow feature inspired by netflow and cicflowmeter."
+readme = "README.md"
+license = "Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
