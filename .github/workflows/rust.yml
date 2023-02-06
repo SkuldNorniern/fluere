@@ -21,7 +21,7 @@ jobs:
     - name: Build fluere-plugin
       run: cd plugin; cargo build --release --verbose
     - name: Build fluereflow
-      run: cd fluereflow cargo build --release --verbose
+      run: cd fluereflow; cargo build --release --verbose
     - name: Build
       run: cargo build --release --verbose
     - name: Run tests
