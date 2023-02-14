@@ -84,7 +84,7 @@ fn ipv4_packet(
     let doctets = packet.get_total_length() as u32;
     let tos_convert_result = dscp_to_tos(packet.get_dscp());
     let tos = match tos_convert_result {
-        Ok(_) => tos_convert_result.unwrap(),
+        Ok(t) => t,
         Err(_) => 0,
     };
 
@@ -154,7 +154,7 @@ fn ipv6_packet(
     let dscp = packet.get_traffic_class() >> 2;
     let tos_convert_result = dscp_to_tos(dscp);
     let tos = match tos_convert_result {
-        Ok(_) => tos_convert_result.unwrap(),
+        Ok(t) => t,
         Err(_) => 0,
     };
 

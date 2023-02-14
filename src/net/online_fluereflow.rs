@@ -59,18 +59,17 @@ pub async fn packet_capture(
         if verbose >= 3 {
             println!("received packet");
         }
-        let parsed_keys = parse_keys(packet.clone());
-        match parsed_keys {
-            Ok(_) => (),
+
+        let (key_value, reverse_key) = match parse_keys(packet.clone()) {
+            Ok(keys) => keys,
             Err(_) => continue,
         };
-        let (key_value, reverse_key) = parsed_keys.unwrap();
-        let flow_convert_result = parse_fluereflow(packet.clone());
-        match flow_convert_result {
-            Ok(_) => (),
+
+        let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+            Ok(result) => result,
             Err(_) => continue,
         };
-        let (doctets, raw_flags, flowdata) = flow_convert_result.unwrap();
+
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
@@ -92,7 +91,6 @@ pub async fn packet_capture(
         //println!("time: {:?}", time);
         let pkt = flowdata.get_min_pkt();
         let ttl = flowdata.get_min_ttl();
-        //println!("active flows: {:?}", active_flow.len());
         //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
         if is_reverse {
             let flow = active_flow.get_mut(&reverse_key).unwrap();
@@ -131,8 +129,8 @@ pub async fn packet_capture(
             let flow = active_flow.get_mut(&key_value).unwrap();
 
             flow.set_d_pkts(flow.get_d_pkts() + 1);
-            flow.set_out_pkts(flow.get_in_pkts() + 1);
-            flow.set_out_bytes(flow.get_in_bytes() + doctets);
+            flow.set_out_pkts(flow.get_out_pkts() + 1);
+            flow.set_out_bytes(flow.get_out_bytes() + doctets);
             flow.set_d_octets(flow.get_d_octets() + doctets);
             flow.set_max_pkt(flow.get_max_pkt().max(pkt));
             flow.set_min_pkt(flow.get_min_pkt().min(pkt));
@@ -176,8 +174,8 @@ pub async fn packet_capture(
             let mut expired_flows = vec![];
             packet_count = 0;
             for (key, flow) in active_flow.iter() {
-                if flow.get_last() < (packet.header.ts.tv_usec as u64 - flow_timeout) {
-                    if verbose >= 2 {
+                if flow.get_last() < (time - (flow_timeout * 1000)) {
+                    if verbose >= 1 {
                         println!("flow expired");
                     }
                     records.push(*flow);
@@ -186,6 +184,7 @@ pub async fn packet_capture(
             }
             active_flow.retain(|key, _| !expired_flows.contains(key));
             let cloned_records = records.clone();
+            records.clear();
             let tasks = task::spawn(async {
                 fluere_exporter(cloned_records, file).await;
             });
@@ -196,7 +195,6 @@ pub async fn packet_capture(
             }
             file_path = cur_time_file(csv_file, file_dir, ".csv").await;
             file = fs::File::create(file_path.clone()).unwrap();
-            records.clear();
             last_export = Instant::now();
         }
 
@@ -204,7 +202,7 @@ pub async fn packet_capture(
         if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
             let mut expired_flows = vec![];
             for (key, flow) in active_flow.iter() {
-                if flow.get_last() < (packet.header.ts.tv_usec as u64 - flow_timeout) {
+                if flow.get_last() < (time - (flow_timeout * 1000)) {
                     if verbose >= 2 {
                         println!("flow expired");
                     }
