@@ -2,6 +2,7 @@ use crate::net::errors::ParseError;
 
 pub fn dscp_to_tos(dscp: u8) -> Result<u8, ParseError> {
     let tos = match dscp {
+        0 => 0,
         8 => 32,
         10 => 40,
         12 => 48,

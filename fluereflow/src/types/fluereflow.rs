@@ -34,8 +34,8 @@ pub struct FluereRecord {
     destination: IpAddr,
     d_pkts: u32,
     d_octets: u32,
-    first: u32,
-    last: u32,
+    first: u64,
+    last: u64,
     src_port: u16,
     dst_port: u16,
     min_pkt: u32,
@@ -64,8 +64,8 @@ impl FluereRecord {
         destination: IpAddr,
         d_pkts: u32,
         d_octets: u32,
-        first: u32,
-        last: u32,
+        first: u64,
+        last: u64,
         src_port: u16,
         dst_port: u16,
         min_pkt: u32,
@@ -124,10 +124,10 @@ impl FluereRecord {
     pub fn set_d_octets(&mut self, d_octets: u32) {
         self.d_octets = d_octets;
     }
-    pub fn set_first(&mut self, first: u32) {
+    pub fn set_first(&mut self, first: u64) {
         self.first = first;
     }
-    pub fn set_last(&mut self, last: u32) {
+    pub fn set_last(&mut self, last: u64) {
         self.last = last;
     }
     pub fn set_in_pkts(&mut self, in_pkts: u32) {
@@ -194,10 +194,10 @@ impl FluereRecord {
     pub fn get_d_octets(&self) -> u32 {
         self.d_octets
     }
-    pub fn get_first(&self) -> u32 {
+    pub fn get_first(&self) -> u64 {
         self.first
     }
-    pub fn get_last(&self) -> u32 {
+    pub fn get_last(&self) -> u64 {
         self.last
     }
     pub fn get_src_port(&self) -> u16 {
