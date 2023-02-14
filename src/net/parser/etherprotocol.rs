@@ -84,6 +84,6 @@ mod tests {
             frame.source_mac,
             MacAddress::new([0x0c, 0x9d, 0x92, 0x80, 0x4a, 0x5c])
         );
-        assert_eq!(frame.ether_protocol, EtherProtocol::IPv4);
+        assert_eq!(frame.ether_protocol, EtherProtocol::Ipv4);
     }
 }
