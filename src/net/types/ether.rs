@@ -16,11 +16,11 @@ impl From<&[u8]> for MacAddress {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EtherProtocol {
-    IPv4,
-    IPv6,
-    ARP,
-    RARP,
-    LLDP,
+    Ipv4,
+    Ipv6,
+    Arp,
+    Rarp,
+    Lldp,
     Other(u16),
 }
 
@@ -33,11 +33,11 @@ pub struct EtherFrame {
 impl From<u16> for EtherProtocol {
     fn from(raw: u16) -> Self {
         match raw {
-            0x0800 => Self::IPv4,
-            0x86DD => Self::IPv6,
-            0x0806 => Self::ARP,
-            0x8035 => Self::RARP,
-            0x88CC => Self::LLDP,
+            0x0800 => Self::Ipv4,
+            0x86DD => Self::Ipv6,
+            0x0806 => Self::Arp,
+            0x8035 => Self::Rarp,
+            0x88CC => Self::Lldp,
             other => Self::Other(other),
         }
     }
