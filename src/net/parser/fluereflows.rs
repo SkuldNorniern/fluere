@@ -8,7 +8,7 @@ use pnet::packet::Packet;
 use fluereflow::FluereRecord;
 
 use crate::net::errors::NetError;
-use crate::net::parser::{dscp_to_tos, parse_flags, parse_ports, protocol_to_number};
+use crate::net::parser::{dscp_to_tos, parse_flags, parse_ports, protocol_to_number,parse_microseconds};
 
 pub fn parse_fluereflow(
     packet: pcap::Packet,
@@ -22,7 +22,7 @@ pub fn parse_fluereflow(
 > {
     let ethernet_packet = EthernetPacket::new(packet.data).unwrap();
 
-    let time = packet.header.ts.tv_sec as u32;
+    let time = parse_microseconds(packet.header.ts.tv_sec as u64, packet.header.ts.tv_usec as u64);
     let record_result = match ethernet_packet.get_ethertype() {
         EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
@@ -56,7 +56,7 @@ pub fn parse_fluereflow(
 }
 
 fn ipv4_packet(
-    time: u32,
+    time: u64,
     packet: Ipv4Packet,
 ) -> Result<
     (
@@ -124,7 +124,7 @@ fn ipv4_packet(
 }
 
 fn ipv6_packet(
-    time: u32,
+    time: u64,
     packet: Ipv6Packet,
 ) -> Result<
     (

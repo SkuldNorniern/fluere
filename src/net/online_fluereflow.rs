@@ -8,7 +8,7 @@ use fluereflow::FluereRecord;
 
 use super::interface::get_interface;
 
-use crate::net::parser::{parse_keys, parse_fluereflow};
+use crate::net::parser::{parse_keys, parse_fluereflow,parse_microseconds};
 use crate::net::types::{Key, TcpFlags};
 use crate::utils::{cur_time_file, fluere_exporter};
 
@@ -21,7 +21,7 @@ pub async fn packet_capture(
     interface_name: &str,
     duration: u64,
     interval: u64,
-    flow_timeout: u32,
+    flow_timeout: u64,
     sleep_windows: u64,
     verbose: u8,
 ) {
@@ -29,6 +29,7 @@ pub async fn packet_capture(
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
+        .buffer_size(1000000000)
         //.immediate_mode(true)
         .open()
         .unwrap();
@@ -87,6 +88,8 @@ pub async fn packet_capture(
             Some(_) => false,
         };
 
+        let time = parse_microseconds(packet.header.ts.tv_sec as u64, packet.header.ts.tv_usec as u64);
+        //println!("time: {:?}", time);
         let pkt = flowdata.get_min_pkt();
         let ttl = flowdata.get_min_ttl();
         //println!("active flows: {:?}", active_flow.len());
@@ -111,7 +114,7 @@ pub async fn packet_capture(
             flow.set_ece_cnt(flow.get_ece_cnt() + flags.ece as u32);
             flow.set_cwr_cnt(flow.get_cwr_cnt() + flags.cwr as u32);
             flow.set_ns_cnt(flow.get_ns_cnt() + flags.ns as u32);
-            flow.set_last(packet.header.ts.tv_sec as u32);
+            flow.set_last(time);
 
             if verbose >= 3 {
                 println!("reverse flow updated");
@@ -144,7 +147,7 @@ pub async fn packet_capture(
             flow.set_ece_cnt(flow.get_ece_cnt() + flags.ece as u32);
             flow.set_cwr_cnt(flow.get_cwr_cnt() + flags.cwr as u32);
             flow.set_ns_cnt(flow.get_ns_cnt() + flags.ns as u32);
-            flow.set_last(packet.header.ts.tv_sec as u32);
+            flow.set_last(time);
 
             if verbose >= 3 {
                 println!("foward flow updated");
@@ -173,7 +176,7 @@ pub async fn packet_capture(
             let mut expired_flows = vec![];
             packet_count = 0;
             for (key, flow) in active_flow.iter() {
-                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout / 1000) {
+                if flow.get_last() < (packet.header.ts.tv_usec as u64 - flow_timeout) {
                     if verbose >= 2 {
                         println!("flow expired");
                     }
@@ -201,7 +204,7 @@ pub async fn packet_capture(
         if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
             let mut expired_flows = vec![];
             for (key, flow) in active_flow.iter() {
-                if flow.get_last() < (packet.header.ts.tv_sec as u32 - flow_timeout / 1000) {
+                if flow.get_last() < (packet.header.ts.tv_usec as u64 - flow_timeout) {
                     if verbose >= 2 {
                         println!("flow expired");
                     }

@@ -4,7 +4,6 @@ pub mod config;
 pub mod plugin;
 
 use clap::{Arg, ArgAction, Command};
-use net::list_interface_names;
 use std::process::exit; 
 use plugin::scan_plugins;
 use config::generate_config;
@@ -161,7 +160,7 @@ async fn main() {
     let args = cli().get_matches();
     let _interfaces = net::list_interfaces();
     let plugins = scan_plugins("plugins");
-    println!("Plugins: {:?}", plugins);
+    //println!("Plugins: {:?}", plugins);
     match generate_config() {
         Ok(_) => println!("Config file generated"),
         Err(e) => println!("Error: {e}"),
@@ -181,7 +180,7 @@ async fn main() {
             let csv = args.get_one::<String>("csv").unwrap();
             let interface = args.get_one::<String>("interface").unwrap();
             let timeout = args.get_one::<String>("timeout").unwrap();
-            let timeout: u32 = timeout.parse().unwrap();
+            let timeout: u64 = timeout.parse().unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
             let duration: u64 = duration.parse().unwrap();
             let interval = args.get_one::<String>("interval").expect("default");

@@ -5,6 +5,7 @@ mod ipv4;
 mod keys;
 mod ports;
 mod protocol;
+mod time;
 mod tos;
 mod udp;
 
@@ -17,3 +18,4 @@ pub use ports::parse_ports;
 pub use protocol::protocol_to_number;
 pub use tos::dscp_to_tos;
 pub use udp::parse_udp;
+pub use time::parse_microseconds;
