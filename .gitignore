@@ -30,6 +30,9 @@ Cargo.lock
 *.deb
 *.rpm
 
+# Windows Executable File
+*.exe
+
 # Test config file
 config.toml
 

@@ -29,7 +29,7 @@ pub async fn packet_capture(
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
-        .buffer_size(1000000000)
+        //.buffer_size(100000000)
         //.immediate_mode(true)
         .open()
         .unwrap();
