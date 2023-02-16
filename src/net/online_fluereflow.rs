@@ -175,7 +175,7 @@ pub async fn packet_capture(
             packet_count = 0;
             for (key, flow) in active_flow.iter() {
                 if flow.get_last() < (time - (flow_timeout * 1000)) {
-                    if verbose >= 1 {
+                    if verbose >= 2 {
                         println!("flow expired");
                     }
                     records.push(*flow);
