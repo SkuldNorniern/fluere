@@ -7,7 +7,7 @@ pub struct TcpFlags {
     pub urg: u8,
     pub ece: u8,
     pub cwr: u8,
-    pub ns: u8
+    pub ns: u8,
 }
 
 impl TcpFlags {
@@ -21,7 +21,7 @@ impl TcpFlags {
             urg: flags[5],
             ece: flags[6],
             cwr: flags[7],
-            ns: flags[8]
+            ns: flags[8],
         }
     }
 }

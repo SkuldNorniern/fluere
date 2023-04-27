@@ -60,7 +60,7 @@ pub fn get_default_interface_name(interfaces: &[NetworkInterface]) -> String {
 pub fn list_interfaces() -> Vec<NetworkInterface> {
     datalink::interfaces()
 }
-pub fn list_interface_names(){
+pub fn list_interface_names() {
     let interfaces = Device::list();
     /*let mut interface_names: Vec<String> = Vec::new();
     for interface in interfaces {

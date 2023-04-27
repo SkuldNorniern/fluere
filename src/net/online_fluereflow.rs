@@ -2,13 +2,13 @@ extern crate csv;
 
 use pcap::Capture;
 
+use fluereflow::FluereRecord;
 use tokio::task;
 use tokio::time::sleep;
-use fluereflow::FluereRecord;
 
 use super::interface::get_interface;
 
-use crate::net::parser::{parse_keys, parse_fluereflow,parse_microseconds};
+use crate::net::parser::{parse_fluereflow, parse_keys, parse_microseconds};
 use crate::net::types::{Key, TcpFlags};
 use crate::utils::{cur_time_file, fluere_exporter};
 
@@ -87,7 +87,10 @@ pub async fn packet_capture(
             Some(_) => false,
         };
 
-        let time = parse_microseconds(packet.header.ts.tv_sec as u64, packet.header.ts.tv_usec as u64);
+        let time = parse_microseconds(
+            packet.header.ts.tv_sec as u64,
+            packet.header.ts.tv_usec as u64,
+        );
         //println!("time: {:?}", time);
         let pkt = flowdata.get_min_pkt();
         let ttl = flowdata.get_min_ttl();
@@ -170,7 +173,7 @@ pub async fn packet_capture(
         }
 
         // Export flows if the interval has been reached
-        if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0{
+        if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0 {
             let mut expired_flows = vec![];
             packet_count = 0;
             for (key, flow) in active_flow.iter() {

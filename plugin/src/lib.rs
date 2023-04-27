@@ -19,7 +19,10 @@ impl InProcessPlugin {
 
 impl Plugin for InProcessPlugin {
     fn run(&self) {
-        println!("Running in-process plugin: {} from path: {}", self.name, self.path);
+        println!(
+            "Running in-process plugin: {} from path: {}",
+            self.name, self.path
+        );
     }
 }
 
@@ -37,7 +40,10 @@ impl ExternalProgramPlugin {
 
 impl Plugin for ExternalProgramPlugin {
     fn run(&self) {
-        println!("Running external program plugin: {} from path: {}", self.name, self.path);
+        println!(
+            "Running external program plugin: {} from path: {}",
+            self.name, self.path
+        );
     }
 }
 
@@ -54,17 +60,13 @@ impl PluginManager {
     }
 
     pub fn add_in_process_plugin(&mut self, plugin: InProcessPlugin) {
-        self.plugins.insert(
-            plugin.name.clone(),
-            Box::new(plugin) as Box<dyn Plugin>,
-        );
+        self.plugins
+            .insert(plugin.name.clone(), Box::new(plugin) as Box<dyn Plugin>);
     }
 
     pub fn add_external_program_plugin(&mut self, plugin: ExternalProgramPlugin) {
-        self.plugins.insert(
-            plugin.name.clone(),
-            Box::new(plugin) as Box<dyn Plugin>,
-        );
+        self.plugins
+            .insert(plugin.name.clone(), Box::new(plugin) as Box<dyn Plugin>);
     }
 
     pub fn run_plugins(&self) {
