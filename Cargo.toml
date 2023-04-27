@@ -13,9 +13,9 @@ license = "Apache-2.0"
 [dependencies]
 clap = {version = "4.0.32", features = ["cargo"]}
 tokio = { version = "1.22", features = ["full","macros", "rt-multi-thread"] }
-pnet = { version = "0.31.0", features = ["std"] }
-pnet_macros_support = "0.31.0"
-pnet_macros = "0.31.0"
+pnet = { version = "0.33.0", features = ["std"] }
+pnet_macros_support = "0.33.0"
+pnet_macros = "0.33.0"
 pcap = "0.10.0"
 chrono = "0.4.23"
 libc = "0.2"
