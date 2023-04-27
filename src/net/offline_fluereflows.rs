@@ -1,10 +1,10 @@
 extern crate csv;
 
+use fluereflow::FluereRecord;
 use pcap::Capture;
 use tokio::task;
-use fluereflow::FluereRecord;
 
-use crate::net::parser::{parse_keys, parse_fluereflow,parse_microseconds};
+use crate::net::parser::{parse_fluereflow, parse_keys, parse_microseconds};
 use crate::net::types::{Key, TcpFlags};
 use crate::utils::{cur_time_file, fluere_exporter};
 
@@ -65,7 +65,10 @@ pub async fn fluereflow_fileparse(
             },
             Some(_) => false,
         };
-        let time = parse_microseconds(packet.header.ts.tv_sec as u64, packet.header.ts.tv_usec as u64);
+        let time = parse_microseconds(
+            packet.header.ts.tv_sec as u64,
+            packet.header.ts.tv_usec as u64,
+        );
         let pkt = flowdata.get_min_pkt();
         let ttl = flowdata.get_min_ttl();
         //println!("active flows: {:?}", active_flow.len());
@@ -96,7 +99,7 @@ pub async fn fluereflow_fileparse(
                 println!("reverse flow updated");
             }
 
-            if  flags.fin == 1 || flags.rst == 1 {
+            if flags.fin == 1 || flags.rst == 1 {
                 if verbose >= 2 {
                     println!("flow finished");
                 }

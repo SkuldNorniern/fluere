@@ -1,29 +1,25 @@
 use pcap;
 
+use fluereflow::FluereRecord;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::PacketSize;
 use pnet::packet::Packet;
-use fluereflow::FluereRecord;
+use pnet::packet::PacketSize;
 
 use crate::net::errors::NetError;
-use crate::net::parser::{dscp_to_tos, parse_flags, parse_ports, protocol_to_number,parse_microseconds};
+use crate::net::parser::{
+    dscp_to_tos, parse_flags, parse_microseconds, parse_ports, protocol_to_number,
+};
 
-pub fn parse_fluereflow(
-    packet: pcap::Packet,
-) -> Result<
-    (
-        usize,
-        [u8; 9],
-        FluereRecord,
-    ),
-    NetError,
-> {
+pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
     let ethernet_packet = EthernetPacket::new(packet.data).unwrap();
 
-    let time = parse_microseconds(packet.header.ts.tv_sec as u64, packet.header.ts.tv_usec as u64);
+    let time = parse_microseconds(
+        packet.header.ts.tv_sec as u64,
+        packet.header.ts.tv_usec as u64,
+    );
     let record_result = match ethernet_packet.get_ethertype() {
         EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
@@ -56,17 +52,7 @@ pub fn parse_fluereflow(
     Ok((doctets, raw_flags, record))
 }
 
-fn ipv4_packet(
-    time: u64,
-    packet: Ipv4Packet,
-) -> Result<
-    (
-        usize,
-        [u8; 9],
-        FluereRecord,
-    ),
-    NetError,
-> {
+fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
     let protocol = protocol_to_number(packet.get_next_level_protocol());
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
@@ -84,10 +70,7 @@ fn ipv4_packet(
     //	Autonomous system number of the source and destination, either origin or peer
     let doctets = packet.packet_size();
     let tos_convert_result = dscp_to_tos(packet.get_dscp());
-    let tos = match tos_convert_result {
-        Ok(t) => t,
-        Err(_) => 0,
-    };
+    let tos = tos_convert_result.unwrap_or(0);
 
     Ok((
         doctets,
@@ -124,17 +107,7 @@ fn ipv4_packet(
     ))
 }
 
-fn ipv6_packet(
-    time: u64,
-    packet: Ipv6Packet,
-) -> Result<
-    (
-        usize,
-        [u8; 9],
-        FluereRecord,
-    ),
-    NetError,
-> {
+fn ipv6_packet(time: u64, packet: Ipv6Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
     let protocol = protocol_to_number(packet.get_next_header());
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
@@ -154,10 +127,7 @@ fn ipv6_packet(
     //first six bits in the 8-bit Traffic Class field
     let dscp = packet.get_traffic_class() >> 2;
     let tos_convert_result = dscp_to_tos(dscp);
-    let tos = match tos_convert_result {
-        Ok(t) => t,
-        Err(_) => 0,
-    };
+    let tos = tos_convert_result.unwrap_or(0);
 
     Ok((
         doctets,

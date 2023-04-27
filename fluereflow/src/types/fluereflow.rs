@@ -224,7 +224,7 @@ impl FluereRecord {
     pub fn get_out_pkts(&self) -> u32 {
         self.out_pkts
     }
-    pub fn get_in_bytes(&self) -> usize{
+    pub fn get_in_bytes(&self) -> usize {
         self.in_bytes
     }
     pub fn get_out_bytes(&self) -> usize {

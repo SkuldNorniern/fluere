@@ -1,12 +1,12 @@
-pub mod net;
-pub mod utils;
 pub mod config;
+pub mod net;
 pub mod plugin;
+pub mod utils;
 
 use clap::{Arg, ArgAction, Command};
-use std::process::exit; 
-use plugin::scan_plugins;
 use config::generate_config;
+use plugin::scan_plugins;
+use std::process::exit;
 
 fn cli() -> Command {
     Command::new("fluere")
@@ -159,7 +159,7 @@ fn cli() -> Command {
 async fn main() {
     let args = cli().get_matches();
     let _interfaces = net::list_interfaces();
-    let plugins = scan_plugins("plugins");
+    let _plugins = scan_plugins("plugins");
     //println!("Plugins: {:?}", plugins);
     match generate_config() {
         Ok(_) => println!("Config file generated"),
