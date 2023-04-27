@@ -21,7 +21,8 @@ fn cli() -> Command {
                     Arg::new("csv")
                         //.about("name of the exported csv file")
                         .short('c')
-                        .long("csv"),
+                        .long("csv")
+                        .default_value("output"),
                 )
                 .arg(
                     Arg::new("interface")
@@ -79,13 +80,15 @@ fn cli() -> Command {
                     Arg::new("file")
                         //.about("name of the pcap file")
                         .short('f')
-                        .long("file"),
+                        .long("file")
+                        .required(true),
                 )
                 .arg(
                     Arg::new("csv")
                         //.about("name of the exported csv file")
                         .short('c')
-                        .long("csv"),
+                        .long("csv")
+                        .default_value("output"),
                 )
                 .arg(
                     Arg::new("timeout")
@@ -177,7 +180,7 @@ async fn main() {
 
                 exit(0);
             }
-            let csv = args.get_one::<String>("csv").unwrap();
+            let csv = args.get_one::<String>("csv").expect("default");
             let interface = args.get_one::<String>("interface").unwrap();
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u64 = timeout.parse().unwrap();
@@ -208,7 +211,7 @@ async fn main() {
         Some(("offline", args)) => {
             println!("Offline mode");
             let file = args.get_one::<String>("file").unwrap();
-            let csv = args.get_one::<String>("csv").unwrap();
+            let csv = args.get_one::<String>("csv").expect("default");
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u32 = timeout.parse().unwrap();
             let verbose = args.get_one::<String>("verbose").expect("default");
