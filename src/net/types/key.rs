@@ -12,3 +12,9 @@ pub struct Key {
     pub src_mac: MacAddress,
     pub dst_mac: MacAddress,
 }
+impl Key {
+    pub fn mac_defaultate(&mut self) {
+        self.src_mac = MacAddress::new([0, 0, 0, 0, 0, 0]);
+        self.dst_mac = MacAddress::new([0, 0, 0, 0, 0, 0]);
+    }
+}
