@@ -33,7 +33,7 @@ pub struct FluereRecord {
     source: IpAddr,
     destination: IpAddr,
     d_pkts: u32,
-    d_octets: u32,
+    d_octets: usize,
     first: u64,
     last: u64,
     src_port: u16,
@@ -44,8 +44,8 @@ pub struct FluereRecord {
     max_ttl: u8,
     in_pkts: u32,
     out_pkts: u32,
-    in_bytes: u32,
-    out_bytes: u32,
+    in_bytes: usize,
+    out_bytes: usize,
     fin_cnt: u32,
     syn_cnt: u32,
     rst_cnt: u32,
@@ -63,7 +63,7 @@ impl FluereRecord {
         source: IpAddr,
         destination: IpAddr,
         d_pkts: u32,
-        d_octets: u32,
+        d_octets: usize,
         first: u64,
         last: u64,
         src_port: u16,
@@ -74,8 +74,8 @@ impl FluereRecord {
         max_ttl: u8,
         in_pkts: u32,
         out_pkts: u32,
-        in_bytes: u32,
-        out_bytes: u32,
+        in_bytes: usize,
+        out_bytes: usize,
         fin_cnt: u32,
         syn_cnt: u32,
         rst_cnt: u32,
@@ -121,7 +121,7 @@ impl FluereRecord {
     pub fn set_d_pkts(&mut self, d_pkts: u32) {
         self.d_pkts = d_pkts;
     }
-    pub fn set_d_octets(&mut self, d_octets: u32) {
+    pub fn set_d_octets(&mut self, d_octets: usize) {
         self.d_octets = d_octets;
     }
     pub fn set_first(&mut self, first: u64) {
@@ -136,10 +136,10 @@ impl FluereRecord {
     pub fn set_out_pkts(&mut self, out_pkts: u32) {
         self.out_pkts = out_pkts;
     }
-    pub fn set_in_bytes(&mut self, in_bytes: u32) {
+    pub fn set_in_bytes(&mut self, in_bytes: usize) {
         self.in_bytes = in_bytes;
     }
-    pub fn set_out_bytes(&mut self, out_bytes: u32) {
+    pub fn set_out_bytes(&mut self, out_bytes: usize) {
         self.out_bytes = out_bytes;
     }
     pub fn set_fin_cnt(&mut self, fin_cnt: u32) {
@@ -191,7 +191,7 @@ impl FluereRecord {
     pub fn get_d_pkts(&self) -> u32 {
         self.d_pkts
     }
-    pub fn get_d_octets(&self) -> u32 {
+    pub fn get_d_octets(&self) -> usize {
         self.d_octets
     }
     pub fn get_first(&self) -> u64 {
@@ -224,10 +224,10 @@ impl FluereRecord {
     pub fn get_out_pkts(&self) -> u32 {
         self.out_pkts
     }
-    pub fn get_in_bytes(&self) -> u32 {
+    pub fn get_in_bytes(&self) -> usize{
         self.in_bytes
     }
-    pub fn get_out_bytes(&self) -> u32 {
+    pub fn get_out_bytes(&self) -> usize {
         self.out_bytes
     }
     pub fn get_fin_cnt(&self) -> u32 {

@@ -4,6 +4,7 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::PacketSize;
 use pnet::packet::Packet;
 use fluereflow::FluereRecord;
 
@@ -14,7 +15,7 @@ pub fn parse_fluereflow(
     packet: pcap::Packet,
 ) -> Result<
     (
-        u32,
+        usize,
         [u8; 9],
         FluereRecord,
     ),
@@ -60,7 +61,7 @@ fn ipv4_packet(
     packet: Ipv4Packet,
 ) -> Result<
     (
-        u32,
+        usize,
         [u8; 9],
         FluereRecord,
     ),
@@ -81,7 +82,7 @@ fn ipv4_packet(
     let flags = parse_flags(protocol, packet.payload());
 
     //	Autonomous system number of the source and destination, either origin or peer
-    let doctets = packet.get_total_length() as u32;
+    let doctets = packet.packet_size();
     let tos_convert_result = dscp_to_tos(packet.get_dscp());
     let tos = match tos_convert_result {
         Ok(t) => t,
@@ -128,7 +129,7 @@ fn ipv6_packet(
     packet: Ipv6Packet,
 ) -> Result<
     (
-        u32,
+        usize,
         [u8; 9],
         FluereRecord,
     ),
@@ -149,7 +150,7 @@ fn ipv6_packet(
     let flags = parse_flags(protocol, packet.payload());
 
     //	Autonomous system number of the source and destination, either origin or peer
-    let doctets = packet.get_payload_length() as u32;
+    let doctets = packet.packet_size();
     //first six bits in the 8-bit Traffic Class field
     let dscp = packet.get_traffic_class() >> 2;
     let tos_convert_result = dscp_to_tos(dscp);
@@ -170,8 +171,8 @@ fn ipv6_packet(
             time,
             src_port,
             dst_port,
-            doctets,
-            doctets,
+            packet.get_payload_length() as u32,
+            packet.get_payload_length() as u32,
             0,
             0,
             0,
