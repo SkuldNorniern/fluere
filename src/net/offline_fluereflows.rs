@@ -14,6 +14,7 @@ use std::time::Instant;
 
 pub async fn fluereflow_fileparse(
     csv_file: &str,
+    use_mac: bool,
     file_name: &str,
     _flow_timeout: u32,
     verbose: u8,
@@ -40,11 +41,14 @@ pub async fn fluereflow_fileparse(
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
-        let (key_value, reverse_key) = match parse_keys(packet.clone()) {
+        let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
             Ok(keys) => keys,
             Err(_) => continue,
         };
-
+        if !use_mac{
+            key_value.mac_defaultate();
+            reverse_key.mac_defaultate();
+        }
         let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
             Ok(result) => result,
             Err(_) => continue,
