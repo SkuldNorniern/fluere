@@ -25,6 +25,13 @@ fn cli() -> Command {
                         .default_value("output"),
                 )
                 .arg(
+                    Arg::new("list")
+                        //.about("List of network interfaces")
+                        .short('l')
+                        .long("list")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("interface")
                         //.about("Select network interface to use")
                         .short('i')
@@ -43,6 +50,13 @@ fn cli() -> Command {
                         .default_value("600000")
                         .short('t')
                         .long("timeout"),
+                )
+                .arg(
+                    Arg::new("useMACaddress")
+                        //.about("List of network interfaces")
+                        .short('M')
+                        .long("useMAC")
+                        .action(ArgAction::SetTrue),
                 )
                 .arg(
                     Arg::new("interval")
@@ -64,13 +78,6 @@ fn cli() -> Command {
                         .default_value("1")
                         .short('v')
                         .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
-                )
-                .arg(
-                    Arg::new("list")
-                        //.about("List of network interfaces")
-                        .short('l')
-                        .long("list")
-                        .action(ArgAction::SetTrue),
                 ),
         )
         .subcommand(
@@ -96,6 +103,13 @@ fn cli() -> Command {
                         .default_value("600000")
                         .short('t')
                         .long("timeout"),
+                )
+                .arg(
+                    Arg::new("useMACaddress")
+                        //.about("List of network interfaces")
+                        .short('M')
+                        .long("useMAC")
+                        .action(ArgAction::SetTrue),
                 )
                 .arg(
                     Arg::new("verbose")
@@ -180,6 +194,7 @@ async fn main() {
 
                 exit(0);
             }
+            let use_mac = args.get_flag("useMACaddress");
             let csv = args.get_one::<String>("csv").expect("default");
             let interface = args.get_one::<String>("interface").unwrap();
             let timeout = args.get_one::<String>("timeout").unwrap();
@@ -198,6 +213,7 @@ async fn main() {
             } //net::packet_capture(interface);
             net::online_fluereflow::packet_capture(
                 csv,
+                use_mac,
                 interface,
                 duration,
                 interval,
@@ -210,6 +226,7 @@ async fn main() {
         }
         Some(("offline", args)) => {
             println!("Offline mode");
+            let use_mac = args.get_flag("useMACaddress");
             let file = args.get_one::<String>("file").unwrap();
             let csv = args.get_one::<String>("csv").expect("default");
             let timeout = args.get_one::<String>("timeout").unwrap();
@@ -217,7 +234,7 @@ async fn main() {
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
 
-            net::fluereflow_fileparse(csv, file, timeout, verbose).await;
+            net::fluereflow_fileparse(csv,use_mac, file, timeout, verbose).await;
             //net::netflow(_file, _csv);
         }
         Some(("pcap", args)) => {

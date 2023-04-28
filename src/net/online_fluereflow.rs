@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 pub async fn packet_capture(
     csv_file: &str,
+    use_mac: bool,
     interface_name: &str,
     duration: u64,
     interval: u64,
@@ -60,11 +61,15 @@ pub async fn packet_capture(
             println!("received packet");
         }
 
-        let (key_value, reverse_key) = match parse_keys(packet.clone()) {
+        let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
             Ok(keys) => keys,
             Err(_) => continue,
         };
-
+        if !use_mac{
+            key_value.mac_defaultate();
+            reverse_key.mac_defaultate();
+        }
+        
         let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
             Ok(result) => result,
             Err(_) => continue,
