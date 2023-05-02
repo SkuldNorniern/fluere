@@ -19,62 +19,62 @@ fn cli() -> Command {
                 .about("Capture netflow online")
                 .arg(
                     Arg::new("csv")
-                        //.about("name of the exported csv file")
+                        .help("Name of the exported csv file")
                         .short('c')
                         .long("csv")
                         .default_value("output"),
                 )
                 .arg(
                     Arg::new("list")
-                        //.about("List of network interfaces")
+                        .help("List of network interfaces")
                         .short('l')
                         .long("list")
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
                     Arg::new("interface")
-                        //.about("Select network interface to use")
+                        .help("Select network interface to use")
                         .short('i')
                         .long("interface"),
                 )
                 .arg(
                     Arg::new("duration")
-                        //.about("Select network interface to use")
+                        .help("Set capture duration, in milliseconds (0: infinite)")
                         .default_value("0")
                         .short('d')
                         .long("duration"),
                 )
                 .arg(
                     Arg::new("timeout")
-                        //.about("Select network interface to use")
+                        .help("Set flow timeout, in milliseconds (0: infinite)")
                         .default_value("600000")
                         .short('t')
                         .long("timeout"),
                 )
                 .arg(
                     Arg::new("useMACaddress")
-                        //.about("List of network interfaces")
+                        .help("Set use MAC address on Key value [default: false]")
                         .short('M')
                         .long("useMAC")
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
                     Arg::new("interval")
-                        //.about("Select network interface to use")
+                        .help("Set export interval, in milliseconds")
                         .default_value("1800000")
                         .short('I')
                         .long("interval"),
                 )
                 .arg(
                     Arg::new("sleep_windows")
-                        //.about("Select network interface to use")
+                        .help("Set inverval of thread pause for (only)MS Windows per n packet (need it for stopping random stop on Windows)")
                         .default_value("10")
                         .short('s')
                         .long("sleep"),
                 )
                 .arg(
                     Arg::new("verbose")
-                        //.about("List of network interfaces")
+                        .help("Set verbosity level") 
                         .default_value("1")
                         .short('v')
                         .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
