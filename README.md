@@ -22,8 +22,6 @@
     <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/main.png" alt="Help Image" width="770" height="401"></img>
 </div>
 
-# Fluere: Network Packet Capture & Conversion Tool
-
 ## Overview
 
 Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data. It also supports live capture and conversion of NetFlow data. Fluere is cross-platform compatible, running on Windows, macOS, and Linux operating systems.
