@@ -182,12 +182,15 @@ pub async fn packet_capture(
             let mut expired_flows = vec![];
             packet_count = 0;
             for (key, flow) in active_flow.iter() {
-                if flow.get_last() < (time - (flow_timeout * 1000)) {
-                    if verbose >= 2 {
-                        println!("flow expired");
+                if flow_timeout > 0 {
+                
+                    if flow.get_last() < (time - (flow_timeout * 1000)) {
+                        if verbose >= 2 {
+                            println!("flow expired");
+                        }
+                        records.push(*flow);
+                        expired_flows.push(*key);
                     }
-                    records.push(*flow);
-                    expired_flows.push(*key);
                 }
             }
             active_flow.retain(|key, _| !expired_flows.contains(key));
