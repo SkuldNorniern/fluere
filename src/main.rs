@@ -19,7 +19,7 @@ fn cli() -> Command {
                 .about("Capture netflow online")
                 .arg(
                     Arg::new("csv")
-                        .help("Name of the exported csv file")
+                        .help("Title of the exported csv file")
                         .short('c')
                         .long("csv")
                         .default_value("output"),
@@ -93,7 +93,7 @@ fn cli() -> Command {
                 )
                 .arg(
                     Arg::new("csv")
-                        .help("Name of the exported csv file")
+                        .help("Title of the exported csv file")
                         .short('c')
                         .long("csv")
                         .default_value("output"),
