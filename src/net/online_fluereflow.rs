@@ -65,11 +65,11 @@ pub async fn packet_capture(
             Ok(keys) => keys,
             Err(_) => continue,
         };
-        if !use_mac{
+        if !use_mac {
             key_value.mac_defaultate();
             reverse_key.mac_defaultate();
         }
-        
+
         let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
             Ok(result) => result,
             Err(_) => continue,
@@ -182,15 +182,12 @@ pub async fn packet_capture(
             let mut expired_flows = vec![];
             packet_count = 0;
             for (key, flow) in active_flow.iter() {
-                if flow_timeout > 0 {
-                
-                    if flow.get_last() < (time - (flow_timeout * 1000)) {
-                        if verbose >= 2 {
-                            println!("flow expired");
-                        }
-                        records.push(*flow);
-                        expired_flows.push(*key);
+                if flow_timeout > 0 && flow.get_last() < (time - (flow_timeout * 1000)) {
+                    if verbose >= 2 {
+                        println!("flow expired");
                     }
+                    records.push(*flow);
+                    expired_flows.push(*key);
                 }
             }
             active_flow.retain(|key, _| !expired_flows.contains(key));
