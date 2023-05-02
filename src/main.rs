@@ -237,7 +237,7 @@ async fn main() {
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
 
-            net::fluereflow_fileparse(csv,use_mac, file, timeout, verbose).await;
+            net::fluereflow_fileparse(csv, use_mac, file, timeout, verbose).await;
             //net::netflow(_file, _csv);
         }
         Some(("pcap", args)) => {

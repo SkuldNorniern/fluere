@@ -22,82 +22,86 @@
     <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/main.png" alt="Help Image" width="770" height="401"></img>
 </div>
 
-## Description
+# Fluere: Network Packet Capture & Conversion Tool
 
-This tool is designed to capture network packets into pcap format and convert them to NetFlow data. It also allows for live capture and conversion of NetFlow data. The tool is cross-platform supported and can run on Windows, MacOS, and Linux operating systems.
+## Overview
+
+Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data. It also supports live capture and conversion of NetFlow data. Fluere is cross-platform compatible, running on Windows, macOS, and Linux operating systems.
+
+## Prerequisites
+
+Ensure that you have installed `libpcap` on Linux and macOS or `npcap` on Windows.
+- you need to install `npcap` in `winpcap compatible mode` 
 
 ## Installation
-you need to install libpcap on Linux and macOS or npcap on Windows
 
-Download the latest release of the tool from the releases page.
+Download the latest release of Fluere from the [releases page](https://github.com/SkuldNorniern/fluere/releases).
 
-- Windows
+### Windows
 
-  - Run the installer.exe file and check if the environment variable has been set up correctly (there is a bug)
+1. Run the `installer.exe` file.
+2. Verify that the environment variable has been set up correctly (there is a known bug).
 
-- MacOS
+### macOS (Intel)
+Apple version will be provided after the 0.5.0 release
 
-  - Intel
+```sh
+brew tap SkuldNorniern/fluere
+brew install fluere
+```
 
-    ```
-    brew tap SkuldNorniern/fluere
-    brew install fluere
-    ```
 
-- Linux
+### Linux (Debian)
 
-  - Debian
-
-    ```
-    sudo dpkg -i fluere_x.x.x_amd64.deb
-    ```
+```sh
+sudo dpkg -i fluere_x.x.x_amd64.deb
+```
 
 ## Usage
 
-Run the tool by entering the `fluere` command in the terminal.
+Execute Fluere by entering the `fluere` command in the terminal.
 
-list the interfaces using
+To list available interfaces, use:
 
-```
-  fluere online -l
+```sh
+fluere online -l
 ```
 
 or
 
-```
-  fluere pcap -l
-```
-
-Choose between capturing packets in pcap format or converting live NetFlow data.
-
-```
-  online
-  offline
-  pcap
+```sh
+fluere pcap -l
 ```
 
-Set the desired capture duration.
+Select the capture mode:
 
+- `online`: Live NetFlow data capture and conversion
+- `offline`: Convert pcap files to NetFlow data
+- `pcap`: Capture packets in pcap format
+
+Specify the desired capture duration in milliseconds (ms):
+
+```sh
+-d 1000
 ```
-  -d 1000 // in ms
+
+Set the output file's title:
+
+```sh
+-c file_title
 ```
 
-Set the name for the files
+The captured packets or NetFlow data will be saved in the "output" directory within Fluere's installation folder.
 
+## Important Notes
+
+For Linux and macOS users, ensure that you run Fluere with administrator privileges.
+
+### Example
+
+```sh
+sudo fluere online -d 1000 -c my_capture
 ```
-  -c file_name
-```
-
-The captured packets or netflow data will be saved in the "output" directory in the tool's installation location.
-
-## Additional Features
-
-Make sure to run the tool with administrator privileges on Linux and macOS operating systems.
-Make sure to have enough storage space on your machine to save the captured packets or NetFlow data.
-
-## Support
-
-Please contact the developer at skuldnorniern@gmail.com or make a issue on the github for any support or bug reports. Thank you for using our tool!
 
 ## License
 

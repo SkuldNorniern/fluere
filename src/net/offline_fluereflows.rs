@@ -45,7 +45,7 @@ pub async fn fluereflow_fileparse(
             Ok(keys) => keys,
             Err(_) => continue,
         };
-        if !use_mac{
+        if !use_mac {
             key_value.mac_defaultate();
             reverse_key.mac_defaultate();
         }
