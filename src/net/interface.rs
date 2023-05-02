@@ -8,7 +8,7 @@ pub fn get_interface(device_name: &str) -> Device {
     println!("Requested Device : {}", device_name);
     let mut selected_device: Device = Device::lookup().unwrap().unwrap();
     let devices = Device::list();
-
+    let mut is_found = false;
     // Begin
     match devices {
         Ok(vec_devices) => {
@@ -20,7 +20,12 @@ pub fn get_interface(device_name: &str) -> Device {
                         "-{} device has been captured! in {:?}",
                         device_name, duration
                     );
+                    is_found = true;
                 };
+            }
+            if !is_found {
+                println!("-{} device not found", device_name);
+                std::process::exit(1);
             }
         }
         Err(_) => {
