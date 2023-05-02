@@ -125,7 +125,7 @@ fn cli() -> Command {
                 .about("Collect packet and save to .pcap file")
                 .arg(
                     Arg::new("pcap")
-                        .help("Name of the input pcap file [Required]")
+                        .help("Name of the output pcap files title [Required]")
                         .short('p')
                         .long("pcap")
                         .required(true),
