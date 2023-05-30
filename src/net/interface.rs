@@ -37,7 +37,7 @@ pub fn get_interface(device_name: &str) -> Device {
     selected_device
 }
 
-pub fn get_default_interface(interfaces: Vec<NetworkInterface>) -> String {
+/*pub fn get_default_interface(interfaces: Vec<NetworkInterface>) -> String {
     for interface in interfaces {
         if interface.is_loopback() || !interface.is_up() || interface.mac.is_none() {
             continue;
@@ -60,7 +60,7 @@ pub fn get_default_interface_name(interfaces: &[NetworkInterface]) -> String {
         .unwrap_or_else(|| panic!("No valid interfaces"))
         .name
         .clone()
-}
+}*/
 
 pub fn list_interfaces() -> Vec<NetworkInterface> {
     datalink::interfaces()

@@ -178,20 +178,20 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() {
     let args = cli().get_matches();
-    let _interfaces = net::list_interfaces();
-    let _plugins = scan_plugins("plugins");
+    let interfaces = net::list_interfaces();
+    //let _plugins = scan_plugins("plugins");
     //println!("Plugins: {:?}", plugins);
-    match generate_config() {
-        Ok(_) => println!("Config file generated"),
-        Err(e) => println!("Error: {e}"),
-    }
+    //match generate_config() {
+    //    Ok(_) => println!("Config file generated"),
+    //    Err(e) => println!("Error: {e}"),
+    //}
     //let mut interface = "None";
     match args.subcommand() {
         Some(("online", args)) => {
             println!("Online mode");
             if args.get_flag("list") {
                 println!("List of interfaces");
-                for (i, interface) in _interfaces.iter().enumerate() {
+                for (i, interface) in interfaces.iter().enumerate() {
                     println!("[{}]: {}", i, interface.name);
                 }
 
@@ -244,7 +244,7 @@ async fn main() {
             println!("Pcap mode");
             if args.get_flag("list") {
                 println!("List of interfaces");
-                for (i, interface) in _interfaces.iter().enumerate() {
+                for (i, interface) in interfaces.iter().enumerate() {
                     println!("[{}]: {}", i, interface.name);
                 }
 
