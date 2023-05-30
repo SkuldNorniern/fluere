@@ -33,26 +33,8 @@ Ensure that you have installed `libpcap` on Linux and macOS or `npcap` on Window
 
 ## Installation
 
-Download the latest release of Fluere from the [releases page](https://github.com/SkuldNorniern/fluere/releases).
-
-### Windows
-
-1. Run the `installer.exe` file.
-2. Verify that the environment variable has been set up correctly (there is a known bug).
-
-### macOS (Intel)
-Apple version will be provided after the 0.5.0 release
-
 ```sh
-brew tap SkuldNorniern/fluere
-brew install fluere
-```
-
-
-### Linux (Debian)
-
-```sh
-sudo dpkg -i fluere_x.x.x_amd64.deb
+cargo install fluere
 ```
 
 ## Usage
