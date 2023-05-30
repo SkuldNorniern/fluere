@@ -30,7 +30,7 @@ serde_json = "1.0.91"
 toml = "0.7.1"
 
 #fluere_plugin = { path = "./plugin" }
-fluereflow = { path = "./fluereflow", version = "0.2.0"}
+fluereflow = "0.2.0"
 
 [workspace]
 members = [
