@@ -4,8 +4,8 @@ pub mod plugin;
 pub mod utils;
 
 use clap::{Arg, ArgAction, Command};
-use config::generate_config;
-use plugin::scan_plugins;
+
+
 use std::process::exit;
 
 fn cli() -> Command {

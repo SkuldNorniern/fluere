@@ -13,8 +13,14 @@ use crate::net::types::{Key, MacAddress};
 use std::net::IpAddr;
 
 pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
-    let ethernet_packet = EthernetPacket::new(packet.data).unwrap();
-
+    if packet.is_empty() {
+        return Err(NetError::EmptyPacket);
+    }
+    let ethernet_packet_raw = EthernetPacket::new(packet.data);
+    let ethernet_packet = match ethernet_packet_raw {
+        None => return Err(NetError::EmptyPacket),
+        Some(e) => e,
+    };
     let src_mac = MacAddress::new(ethernet_packet.get_source().into());
     let dst_mac = MacAddress::new(ethernet_packet.get_destination().into());
     let (src_ip, dst_ip, src_port, dst_port, protocol) = match ethernet_packet.get_ethertype() {
