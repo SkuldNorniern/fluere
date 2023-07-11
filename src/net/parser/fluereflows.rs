@@ -14,7 +14,15 @@ use crate::net::parser::{
 };
 
 pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
-    let ethernet_packet = EthernetPacket::new(packet.data).unwrap();
+    if packet.is_empty() {
+        return Err(NetError::EmptyPacket);
+    }
+
+    let ethernet_packet_raw = EthernetPacket::new(packet.data);
+    let ethernet_packet = match ethernet_packet_raw {
+        None => return Err(NetError::EmptyPacket),
+        Some(e) => e,
+    };
 
     let time = parse_microseconds(
         packet.header.ts.tv_sec as u64,
