@@ -80,9 +80,24 @@ pub async fn packet_capture(
         let is_reverse = match active_flow.get(&key_value) {
             None => match active_flow.get(&reverse_key) {
                 None => {
-                    active_flow.insert(key_value, flowdata);
-                    if verbose >= 2 {
-                        println!("flow established");
+                    // if the protocol is TCP, check if is a syn packet
+                    if flowdata.get_prot() == 6 {
+                        if flags.syn > 0 {
+                            active_flow.insert(key_value, flowdata);
+                            if verbose >= 2 {
+                                println!("flow established");
+                            }
+                            
+                        }
+                        else {
+                            continue;
+                        }
+                    }
+                    else {
+                        active_flow.insert(key_value, flowdata);
+                        if verbose >= 2 {
+                            println!("flow established");
+                        }
                     }
 
                     false
