@@ -36,7 +36,7 @@ fn cli() -> Command {
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        .required(true),
+                        //.required(true),
                 )
                 .arg(
                     Arg::new("duration")
@@ -128,14 +128,14 @@ fn cli() -> Command {
                         .help("Name of the output pcap files title [Required]")
                         .short('p')
                         .long("pcap")
-                        .required(true),
+                        //.required(true),
                 )
                 .arg(
                     Arg::new("interface")
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        .required(true),
+                        //.required(true),
                 )
                 .arg(
                     Arg::new("duration")
@@ -199,7 +199,8 @@ async fn main() {
             }
             let use_mac = args.get_flag("useMACaddress");
             let csv = args.get_one::<String>("csv").expect("default");
-            let interface = args.get_one::<String>("interface").unwrap();
+            let interface = args.get_one::<String>("interface").ok_or("Required Interface").unwrap();
+
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u64 = timeout.parse().unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
@@ -251,8 +252,8 @@ async fn main() {
                 exit(0);
             }
 
-            let pcap = args.get_one::<String>("pcap").unwrap();
-            let interface = args.get_one::<String>("interface").unwrap();
+            let pcap = args.get_one::<String>("pcap").ok_or("Required output pcap file name").unwrap();
+            let interface = args.get_one::<String>("interface").ok_or("Required Interface").unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
             let duration: u64 = duration.parse().unwrap();
             let interval = args.get_one::<String>("interval").expect("default");
