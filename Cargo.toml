@@ -1,6 +1,6 @@
 [package]
 name = "fluere"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 description = "Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool"
@@ -38,3 +38,12 @@ members = [
     "plugin",
     "fluereflow"
 ]
+
+[package.metadata.rpm]
+package = "fluere"
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+fluere = { path = "/usr/bin/fluere" }
