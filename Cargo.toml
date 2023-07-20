@@ -47,3 +47,11 @@ buildflags = ["--release"]
 
 [package.metadata.rpm.targets]
 fluere = { path = "/usr/bin/fluere" }
+
+[package.metadata.generate-rpm.requires]
+libpcap = "*"
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/fluere", dest = "/usr/bin/fluere", mode = "755" },
+]
