@@ -121,6 +121,73 @@ fn cli() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("live")
+                .about("Capture netflow online with live feedback")
+                .arg(
+                    Arg::new("csv")
+                        .help("Title of the exported csv file")
+                        .short('c')
+                        .long("csv")
+                        .default_value("output"),
+                )
+                .arg(
+                    Arg::new("list")
+                        .help("List of network interfaces")
+                        .short('l')
+                        .long("list")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("interface")
+                        .help("Select network interface to use [Required]")
+                        .short('i')
+                        .long("interface")
+                        //.required(true),
+                )
+                .arg(
+                    Arg::new("duration")
+                        .help("Set capture duration, in milliseconds (0: infinite)")
+                        .default_value("0")
+                        .short('d')
+                        .long("duration"),
+                )
+                .arg(
+                    Arg::new("timeout")
+                        .help("Set flow timeout, in milliseconds (0: infinite)")
+                        .default_value("600000")
+                        .short('t')
+                        .long("timeout"),
+                )
+                .arg(
+                    Arg::new("useMACaddress")
+                        .help("Set use MAC address on Key value [default: false]")
+                        .short('M')
+                        .long("useMAC")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("interval")
+                        .help("Set export interval, in milliseconds")
+                        .default_value("1800000")
+                        .short('I')
+                        .long("interval"),
+                )
+                .arg(
+                    Arg::new("sleep_windows")
+                        .help("Set inverval of thread pause for (only)MS Windows per n packet (need it for stopping random stop on Windows)")
+                        .default_value("10")
+                        .short('s')
+                        .long("sleep"),
+                )
+                .arg(
+                    Arg::new("verbose")
+                        .help("Set verbosity level") 
+                        .default_value("1")
+                        .short('v')
+                        .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
+                ),
+        )
+        .subcommand(
             Command::new("pcap")
                 .about("Collect packet and save to .pcap file")
                 .arg(
@@ -240,6 +307,47 @@ async fn main() {
 
             net::fluereflow_fileparse(csv, use_mac, file, timeout, verbose).await;
             //net::netflow(_file, _csv);
+        }
+        Some(("live", args)) => {
+            println!("Live mode");
+            if args.get_flag("list") {
+                println!("List of interfaces");
+                for (i, interface) in interfaces.iter().enumerate() {
+                    println!("[{}]: {}", i, interface.name);
+                }
+
+                exit(0);
+            }
+            let use_mac = args.get_flag("useMACaddress");
+            let csv = args.get_one::<String>("csv").expect("default");
+            let interface = args.get_one::<String>("interface").ok_or("Required Interface").unwrap();
+
+            let timeout = args.get_one::<String>("timeout").unwrap();
+            let timeout: u64 = timeout.parse().unwrap();
+            let duration = args.get_one::<String>("duration").expect("default");
+            let duration: u64 = duration.parse().unwrap();
+            let interval = args.get_one::<String>("interval").expect("default");
+            let interval: u64 = interval.parse().unwrap();
+            let sleep_windows = args.get_one::<String>("sleep_windows").expect("default");
+            let sleep_windows: u64 = sleep_windows.parse().unwrap();
+            let verbose = args.get_one::<String>("verbose").expect("default");
+            let verbose: u8 = verbose.parse().unwrap();
+
+            if verbose >= 1 {
+                println!("Interface {} selected", interface);
+            } //net::packet_capture(interface);
+            net::live_fluereflow::packet_capture(
+                csv,
+                use_mac,
+                interface,
+                duration,
+                interval,
+                timeout,
+                sleep_windows,
+                verbose,
+            )
+            .await;
+            //net::netflow(_interface);
         }
         Some(("pcap", args)) => {
             println!("Pcap mode");
