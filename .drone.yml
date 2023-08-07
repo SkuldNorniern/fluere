@@ -5,5 +5,6 @@ steps:
 - name: test
   image: rust:1.71
   commands:
+  - sudo apt install -y libpcap-dev
   - cargo build --verbose --all
   - cargo test --verbose --all
