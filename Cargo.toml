@@ -31,7 +31,6 @@ toml = "0.7.1"
 
 #fluere_plugin = { path = "./plugin" }
 fluereflow = "0.2.0"
-rui = "0.6.1"
 ratatui = { version = "0.22.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
 
