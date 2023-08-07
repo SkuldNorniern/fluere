@@ -9,3 +9,9 @@ steps:
   - apt-get install -y libpcap-dev
   - cargo build --verbose --all
   - cargo test --verbose --all
+  
+trigger:
+  branch:
+  - main
+  event:
+  - push
