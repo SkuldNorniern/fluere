@@ -8,12 +8,6 @@ steps:
   - apt-get update
   - apt-get install -y libpcap-dev
   - cargo build --verbose --all
-  
-trigger:
-  branch:
-  - main
-  event:
-  - push
 
 ---
 kind: pipeline
@@ -26,6 +20,7 @@ steps:
   - apt-get update
   - apt-get install -y libpcap-dev
   - cargo test --verbose --all
+
   
 trigger:
   branch:
