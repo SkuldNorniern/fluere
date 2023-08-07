@@ -4,7 +4,8 @@ trigger:
   branch:
   - main
   event:
-  - push
+    exclude:
+      - promote
 steps:
 - name: build
   image: rust:1.71
@@ -20,7 +21,8 @@ trigger:
   branch:
   - main
   event:
-  - push
+    exclude:
+      - promote
 steps:
 - name: test
   image: rust:1.71
