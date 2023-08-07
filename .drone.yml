@@ -1,11 +1,33 @@
 kind: pipeline
-name: default
+name: build_pipe
+trigger:
+  branch:
+  - main
+  event:
+  - push
+steps:
+- name: build
+  image: rust:1.71
+  commands:
+  - apt-get update
+  - apt-get install -y libpcap-dev
+  - cargo build --verbose --all
 
+---
+kind: pipeline
+name: test_pipe
+trigger:
+  branch:
+  - main
+  event:
+  - push
 steps:
 - name: test
   image: rust:1.71
   commands:
   - apt-get update
   - apt-get install -y libpcap-dev
-  - cargo build --verbose --all
   - cargo test --verbose --all
+
+  
+
