@@ -1,6 +1,10 @@
 kind: pipeline
 name: build_pipe
-
+trigger:
+  branch:
+  - main
+  event:
+  - push
 steps:
 - name: build
   image: rust:1.71
@@ -12,7 +16,11 @@ steps:
 ---
 kind: pipeline
 name: test_pipe
-
+trigger:
+  branch:
+  - main
+  event:
+  - push
 steps:
 - name: test
   image: rust:1.71
@@ -22,8 +30,4 @@ steps:
   - cargo test --verbose --all
 
   
-trigger:
-  branch:
-  - main
-  event:
-  - push
+
