@@ -1,13 +1,14 @@
 kind: pipeline
-name: build pipe
+name: build_pipe
 
 steps:
-- name: build test
+- name: build
   image: rust:1.71
   commands:
   - apt-get update
   - apt-get install -y libpcap-dev
   - cargo build --verbose --all
+  
 trigger:
   branch:
   - main
@@ -16,7 +17,7 @@ trigger:
 
 ---
 kind: pipeline
-name: test pipe
+name: test_pipe
 
 steps:
 - name: test
