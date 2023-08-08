@@ -1,7 +1,7 @@
 use crate::net::types::{EtherFrame, EtherProtocol, MacAddress};
 use nom::{bytes::complete::take, IResult};
 
-pub fn parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {
+pub fn _parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {
     let (packet_data, dest_mac_bytes) = take(6usize)(packet_data)?;
     let dest_mac = MacAddress::from(dest_mac_bytes);
     let (packet_data, source_mac_bytes) = take(6usize)(packet_data)?;
@@ -75,7 +75,7 @@ mod tests {
                 157, 51,
             ],
         };
-        let (_packet_data, frame) = parse_etherprotocol(packet.data).unwrap();
+        let (_packet_data, frame) =_parse_etherprotocol(packet.data).unwrap();
         assert_eq!(
             frame.dest_mac,
             MacAddress::new([0x58, 0x11, 0x22, 0x15, 0x06, 0x18])

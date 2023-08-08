@@ -2,7 +2,7 @@ use crate::net::types::ipv4::{IPProtocol, IPv4};
 use nom::{bytes::complete::take, IResult};
 use std::net::Ipv4Addr;
 
-pub fn parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
+pub fn _parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
     let (payload, version_header_length) = take(1usize)(payload)?;
     let version = version_header_length[0] >> 4;
     let header_length = version_header_length[0] & 15;
@@ -50,7 +50,7 @@ pub fn parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::parse_etherprotocol;
+    use super::super::_parse_etherprotocol;
     use super::*;
     use pcap::{Packet, PacketHeader};
     use std::os::raw::c_long;
@@ -105,9 +105,9 @@ mod tests {
                 157, 51,
             ],
         };
-        let (payload, frame) = parse_etherprotocol(packet.data).unwrap();
+        let (payload, frame) = _parse_etherprotocol(packet.data).unwrap();
         println!("{:?}", frame);
-        let (_payload2, etherprot) = parse_ipv4(payload).unwrap();
+        let (_payload2, etherprot) =_parse_ipv4(payload).unwrap();
         println!("{:?}", etherprot);
         assert_eq!(etherprot.version, 4);
         assert_eq!(etherprot.type_of_service, 0);

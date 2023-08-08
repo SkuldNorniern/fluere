@@ -69,7 +69,11 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
     let parsed_ports = parse_ports(protocol, packet.payload());
     match parsed_ports {
         Ok(_) => {}
-        Err(e) => return Err(e),
+        Err(e) => {
+            println!("Unknown protocol {}\n Report to the developer", e);
+            return Err(e)
+        },
+
     }
     let (src_port, dst_port) = parsed_ports.unwrap();
     // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
