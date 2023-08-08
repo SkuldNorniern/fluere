@@ -346,7 +346,7 @@ async fn main() {
                 sleep_windows,
                 verbose,
             )
-            .await;
+            .await.expect("Error on live mode");
             //net::netflow(_interface);
         }
         Some(("pcap", args)) => {

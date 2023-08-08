@@ -3,7 +3,7 @@ use nom::{bytes::complete::take, IResult};
 use crate::net::types::Ports;
 use crate::net::types::Udp;
 
-pub fn parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
+pub fn _parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
     let (payload, source) = take(2usize)(payload)?;
     let (payload, dest) = take(2usize)(payload)?;
     let (payload, length) = take(2usize)(payload)?;
@@ -23,9 +23,9 @@ pub fn parse_udp(payload: &[u8]) -> IResult<&[u8], Udp> {
 
 #[cfg(test)]
 mod tests {
-    use crate::net::parser::parse_ipv4;
+    use crate::net::parser::_parse_ipv4;
 
-    use super::super::parse_etherprotocol;
+    use super::super::_parse_etherprotocol;
     use super::*;
     use pcap::{Packet, PacketHeader};
     use std::os::raw::c_long;
@@ -80,9 +80,9 @@ mod tests {
                 157, 51,
             ],
         };
-        let (payload, _frame) = parse_etherprotocol(packet.data).unwrap();
-        let (payload2, _etherprot) = parse_ipv4(payload).unwrap();
-        let (_payload3, protocol) = parse_udp(payload2).unwrap();
+        let (payload, _frame) = _parse_etherprotocol(packet.data).unwrap();
+        let (payload2, _etherprot) = _parse_ipv4(payload).unwrap();
+        let (_payload3, protocol) = _parse_udp(payload2).unwrap();
         assert_eq!(protocol.ports.source, 41641);
         assert_eq!(protocol.ports.dest, 41641);
         assert_eq!(protocol.length, 520);
