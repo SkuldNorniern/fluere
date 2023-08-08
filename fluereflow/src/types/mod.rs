@@ -1,5 +1,5 @@
 mod fluereflow;
 
-pub use fluereflow::FluereFlow;
-pub use fluereflow::FluereHeader;
-pub use fluereflow::FluereRecord;
+pub use self::fluereflow::FluereFlow;
+pub use self::fluereflow::FluereHeader;
+pub use self::fluereflow::FluereRecord;
