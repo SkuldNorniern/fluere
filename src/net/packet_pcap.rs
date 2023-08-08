@@ -7,18 +7,22 @@ use tokio::time::sleep;
 
 use super::interface::get_interface;
 use crate::utils::cur_time_file;
+use crate::types::Args;
 
 use std::time::{Duration, Instant};
 
 pub async fn pcap_capture(
-    pcap_file: &str,
-    interface_name: &str,
-    duration: u64,
-    _interval: u64,
-    sleep_windows: u64,
-    verbose: u8,
+    args: Args,
 ) {
-    let interface = get_interface(interface_name);
+    let pcap_file = args.files.pcap.unwrap();
+    let interface_name = args.interface.expect("interface not found");
+    let duration = args.parameters.duration.unwrap();
+    let _interval = args.parameters.interval.unwrap();
+    let sleep_windows = args.parameters.sleep_windows.unwrap();
+    let verbose = args.verbose.unwrap();
+
+
+    let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
@@ -37,7 +41,7 @@ pub async fn pcap_capture(
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
 
-    let file_path = cur_time_file(pcap_file, file_dir, ".pcap").await;
+    let file_path = cur_time_file(pcap_file.as_str(), file_dir, ".pcap").await;
     let mut file: pcap::Savefile = match cap.savefile(file_path) {
         Ok(f) => f,
         Err(_) => std::process::exit(1),

@@ -8,25 +8,38 @@ use tokio::time::sleep;
 
 use super::interface::get_interface;
 
-use crate::net::parser::{parse_fluereflow, parse_keys, parse_microseconds};
-use crate::net::types::{Key, TcpFlags};
-use crate::utils::{cur_time_file, fluere_exporter};
+use crate::{
+    net::parser::{parse_fluereflow, parse_keys, parse_microseconds},
+    net::types::{Key, TcpFlags},
+    utils::{cur_time_file, fluere_exporter},
+    types::Args,
+};
 
 use std::collections::HashMap;
 use std::fs;
 use std::time::{Duration, Instant};
 
 pub async fn packet_capture(
-    csv_file: &str,
-    use_mac: bool,
-    interface_name: &str,
-    duration: u64,
-    interval: u64,
-    flow_timeout: u64,
-    sleep_windows: u64,
-    verbose: u8,
+    arg: Args,
+    //csv_file: &str,
+    // use_mac: bool,
+    // interface_name: &str,
+    // duration: u64,
+    // interval: u64,
+    // flow_timeout: u64,
+    // sleep_windows: u64,
+    // verbose: u8,
 ) {
-    let interface = get_interface(interface_name);
+    let csv_file = arg.files.csv.unwrap();
+    let use_mac = arg.parameters.use_mac.unwrap();
+    let interface_name = arg.interface.expect("interface not found");
+    let duration = arg.parameters.duration.unwrap();
+    let interval = arg.parameters.interval.unwrap();
+    let flow_timeout = arg.parameters.timeout.unwrap();
+    let sleep_windows = arg.parameters.sleep_windows.unwrap();
+    let verbose = arg.verbose.unwrap();
+
+    let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
@@ -47,7 +60,7 @@ pub async fn packet_capture(
 
     let start = Instant::now();
     let mut last_export = Instant::now();
-    let mut file_path = cur_time_file(csv_file, file_dir, ".csv").await;
+    let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
     let mut file = fs::File::create(file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
@@ -216,7 +229,7 @@ pub async fn packet_capture(
             if verbose >= 1 {
                 println!("Export {} result: {:?}", file_path, result);
             }
-            file_path = cur_time_file(csv_file, file_dir, ".csv").await;
+            file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
             file = fs::File::create(file_path.clone()).unwrap();
             last_export = Instant::now();
         }
