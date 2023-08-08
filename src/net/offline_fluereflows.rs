@@ -7,18 +7,21 @@ use tokio::task;
 use crate::net::parser::{parse_fluereflow, parse_keys, parse_microseconds};
 use crate::net::types::{Key, TcpFlags};
 use crate::utils::{cur_time_file, fluere_exporter};
+use crate::types::Args;
 
 use std::collections::HashMap;
 use std::fs;
 use std::time::Instant;
 
 pub async fn fluereflow_fileparse(
-    csv_file: &str,
-    use_mac: bool,
-    file_name: &str,
-    _flow_timeout: u32,
-    verbose: u8,
+    arg: Args,
 ) {
+    let csv_file = arg.files.csv.unwrap();
+    let file_name = arg.files.file.unwrap();
+    let use_mac = arg.parameters.use_mac.unwrap();
+    let _flow_timeout = arg.parameters.timeout.unwrap();
+    let verbose = arg.verbose.unwrap();
+
     let mut cap = Capture::from_file(file_name).unwrap();
 
     let file_dir = "./output";
@@ -32,7 +35,7 @@ pub async fn fluereflow_fileparse(
     };
 
     let start = Instant::now();
-    let file_path = cur_time_file(csv_file, file_dir, ".csv").await;
+    let file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
     let file = fs::File::create(file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);

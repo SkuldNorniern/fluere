@@ -27,6 +27,7 @@ use crate::utils::{
     cur_time_file, 
     fluere_exporter
 };
+use crate::types::Args;
 
 use std::collections::HashMap;
 use std::{
@@ -36,14 +37,7 @@ use std::{
 use std::time::{Duration, Instant};
 
 pub async fn packet_capture(
-    csv_file: &str,
-    use_mac: bool,
-    interface_name: &str,
-    duration: u64,
-    interval: u64,
-    flow_timeout: u64,
-    sleep_windows: u64,
-    verbose: u8,
+    arg: Args   
 ) -> Result<(), io::Error> {
     println!("TUI");
     enable_raw_mode()?;
@@ -59,24 +53,9 @@ pub async fn packet_capture(
             .borders(Borders::ALL);
         f.render_widget(block, size);
     })?;
-    let csv_file_ = csv_file.to_string();
-    let use_mac_ = use_mac;
-    let interface_name_ = interface_name.to_string();
-    let duration_ = duration;
-    let interval_ = interval;
-    let flow_timeout_ = flow_timeout;
-    let sleep_windows_ = sleep_windows;
-    let verbose_ = verbose;
-    let tasks = task::spawn(async move{
+   let tasks = task::spawn(async move{
         online_packet_capture(
-            &csv_file_.to_owned(),
-            use_mac_,
-            &interface_name_.to_owned(),
-            duration_,
-            interval_,
-            flow_timeout_,
-            sleep_windows_,
-            verbose_,
+            arg
         ).await;
 
     });
@@ -94,17 +73,27 @@ pub async fn packet_capture(
     Ok(())
 }
 
-pub async fn  online_packet_capture(
-    csv_file: &str,
-    use_mac: bool,
-    interface_name: &str,
-    duration: u64,
-    interval: u64,
-    flow_timeout: u64,
-    sleep_windows: u64,
-    verbose: u8,
+pub async fn online_packet_capture(
+    arg: Args,
+    //csv_file: &str,
+    // use_mac: bool,
+    // interface_name: &str,
+    // duration: u64,
+    // interval: u64,
+    // flow_timeout: u64,
+    // sleep_windows: u64,
+    // verbose: u8,
 ) {
-    let interface = get_interface(interface_name);
+    let csv_file = arg.files.csv.unwrap();
+    let use_mac = arg.parameters.use_mac.unwrap();
+    let interface_name = arg.interface.expect("interface not found");
+    let duration = arg.parameters.duration.unwrap();
+    let interval = arg.parameters.interval.unwrap();
+    let flow_timeout = arg.parameters.timeout.unwrap();
+    let sleep_windows = arg.parameters.sleep_windows.unwrap();
+    let verbose = arg.verbose.unwrap();
+
+    let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
@@ -125,7 +114,7 @@ pub async fn  online_packet_capture(
 
     let start = Instant::now();
     let mut last_export = Instant::now();
-    let mut file_path = cur_time_file(csv_file, file_dir, ".csv").await;
+    let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
     let mut file = fs::File::create(file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
@@ -294,7 +283,7 @@ pub async fn  online_packet_capture(
             if verbose >= 1 {
                 println!("Export {} result: {:?}", file_path, result);
             }
-            file_path = cur_time_file(csv_file, file_dir, ".csv").await;
+            file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
             file = fs::File::create(file_path.clone()).unwrap();
             last_export = Instant::now();
         }
