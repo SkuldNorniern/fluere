@@ -5,6 +5,7 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 use pnet::packet::PacketSize;
 
@@ -13,16 +14,96 @@ use crate::net::parser::{
     dscp_to_tos, parse_flags, parse_microseconds, parse_ports, protocol_to_number,
 };
 
+const VXLAN_HEADER: [u8; 8] = [0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00];
+
+fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
+    if payload.starts_with(&VXLAN_HEADER) {
+        //println!("Decapsulating VXLAN");
+        Some(payload[VXLAN_HEADER.len()..].to_vec())
+    } else {
+        None
+    }
+}
+
 pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
     if packet.is_empty() {
         return Err(NetError::EmptyPacket);
     }
 
     let ethernet_packet_raw = EthernetPacket::new(packet.data);
-    let ethernet_packet = match ethernet_packet_raw {
+    let ethernet_packet_unpack = match ethernet_packet_raw {
         None => return Err(NetError::EmptyPacket),
         Some(e) => e,
     };
+    
+    let is_udp: bool = match ethernet_packet_unpack.get_ethertype() {
+        EtherTypes::Ipv6 => {
+            let i = Ipv6Packet::new(ethernet_packet_unpack.payload()).unwrap();
+            if i.payload().is_empty() {
+                return Err(NetError::EmptyPacket);
+            }
+            let is_udp = UdpPacket::new(i.payload()).is_some();
+            
+            is_udp
+        }
+        EtherTypes::Ipv4 => {
+            let i = Ipv4Packet::new(ethernet_packet_unpack.payload()).unwrap();
+            if i.payload().is_empty() {
+                return Err(NetError::EmptyPacket);
+            }
+
+            let is_udp = UdpPacket::new(i.payload()).is_some();
+            
+            is_udp
+        }
+        _ => {
+            false
+        }
+    };
+    let mut decapsulated_data: Option<Vec<u8>> = None;
+
+    if is_udp {
+        let udp_payload =  match ethernet_packet_unpack.get_ethertype() {
+            EtherTypes::Ipv6 => {
+                let i = Ipv6Packet::new(ethernet_packet_unpack.payload()).unwrap();
+                if i.payload().is_empty() {
+                    return Err(NetError::EmptyPacket);
+                }
+            
+                UdpPacket::new(i.payload()).unwrap().payload().to_vec()
+            }
+            EtherTypes::Ipv4 => {
+                let i = Ipv4Packet::new(ethernet_packet_unpack.payload()).unwrap();
+                if i.payload().is_empty() {
+                    return Err(NetError::EmptyPacket);
+                }
+
+                UdpPacket::new(i.payload()).unwrap().payload().to_vec()
+            }
+            _ => {
+                Vec::new()
+            }
+        };
+        if udp_payload.is_empty() {
+            return Err(NetError::EmptyPacket);
+        }
+        //UdpPacket::new(ethernet_packet_unpack.payload()).unwrap().payload().to_vec();
+        //println!("UDP payload: {:?}", udp_payload);
+        decapsulated_data = decapsulate_vxlan(&udp_payload);
+    }
+
+    let ethernet_packet_decapsulated = if let Some(data) = &decapsulated_data {
+        match EthernetPacket::new(data) {
+            None => return Err(NetError::EmptyPacket),
+            Some(e) => e,
+        }
+    } else {
+        ethernet_packet_unpack
+    }; 
+
+
+    let ethernet_packet = ethernet_packet_decapsulated;
+
 
     let time = parse_microseconds(
         packet.header.ts.tv_sec as u64,

@@ -19,10 +19,10 @@ pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError>
         2 => return Ok((0, 0)),
         1 => return Ok((0, 0)),
         0 => return Ok((0, 0)),
-        _ => {}
+        _ => {println!("Unknown protocol: {}", protocol); return Err(NetError::UnknownProtocol { protocol: protocol.to_string() })},
     }
 
-    Err(NetError::UnknownProtocol {
-        protocol: protocol.to_string(),
-    })
+    //Err(NetError::UnknownProtocol {
+    //    protocol: protocol.to_string(),
+    //})
 }
