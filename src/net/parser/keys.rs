@@ -4,6 +4,7 @@ use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::arp::ArpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
@@ -135,6 +136,21 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
 
             ipv4.unwrap()
         }
+        EtherTypes::Arp => {
+            let i = ArpPacket::new(ethernet_packet.payload()).unwrap();
+            //if i.payload().is_empty() {
+            //    return Err(NetError::EmptyPacket);
+            //}
+            //println!("AHHHHHH");
+            let arp = arp_keys(i);
+            match arp {
+                Ok(_) => {}
+                Err(e) => return Err(e),
+            }
+
+            arp.unwrap()
+        }
+
         _ => {
             return Err(NetError::UnknownProtocol {
                 protocol: ethernet_packet.get_ethertype().to_string(),
@@ -164,8 +180,23 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     Ok((key_value, key_reverse_value))
 }
 
-fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr,u16, u16, u8), NetError> {
+fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
+    let src_ip = packet.get_sender_proto_addr();
+    let dst_ip = packet.get_target_proto_addr();
+    let src_port = 0;
+    let dst_port = 0;
+    let protocol = 4;
     
+    Ok((
+        std::net::IpAddr::V4(src_ip),
+        std::net::IpAddr::V4(dst_ip),
+        src_port, 
+        dst_port, 
+        protocol
+    ))
+}
+
+fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr,u16, u16, u8), NetError> {
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
     let protocol = protocol_to_number(packet.get_next_level_protocol());
