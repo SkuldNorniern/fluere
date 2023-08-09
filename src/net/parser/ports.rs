@@ -5,21 +5,21 @@ use crate::net::errors::NetError;
 
 pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError> {
     match protocol {
-        58 => return Ok((0, 0)),
+        58 => Ok((0, 0)),
         17 => {
             let udp = UdpPacket::new(payload).unwrap();
 
-            return Ok((udp.get_source(), udp.get_destination()));
+            Ok((udp.get_source(), udp.get_destination()))
         }
         6 => {
             let tcp = TcpPacket::new(payload).unwrap();
 
-            return Ok((tcp.get_source(), tcp.get_destination()));
+            Ok((tcp.get_source(), tcp.get_destination()))
         }
-        2 => return Ok((0, 0)),
-        1 => return Ok((0, 0)),
-        0 => return Ok((0, 0)),
-        _ => {println!("Unknown protocol: {}", protocol); return Err(NetError::UnknownProtocol { protocol: protocol.to_string() })},
+        2 => Ok((0, 0)),
+        1 => Ok((0, 0)),
+        0 => Ok((0, 0)),
+        _ => {println!("Unknown protocol: {}", protocol); Err(NetError::UnknownProtocol { protocol: protocol.to_string() })},
     }
 
     //Err(NetError::UnknownProtocol {
