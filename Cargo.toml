@@ -1,6 +1,6 @@
 [package]
 name = "fluere"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 description = "Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool"
