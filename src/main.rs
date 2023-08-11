@@ -1,11 +1,10 @@
 pub mod config;
 pub mod net;
 pub mod plugin;
-pub mod utils;
 pub mod types;
+pub mod utils;
 
 use clap::{Arg, ArgAction, Command};
-
 
 use std::process::exit;
 
@@ -243,13 +242,16 @@ fn cli() -> Command {
         )
 }
 
-#[tokio::main] async fn main() { let args = cli().get_matches(); let interfaces = net::list_interfaces(); //let _plugins = scan_plugins("plugins");
-    //println!("Plugins: {:?}", plugins);
-    //match generate_config() {
-    //    Ok(_) => println!("Config file generated"),
-    //    Err(e) => println!("Error: {e}"),
-    //}
-    //let mut interface = "None";
+#[tokio::main]
+async fn main() {
+    let args = cli().get_matches();
+    let interfaces = net::list_interfaces(); //let _plugins = scan_plugins("plugins");
+                                             //println!("Plugins: {:?}", plugins);
+                                             //match generate_config() {
+                                             //    Ok(_) => println!("Config file generated"),
+                                             //    Err(e) => println!("Error: {e}"),
+                                             //}
+                                             //let mut interface = "None";
     match args.subcommand() {
         Some(("online", args)) => {
             println!("Online mode");
@@ -263,7 +265,10 @@ fn cli() -> Command {
             }
             let use_mac = args.get_flag("useMACaddress");
             let csv = args.get_one::<String>("csv").expect("default");
-            let interface = args.get_one::<String>("interface").ok_or("Required Interface").unwrap();
+            let interface = args
+                .get_one::<String>("interface")
+                .ok_or("Required Interface")
+                .unwrap();
 
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u64 = timeout.parse().unwrap();
@@ -275,14 +280,10 @@ fn cli() -> Command {
             let sleep_windows: u64 = sleep_windows.parse().unwrap();
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
-            
-            let args:types::Args = types::Args::new(
+
+            let args: types::Args = types::Args::new(
                 Some(interface.to_string()),
-                types::Files::new(
-                    Some(csv.to_string()),
-                    None,
-                    None
-                ),
+                types::Files::new(Some(csv.to_string()), None, None),
                 types::Parameters::new(
                     Some(use_mac),
                     Some(timeout),
@@ -290,16 +291,12 @@ fn cli() -> Command {
                     Some(interval),
                     Some(sleep_windows),
                 ),
-                Some(verbose)
-               
+                Some(verbose),
             );
             if verbose >= 1 {
                 println!("Interface {} selected", interface);
             } //net::packet_capture(interface);
-            net::online_fluereflow::packet_capture(
-                args
-            )
-            .await;
+            net::online_fluereflow::packet_capture(args).await;
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
@@ -312,22 +309,11 @@ fn cli() -> Command {
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
 
-            let args:types::Args = types::Args::new(
+            let args: types::Args = types::Args::new(
                 None,
-                types::Files::new(
-                    Some(csv.to_string()),
-                    Some(file.to_string()),
-                    None
-                ),
-                types::Parameters::new(
-                    Some(use_mac),
-                    Some(timeout),
-                    None,
-                    None,
-                    None,
-                ),
-                Some(verbose)
-               
+                types::Files::new(Some(csv.to_string()), Some(file.to_string()), None),
+                types::Parameters::new(Some(use_mac), Some(timeout), None, None, None),
+                Some(verbose),
             );
 
             net::fluereflow_fileparse(args).await;
@@ -345,7 +331,10 @@ fn cli() -> Command {
             }
             let use_mac = args.get_flag("useMACaddress");
             let csv = args.get_one::<String>("csv").expect("default");
-            let interface = args.get_one::<String>("interface").ok_or("Required Interface").unwrap();
+            let interface = args
+                .get_one::<String>("interface")
+                .ok_or("Required Interface")
+                .unwrap();
 
             let timeout = args.get_one::<String>("timeout").unwrap();
             let timeout: u64 = timeout.parse().unwrap();
@@ -358,13 +347,9 @@ fn cli() -> Command {
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
 
-            let args:types::Args = types::Args::new(
+            let args: types::Args = types::Args::new(
                 Some(interface.to_string()),
-                types::Files::new(
-                    Some(csv.to_string()),
-                    None,
-                    None
-                ),
+                types::Files::new(Some(csv.to_string()), None, None),
                 types::Parameters::new(
                     Some(use_mac),
                     Some(timeout),
@@ -372,16 +357,14 @@ fn cli() -> Command {
                     Some(interval),
                     Some(sleep_windows),
                 ),
-                Some(verbose)
-               
+                Some(verbose),
             );
             if verbose >= 1 {
                 println!("Interface {} selected", interface);
             } //net::packet_capture(interface);
-            net::live_fluereflow::packet_capture(
-                args
-            )
-            .await.expect("Error on live mode");
+            net::live_fluereflow::packet_capture(args)
+                .await
+                .expect("Error on live mode");
             //net::netflow(_interface);
         }
         Some(("pcap", args)) => {
@@ -395,8 +378,14 @@ fn cli() -> Command {
                 exit(0);
             }
 
-            let pcap = args.get_one::<String>("pcap").ok_or("Required output pcap file name").unwrap();
-            let interface = args.get_one::<String>("interface").ok_or("Required Interface").unwrap();
+            let pcap = args
+                .get_one::<String>("pcap")
+                .ok_or("Required output pcap file name")
+                .unwrap();
+            let interface = args
+                .get_one::<String>("interface")
+                .ok_or("Required Interface")
+                .unwrap();
             let duration = args.get_one::<String>("duration").expect("default");
             let duration: u64 = duration.parse().unwrap();
             let interval = args.get_one::<String>("interval").expect("default");
@@ -405,14 +394,10 @@ fn cli() -> Command {
             let sleep_windows: u64 = sleep_windows.parse().unwrap();
             let verbose = args.get_one::<String>("verbose").expect("default");
             let verbose: u8 = verbose.parse().unwrap();
-            
-            let args:types::Args = types::Args::new(
+
+            let args: types::Args = types::Args::new(
                 Some(interface.to_string()),
-                types::Files::new(
-                    None,
-                    None,
-                    Some(pcap.to_string())
-                ),
+                types::Files::new(None, None, Some(pcap.to_string())),
                 types::Parameters::new(
                     None,
                     None,
@@ -420,8 +405,7 @@ fn cli() -> Command {
                     Some(interval),
                     Some(sleep_windows),
                 ),
-                Some(verbose)
-               
+                Some(verbose),
             );
             if verbose >= 1 {
                 println!("Interface {interface} selected");

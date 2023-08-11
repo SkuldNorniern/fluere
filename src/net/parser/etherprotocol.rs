@@ -75,7 +75,7 @@ mod tests {
                 157, 51,
             ],
         };
-        let (_packet_data, frame) =_parse_etherprotocol(packet.data).unwrap();
+        let (_packet_data, frame) = _parse_etherprotocol(packet.data).unwrap();
         assert_eq!(
             frame.dest_mac,
             MacAddress::new([0x58, 0x11, 0x22, 0x15, 0x06, 0x18])

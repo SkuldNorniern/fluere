@@ -11,8 +11,8 @@ use super::interface::get_interface;
 use crate::{
     net::parser::{parse_fluereflow, parse_keys, parse_microseconds},
     net::types::{Key, TcpFlags},
-    utils::{cur_time_file, fluere_exporter},
     types::Args,
+    utils::{cur_time_file, fluere_exporter},
 };
 
 use std::collections::HashMap;
@@ -100,13 +100,10 @@ pub async fn packet_capture(
                             if verbose >= 2 {
                                 println!("flow established");
                             }
-                            
-                        }
-                        else {
+                        } else {
                             continue;
                         }
-                    }
-                    else {
+                    } else {
                         active_flow.insert(key_value, flowdata);
                         if verbose >= 2 {
                             println!("flow established");
