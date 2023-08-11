@@ -1,11 +1,10 @@
 kind: pipeline
 name: build_pipe
 trigger:
-  branch:
-  - main
   event:
-    exclude:
-      - promote
+  - push
+  - pull_request
+
 steps:
 - name: build
   image: rust:1.71
@@ -18,11 +17,10 @@ steps:
 kind: pipeline
 name: test_pipe
 trigger:
-  branch:
-  - main
   event:
-    exclude:
-      - promote
+  - push
+  - pull_request
+
 steps:
 - name: test
   image: rust:1.71
