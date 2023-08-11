@@ -6,21 +6,18 @@ use std::fs;
 use tokio::time::sleep;
 
 use super::interface::get_interface;
-use crate::utils::cur_time_file;
 use crate::types::Args;
+use crate::utils::cur_time_file;
 
 use std::time::{Duration, Instant};
 
-pub async fn pcap_capture(
-    args: Args,
-) {
+pub async fn pcap_capture(args: Args) {
     let pcap_file = args.files.pcap.unwrap();
     let interface_name = args.interface.expect("interface not found");
     let duration = args.parameters.duration.unwrap();
     let _interval = args.parameters.interval.unwrap();
     let sleep_windows = args.parameters.sleep_windows.unwrap();
     let verbose = args.verbose.unwrap();
-
 
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)

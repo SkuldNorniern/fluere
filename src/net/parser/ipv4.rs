@@ -107,7 +107,7 @@ mod tests {
         };
         let (payload, frame) = _parse_etherprotocol(packet.data).unwrap();
         println!("{:?}", frame);
-        let (_payload2, etherprot) =_parse_ipv4(payload).unwrap();
+        let (_payload2, etherprot) = _parse_ipv4(payload).unwrap();
         println!("{:?}", etherprot);
         assert_eq!(etherprot.version, 4);
         assert_eq!(etherprot.type_of_service, 0);

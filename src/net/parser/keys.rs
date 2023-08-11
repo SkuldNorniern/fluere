@@ -1,10 +1,10 @@
 use pcap;
 
+use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::EtherTypes;
 use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::arp::ArpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
@@ -25,7 +25,6 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-
 pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     if packet.is_empty() {
         return Err(NetError::EmptyPacket);
@@ -35,7 +34,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         None => return Err(NetError::EmptyPacket),
         Some(e) => e,
     };
-    
+
     let is_udp: bool = match ethernet_packet_unpack.get_ethertype() {
         EtherTypes::Ipv6 => {
             let i = Ipv6Packet::new(ethernet_packet_unpack.payload()).unwrap();
@@ -43,7 +42,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                 return Err(NetError::EmptyPacket);
             }
             let is_udp = UdpPacket::new(i.payload()).is_some();
-            
+
             is_udp
         }
         EtherTypes::Ipv4 => {
@@ -53,23 +52,21 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             }
 
             let is_udp = UdpPacket::new(i.payload()).is_some();
-            
+
             is_udp
         }
-        _ => {
-            false
-        }
+        _ => false,
     };
     let mut decapsulated_data: Option<Vec<u8>> = None;
 
     if is_udp {
-        let udp_payload =  match ethernet_packet_unpack.get_ethertype() {
+        let udp_payload = match ethernet_packet_unpack.get_ethertype() {
             EtherTypes::Ipv6 => {
                 let i = Ipv6Packet::new(ethernet_packet_unpack.payload()).unwrap();
                 if i.payload().is_empty() {
                     return Err(NetError::EmptyPacket);
                 }
-            
+
                 UdpPacket::new(i.payload()).unwrap().payload().to_vec()
             }
             EtherTypes::Ipv4 => {
@@ -80,9 +77,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
 
                 UdpPacket::new(i.payload()).unwrap().payload().to_vec()
             }
-            _ => {
-                Vec::new()
-            }
+            _ => Vec::new(),
         };
         if udp_payload.is_empty() {
             return Err(NetError::EmptyPacket);
@@ -99,8 +94,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         }
     } else {
         ethernet_packet_unpack
-    }; 
-
+    };
 
     let ethernet_packet = ethernet_packet_decapsulated;
 
@@ -186,17 +180,17 @@ fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetErro
     let src_port = 0;
     let dst_port = 0;
     let protocol = 4;
-    
+
     Ok((
         std::net::IpAddr::V4(src_ip),
         std::net::IpAddr::V4(dst_ip),
-        src_port, 
-        dst_port, 
-        protocol
+        src_port,
+        dst_port,
+        protocol,
     ))
 }
 
-fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr,u16, u16, u8), NetError> {
+fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
     let protocol = protocol_to_number(packet.get_next_level_protocol());

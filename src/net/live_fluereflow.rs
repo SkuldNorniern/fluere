@@ -1,67 +1,49 @@
 extern crate csv;
 
-use pcap::Capture;
-use fluereflow::FluereRecord;
-use tokio::task;
-use tokio::time::sleep;
-use ratatui::{
-    backend::CrosstermBackend,
-    widgets::{Block, Borders},
-    Terminal
-};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use fluereflow::FluereRecord;
+use pcap::Capture;
+use ratatui::{
+    backend::CrosstermBackend,
+    widgets::{Block, Borders},
+    Terminal,
+};
+use tokio::task;
+use tokio::time::sleep;
 
 use super::interface::get_interface;
 
-use crate::net::parser::{
-    parse_fluereflow,
-    parse_keys,
-    parse_microseconds
-};
+use crate::net::parser::{parse_fluereflow, parse_keys, parse_microseconds};
 use crate::net::types::{Key, TcpFlags};
-use crate::utils::{
-    cur_time_file, 
-    fluere_exporter
-};
 use crate::types::Args;
+use crate::utils::{cur_time_file, fluere_exporter};
 
 use std::collections::HashMap;
-use std::{
-    fs,
-    io,
-};
 use std::time::{Duration, Instant};
+use std::{fs, io};
 
-pub async fn packet_capture(
-    arg: Args   
-) -> Result<(), io::Error> {
+pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
     println!("TUI");
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    
+
     terminal.draw(|f| {
         let size = f.size();
-        let block = Block::default()
-            .title("Block")
-            .borders(Borders::ALL);
+        let block = Block::default().title("Block").borders(Borders::ALL);
         f.render_widget(block, size);
     })?;
-   let tasks = task::spawn(async move{
-        online_packet_capture(
-            arg
-        ).await;
-
+    let tasks = task::spawn(async move {
+        online_packet_capture(arg).await;
     });
 
     let _ = tasks.await;
-
 
     disable_raw_mode()?;
     execute!(
@@ -154,13 +136,10 @@ pub async fn online_packet_capture(
                             if verbose >= 2 {
                                 println!("flow established");
                             }
-                            
-                        }
-                        else {
+                        } else {
                             continue;
                         }
-                    }
-                    else {
+                    } else {
                         active_flow.insert(key_value, flowdata);
                         if verbose >= 2 {
                             println!("flow established");

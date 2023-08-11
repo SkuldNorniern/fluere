@@ -6,16 +6,14 @@ use tokio::task;
 
 use crate::net::parser::{parse_fluereflow, parse_keys, parse_microseconds};
 use crate::net::types::{Key, TcpFlags};
-use crate::utils::{cur_time_file, fluere_exporter};
 use crate::types::Args;
+use crate::utils::{cur_time_file, fluere_exporter};
 
 use std::collections::HashMap;
 use std::fs;
 use std::time::Instant;
 
-pub async fn fluereflow_fileparse(
-    arg: Args,
-) {
+pub async fn fluereflow_fileparse(arg: Args) {
     let csv_file = arg.files.csv.unwrap();
     let file_name = arg.files.file.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
@@ -68,13 +66,10 @@ pub async fn fluereflow_fileparse(
                             if verbose >= 2 {
                                 println!("flow established");
                             }
-
-                        }
-                        else {
+                        } else {
                             continue;
                         }
-                    }
-                    else {
+                    } else {
                         active_flow.insert(key_value, flowdata);
                         if verbose >= 2 {
                             println!("flow established");

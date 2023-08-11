@@ -1,4 +1,4 @@
-#[derive(Debug,Default)]
+#[derive(Debug, Default)]
 pub struct Args {
     pub interface: Option<String>,
     pub files: Files,
@@ -23,23 +23,15 @@ impl Args {
 }
 
 #[derive(Debug, Default)]
-pub struct Files{
+pub struct Files {
     pub csv: Option<String>,
     pub file: Option<String>,
     pub pcap: Option<String>,
 }
 
 impl Files {
-    pub fn new(
-        csv: Option<String>,
-        file: Option<String>,
-        pcap: Option<String>,
-    ) -> Self {
-        Self {
-            csv,
-            file,
-            pcap,
-        }
+    pub fn new(csv: Option<String>, file: Option<String>, pcap: Option<String>) -> Self {
+        Self { csv, file, pcap }
     }
 }
 
