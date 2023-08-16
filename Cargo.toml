@@ -16,7 +16,7 @@ tokio = { version = "1.22", features = ["full","macros", "rt-multi-thread"] }
 pnet = { version = "0.34.0", features = ["std"] }
 pnet_macros_support = "0.34.0"
 pnet_macros = "0.34.0"
-pcap = "0.11.0"
+pcap = "1.1.0"
 chrono = "0.4.23"
 libc = "0.2"
 byteorder = "1.4.3"
