@@ -1,18 +1,17 @@
 use pcap;
 
-use fluereflow::FluereRecord;
-use pnet::packet::arp::ArpPacket;
-use pnet::packet::ethernet::EtherTypes;
-use pnet::packet::ethernet::EthernetPacket;
-use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::udp::UdpPacket;
-use pnet::packet::Packet;
-use pnet::packet::PacketSize;
-
 use crate::net::errors::NetError;
 use crate::net::parser::{
     dscp_to_tos, parse_flags, parse_microseconds, parse_ports, protocol_to_number,
+};
+use fluereflow::FluereRecord;
+use pnet::packet::{
+    arp::ArpPacket,
+    ethernet::{EtherTypes, EthernetPacket},
+    ipv4::Ipv4Packet,
+    ipv6::Ipv6Packet,
+    udp::UdpPacket,
+    Packet, PacketSize,
 };
 
 const VXLAN_HEADER: [u8; 8] = [0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00];
