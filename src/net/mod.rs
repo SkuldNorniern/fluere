@@ -5,8 +5,9 @@ pub mod live_fluereflow;
 mod offline_fluereflows;
 pub mod online_fluereflow;
 mod packet_pcap;
-mod parser;
-mod types;
+pub mod parser;
+pub mod types;
+mod flows;
 
 //pub use flows::packet_capture;
 pub use interface::list_interface_names;

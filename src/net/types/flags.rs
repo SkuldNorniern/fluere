@@ -1,3 +1,4 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TcpFlags {
     pub fin: u8,
     pub syn: u8,
