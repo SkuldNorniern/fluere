@@ -22,9 +22,39 @@
     <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/main.png" alt="Help Image" width="770" height="401"></img>
 </div>
 
-## Overview
+## Project Description
 
 Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data. It also supports live capture and conversion of NetFlow data. Fluere is cross-platform compatible, running on Windows, macOS, and Linux operating systems.
+
+The project is implemented in Rust and uses the `libpcap` library for packet capture and the `clap` library for command line argument parsing. The main functionality of the project is defined in the `main.rs` file, which includes the definition of the command line interface and the handling of the different commands and options.
+
+## Arguments
+
+The following table provides detailed information about each argument:
+
+| Argument | Purpose | Usage |
+| --- | --- | --- |
+| csv | Title of the exported csv file | `-c` or `--csv` |
+| list | List of network interfaces | `-l` or `--list` |
+| interface | Select network interface to use | `-i` or `--interface` |
+| duration | Set capture duration, in milliseconds | `-d` or `--duration` |
+| timeout | Set flow timeout, in milliseconds | `-t` or `--timeout` |
+| useMACaddress | Set use MAC address on Key value | `-M` or `--useMAC` |
+| interval | Set export interval, in milliseconds | `-I` or `--interval` |
+| sleep_windows | Set interval of thread pause for (only)MS Windows per n packet | `-s` or `--sleep` |
+| verbose | Set verbosity level | `-v` or `--verbose` |
+
+## Usage
+
+To use Fluere, you first need to install it using the `cargo install fluere` command. Once installed, you can run Fluere using the `fluere` command followed by the desired subcommand (`online`, `offline`, `pcap`) and the corresponding options.
+
+For example, to capture netflow online and export it to a csv file, you can use the following command:
+
+```sh
+fluere online -c output -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
+```
+
+This command will capture netflow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1 and the output will be saved to a csv file named `output.csv`.
 
 ## Prerequisites
 
