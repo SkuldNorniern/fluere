@@ -24,7 +24,7 @@
 
 ## Overview
 
-Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data. It also supports live capture and conversion of NetFlow data. Fluere is cross-platform compatible, running on Windows, macOS, and Linux operating systems.
+Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data. It also supports live capture and conversion of NetFlow data, and the conversion of pcap files to NetFlow data. Fluere is cross-platform compatible, running on Windows, macOS, and Linux operating systems.
 
 ## Prerequisites
 
@@ -57,6 +57,7 @@ Select the capture mode:
 
 - `online`: Live NetFlow data capture and conversion
 - `offline`: Convert pcap files to NetFlow data
+- `live`: Capture NetFlow data online with live feedback
 - `pcap`: Capture packets in pcap format
 
 Specify the desired capture duration in milliseconds (ms):
@@ -72,6 +73,8 @@ Set the output file's title:
 ```
 
 The captured packets or NetFlow data will be saved in the "output" directory within Fluere's installation folder.
+
+Additional arguments can be used to customize the capture process, such as setting the flow timeout, using MAC address on Key value, setting the export interval, and setting the verbosity level.
 
 ## Important Notes
 
