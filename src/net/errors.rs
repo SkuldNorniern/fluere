@@ -9,6 +9,12 @@ pub enum NetError {
     UnknownProtocol { protocol: String },
     #[snafu(display("unknown IP version `{version}`"))]
     UnknownIPVersion { version: String },
+    #[snafu(display("an error occurred while reading: `{source}`"))]
+    PacketReadError { source: pnet::datalink::DataLinkError },
+    #[snafu(display("unhandled channel type"))]
+    UnhandledChannelType,
+    #[snafu(display("an error occurred when creating the datalink channel: `{source}`"))]
+    ChannelCreationError { source: pnet::datalink::ChannelError },
 }
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
