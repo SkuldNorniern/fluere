@@ -26,14 +26,6 @@ use std::{
 
 pub async fn packet_capture(
     arg: Args,
-    //csv_file: &str,
-    // use_mac: bool,
-    // interface_name: &str,
-    // duration: u64,
-    // interval: u64,
-    // flow_timeout: u64,
-    // sleep_windows: u64,
-    // verbose: u8,
 ) {
     let csv_file = arg.files.csv.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
@@ -95,7 +87,7 @@ pub async fn packet_capture(
 
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
-        /*let is_reverse = match active_flow.get(&key_value) {
+        let is_reverse = match active_flow.get(&key_value) {
             None => match active_flow.get(&reverse_key) {
                 None => {
                     // if the protocol is TCP, check if is a syn packet
@@ -120,8 +112,8 @@ pub async fn packet_capture(
                 Some(_) => true,
             },
             Some(_) => false,
-        };*/
-        let is_reverse = if active_flow.contains_key(&key_value) {
+        };
+        /*let is_reverse = if active_flow.contains_key(&key_value) {
             false
         } else if active_flow.contains_key(&reverse_key) {
             true
@@ -135,7 +127,7 @@ pub async fn packet_capture(
                 continue;
             }
             false
-        };
+        };*/
             
         let time = parse_microseconds(
             packet.header.ts.tv_sec as u64,
