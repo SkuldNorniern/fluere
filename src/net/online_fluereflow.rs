@@ -1,5 +1,7 @@
 extern crate csv;
 
+use anyhow::Result;
+use log::{info, error};
 use pcap::Capture;
 
 use fluereflow::FluereRecord;
@@ -34,39 +36,37 @@ pub async fn packet_capture(
     // flow_timeout: u64,
     // sleep_windows: u64,
     // verbose: u8,
-) {
-    let csv_file = arg.files.csv.unwrap();
-    let use_mac = arg.parameters.use_mac.unwrap();
-    let interface_name = arg.interface.expect("interface not found");
-    let duration = arg.parameters.duration.unwrap();
-    let interval = arg.parameters.interval.unwrap();
-    let flow_timeout = arg.parameters.timeout.unwrap();
-    let sleep_windows = arg.parameters.sleep_windows.unwrap();
-    let verbose = arg.verbose.unwrap();
+) -> Result<()> {
+    let csv_file = arg.files.csv.ok_or_else(|| anyhow!("CSV file not found"))?;
+    let use_mac = arg.parameters.use_mac.ok_or_else(|| anyhow!("Use MAC parameter not found"))?;
+    let interface_name = arg.interface.ok_or_else(|| anyhow!("Interface not found"))?;
+    let duration = arg.parameters.duration.ok_or_else(|| anyhow!("Duration parameter not found"))?;
+    let interval = arg.parameters.interval.ok_or_else(|| anyhow!("Interval parameter not found"))?;
+    let flow_timeout = arg.parameters.timeout.ok_or_else(|| anyhow!("Flow timeout parameter not found"))?;
+    let sleep_windows = arg.parameters.sleep_windows.ok_or_else(|| anyhow!("Sleep windows parameter not found"))?;
+    let verbose = arg.verbose.ok_or_else(|| anyhow!("Verbose parameter not found"))?;
 
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
-        .unwrap()
+        .map_err(|e| anyhow!("Failed to capture from device: {}", e))?
         .promisc(true)
         //.buffer_size(100000000)
         //.immediate_mode(true)
         .open()
-        .unwrap();
+        .map_err(|e| anyhow!("Failed to open capture: {}", e))?;
 
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    fs::create_dir_all(<&str>::clone(&file_dir))
+        .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
+    if verbose >= 1 {
+        info!("Created directory: {}", file_dir);
+    }
 
     let start = Instant::now();
     let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-    let mut file = fs::File::create(file_path.clone()).unwrap();
+    let mut file = fs::File::create(file_path.clone())
+        .map_err(|e| anyhow!("Failed to create file: {}", e))?;
 
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -76,22 +76,24 @@ pub async fn packet_capture(
 
     while let Ok(packet) = cap.next_packet() {
         if verbose >= 3 {
-            println!("received packet");
+            info!("Received packet");
         }
 
-        let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
-            Ok(keys) => keys,
-            Err(_) => continue,
-        };
+        let (mut key_value, mut reverse_key) = parse_keys(packet.clone())
+            .map_err(|e| {
+                error!("Failed to parse keys: {}", e);
+                e
+            })?;
         if !use_mac {
             key_value.mac_defaultate();
             reverse_key.mac_defaultate();
         }
 
-        let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
-            Ok(result) => result,
-            Err(_) => continue,
-        };
+        let (doctets, raw_flags, flowdata) = parse_fluereflow(packet.clone())
+            .map_err(|e| {
+                error!("Failed to parse fluereflow: {}", e);
+                e
+            })?;
 
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
@@ -142,12 +144,12 @@ pub async fn packet_capture(
             update_flow(flow, is_reverse, update_key);
 
             if verbose >= 2 {
-                println!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
+                info!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
             }
 
             if flags.fin == 1 || flags.rst == 1 {
                 if verbose >= 2 {
-                    println!("flow finished");
+                    info!("Flow finished");
                 }
                 records.push(*flow);
                 active_flow.remove(flow_key);
@@ -158,7 +160,7 @@ pub async fn packet_capture(
         // slow down the loop for windows to avoid random shutdown
         if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
             if verbose >= 3 {
-                println!("Slow down the loop for windows");
+                info!("Slow down the loop for windows");
             }
             sleep(Duration::from_millis(0)).await;
         }
@@ -170,7 +172,7 @@ pub async fn packet_capture(
             for (key, flow) in active_flow.iter() {
                 if flow_timeout > 0 && flow.get_last() < (time - (flow_timeout * 1000)) {
                     if verbose >= 2 {
-                        println!("flow expired");
+                        info!("Flow expired");
                     }
                     records.push(*flow);
                     expired_flows.push(*key);
@@ -185,10 +187,11 @@ pub async fn packet_capture(
 
             let result = tasks.await;
             if verbose >= 1 {
-                println!("Export {} result: {:?}", file_path, result);
+                info!("Export {} result: {:?}", file_path, result);
             }
             file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-            file = fs::File::create(file_path.clone()).unwrap();
+            file = fs::File::create(file_path.clone())
+                .map_err(|e| anyhow!("Failed to create file: {}", e))?;
             last_export = Instant::now();
         }
 
@@ -198,7 +201,7 @@ pub async fn packet_capture(
             for (key, flow) in active_flow.iter() {
                 if flow.get_last() < (time - (flow_timeout * 1000)) {
                     if verbose >= 2 {
-                        println!("flow expired");
+                        info!("Flow expired");
                     }
                     records.push(*flow);
                     expired_flows.push(*key);
@@ -209,7 +212,7 @@ pub async fn packet_capture(
         }
     }
     if verbose >= 1 {
-        println!("Captured in {:?}", start.elapsed());
+        info!("Captured in {:?}", start.elapsed());
     }
     for (_key, flow) in active_flow.iter() {
         records.push(*flow);
@@ -220,7 +223,8 @@ pub async fn packet_capture(
 
     let result = tasks.await;
     if verbose >= 1 {
-        println!("Exporting task excutation result: {:?}", result);
+        info!("Exporting task execution result: {:?}", result);
     }
     //println!("records {:?}", records);
+    Ok(())
 }
