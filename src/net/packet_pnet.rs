@@ -66,7 +66,8 @@ fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
             }
             Err(e) => {
                 // An error occurred while reading the packet
-                panic!("An error occurred while reading: {}", e);
+                log::error!("An error occurred while reading: {}", e);
+                return Err(NetError::ReadError { source: e });
             }
         }
     }
@@ -86,10 +87,10 @@ pub fn packet_capture(interface_name: &str) {
     let (_, mut rx) = match datalink::channel(&interface, Default::default()) {
         Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
         Ok(_) => panic!("Unhandled channel type"),
-        Err(e) => panic!(
-            "An error occurred when creating the datalink channel: {}",
-            e
-        ),
+        Err(e) => {
+            log::error!("An error occurred when creating the datalink channel: {}", e);
+            return Err(NetError::ChannelCreationError { source: e });
+        }
     };
 
     // Process packets
