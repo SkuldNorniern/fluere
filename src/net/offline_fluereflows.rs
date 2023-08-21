@@ -1,5 +1,7 @@
 extern crate csv;
 
+use anyhow::Result;
+use log::{info, error};
 use fluereflow::FluereRecord;
 use pcap::Capture;
 use tokio::task;
@@ -20,28 +22,27 @@ use std::{
     time::Instant,
 };
 
-pub async fn fluereflow_fileparse(arg: Args) {
-    let csv_file = arg.files.csv.unwrap();
-    let file_name = arg.files.file.unwrap();
-    let use_mac = arg.parameters.use_mac.unwrap();
-    let _flow_timeout = arg.parameters.timeout.unwrap();
-    let verbose = arg.verbose.unwrap();
+pub async fn fluereflow_fileparse(arg: Args) -> Result<()> {
+    let csv_file = arg.files.csv.ok_or_else(|| anyhow!("CSV file not found"))?;
+    let file_name = arg.files.file.ok_or_else(|| anyhow!("File name not found"))?;
+    let use_mac = arg.parameters.use_mac.ok_or_else(|| anyhow!("Use MAC parameter not found"))?;
+    let _flow_timeout = arg.parameters.timeout.ok_or_else(|| anyhow!("Flow timeout parameter not found"))?;
+    let verbose = arg.verbose.ok_or_else(|| anyhow!("Verbose parameter not found"))?;
 
-    let mut cap = Capture::from_file(file_name).unwrap();
+    let mut cap = Capture::from_file(file_name)
+        .map_err(|e| anyhow!("Failed to capture from file: {}", e))?;
 
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    fs::create_dir_all(<&str>::clone(&file_dir))
+        .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
+    if verbose >= 1 {
+        info!("Created directory: {}", file_dir);
+    }
 
     let start = Instant::now();
     let file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-    let file = fs::File::create(file_path.clone()).unwrap();
+    let file = fs::File::create(file_path.clone())
+        .map_err(|e| anyhow!("Failed to create file: {}", e))?;
 
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -49,18 +50,20 @@ pub async fn fluereflow_fileparse(arg: Args) {
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
 
     while let Ok(packet) = cap.next_packet() {
-        let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
-            Ok(keys) => keys,
-            Err(_) => continue,
-        };
+        let (mut key_value, mut reverse_key) = parse_keys(packet.clone())
+            .map_err(|e| {
+                error!("Failed to parse keys: {}", e);
+                e
+            })?;
         if !use_mac {
             key_value.mac_defaultate();
             reverse_key.mac_defaultate();
         }
-        let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
-            Ok(result) => result,
-            Err(_) => continue,
-        };
+        let (doctets, raw_flags, flowdata) = parse_fluereflow(packet.clone())
+            .map_err(|e| {
+                error!("Failed to parse fluereflow: {}", e);
+                e
+            })?;
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
         let is_reverse = match active_flow.get(&key_value) {
@@ -109,12 +112,12 @@ pub async fn fluereflow_fileparse(arg: Args) {
             update_flow(flow, is_reverse, update_key);
 
             if verbose >= 2 {
-                println!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
+                info!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
             }
 
             if flags.fin == 1 || flags.rst == 1 {
                 if verbose >= 2 {
-                    println!("flow finished");
+                    info!("Flow finished");
                 }
                 records.push(*flow);
                 active_flow.remove(flow_key);
@@ -122,10 +125,10 @@ pub async fn fluereflow_fileparse(arg: Args) {
         }
     }
     if verbose >= 1 {
-        println!("Captured in {:?}", start.elapsed());
+        info!("Captured in {:?}", start.elapsed());
     }
-    println!("Active flow {:?}", active_flow.len());
-    println!("Ended flow {:?}", records.len());
+    info!("Active flow {:?}", active_flow.len());
+    info!("Ended flow {:?}", records.len());
     for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }
@@ -135,7 +138,8 @@ pub async fn fluereflow_fileparse(arg: Args) {
 
     let result = tasks.await;
     if verbose >= 1 {
-        println!("Export {} result: {:?}", file_path, result);
+        info!("Export {} result: {:?}", file_path, result);
     }
     //println!("records {:?}", records);
+    Ok(())
 }
