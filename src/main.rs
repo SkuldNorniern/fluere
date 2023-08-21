@@ -1,3 +1,7 @@
+// This is the main entry point of the Fluere application.
+// Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data.
+// It also supports live capture and conversion of NetFlow data.
+// This file contains the main function which parses the command line arguments and calls the appropriate functions based on the arguments.
 pub mod config;
 pub mod net;
 pub mod plugin;
@@ -9,6 +13,8 @@ use pnet::datalink;
 
 use std::process::exit;
 
+// This function sets up the command line interface for the application using the clap library.
+// It defines the available commands and their arguments.
 fn cli() -> Command {
     Command::new("fluere")
         .version("0.5.2")
@@ -243,6 +249,8 @@ fn cli() -> Command {
         )
 }
 
+// This is the main function of the application.
+// It gets the command line arguments, parses them, and calls the appropriate functions based on the arguments.
 #[tokio::main]
 async fn main() {
     let args = cli().get_matches();
