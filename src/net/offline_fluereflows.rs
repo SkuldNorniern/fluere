@@ -30,7 +30,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<()> {
     let verbose = arg.verbose.ok_or_else(|| anyhow!("Verbose parameter not found"))?;
     let mut cap = Capture::from_file(file_name).map_err(|e| anyhow!("Failed to capture from file: {}", e))?; 
     let mut file = fs::File::create(file_path.clone()).map_err(|e| anyhow!("Failed to create file: {}", e))?; 
-    info!("Received packet");
+    debug!("Received packet");
     info!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
     info!("Flow finished");
     info!("Flow expired");
