@@ -24,6 +24,21 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub async fn setup_packet_capture(interface_name: String, verbose: u8) -> Capture {
+    let interface = get_interface(interface_name.as_str());
+    let cap = Capture::from_device(interface)
+        .unwrap()
+        .promisc(true)
+        .open()
+        .unwrap();
+
+    if verbose >= 1 {
+        println!("Packet capture setup complete");
+    }
+
+    cap
+}
+
 pub async fn packet_capture(
     arg: Args,
 ) {
@@ -36,14 +51,7 @@ pub async fn packet_capture(
     let sleep_windows = arg.parameters.sleep_windows.unwrap();
     let verbose = arg.verbose.unwrap();
 
-    let interface = get_interface(interface_name.as_str());
-    let mut cap = Capture::from_device(interface)
-        .unwrap()
-        .promisc(true)
-        //.buffer_size(100000000)
-        //.immediate_mode(true)
-        .open()
-        .unwrap();
+    let mut cap = setup_packet_capture(interface_name, verbose).await;
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
