@@ -24,6 +24,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// This function captures packets from the network interface and processes them.
+/// It creates a directory for output, opens a capture from the network interface,
+/// and then enters a loop where it processes each packet.
+/// The processing involves parsing the packet, updating the flow records,
+/// and exporting the flows at regular intervals.
 pub async fn packet_capture(
     arg: Args,
 ) {
@@ -37,23 +42,15 @@ pub async fn packet_capture(
     let verbose = arg.verbose.unwrap();
 
     let interface = get_interface(interface_name.as_str());
-    let mut cap = Capture::from_device(interface)
-        .unwrap()
-        .promisc(true)
-        //.buffer_size(100000000)
-        //.immediate_mode(true)
-        .open()
-        .unwrap();
-
-    let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
+    let mut cap = match Capture::from_device(interface).promisc(true).open() {
+        Ok(cap) => cap,
+        Err(e) => {
+            eprintln!("Failed to open capture: {}", e);
+            return;
         }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
     };
+
+    let file_dir = create_directory("./output", verbose);
 
     let start = Instant::now();
     let mut last_export = Instant::now();
@@ -137,29 +134,7 @@ pub async fn packet_capture(
         let pkt = flowdata.get_min_pkt();
         let ttl = flowdata.get_min_ttl();
         //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
-        let flow_key = if is_reverse { &reverse_key } else { &key_value };
-        if let Some(flow) = active_flow.get_mut(flow_key) {
-            let update_key = UDFlowKey {
-                doctets,
-                pkt,
-                ttl,
-                flags,
-                time,
-            };
-            update_flow(flow, is_reverse, update_key);
-
-            if verbose >= 2 {
-                println!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
-            }
-
-            if flags.fin == 1 || flags.rst == 1 {
-                if verbose >= 2 {
-                    println!("flow finished");
-                }
-                records.push(*flow);
-                active_flow.remove(flow_key);
-            }   
-        }
+        update_flow_records(&mut active_flow, &mut records, is_reverse, &key_value, &reverse_key, doctets, pkt, ttl, flags, time, verbose);
 
         packet_count += 1;
         // slow down the loop for windows to avoid random shutdown
