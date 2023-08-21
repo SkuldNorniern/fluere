@@ -36,9 +36,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
+pub async fn packet_capture(arg: Args) -> Result<(), Box<dyn std::error::Error>> {
     println!("TUI");
-    online_packet_capture(arg).await;
+    online_packet_capture(arg).await?;
     Ok(())
 }
 
@@ -64,7 +64,7 @@ pub async fn online_packet_capture(
         .unwrap();
 
     let file_dir = "./output";
-    fs::create_dir_all(<&str>::clone(&file_dir))?;
+    fs::create_dir_all(<&str>::clone(&file_dir)).expect("Failed to create directory");
     if verbose >= 1 {
         println!("Created directory: {}", file_dir)
     }
