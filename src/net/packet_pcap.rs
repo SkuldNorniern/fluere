@@ -35,7 +35,7 @@ pub async fn pcap_capture(args: Args) {
                 println!("Created directory: {}", file_dir)
             }
         }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
+        Err(error) => return Err(format!("Problem creating directory: {:?}", error)),
     };
 
     let file_path = cur_time_file(pcap_file.as_str(), file_dir, ".pcap").await;
