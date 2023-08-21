@@ -70,7 +70,7 @@ pub async fn online_packet_capture(
                 println!("Created directory: {}", file_dir)
             }
         }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
+        Err(error) => return Err(format!("Problem creating directory: {:?}", error)),
     };
 
     let start = Instant::now();
