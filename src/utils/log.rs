@@ -10,4 +10,8 @@ impl Log{
         };
         Log(*logger)
     }
+
+    pub fn log_error(&self, message: &str) {
+        let _ = self.0.send(Severity::LOG_ERR, message);
+    }
 }
