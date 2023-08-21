@@ -7,6 +7,11 @@ branch: 'main'
 gha_enabled: True
 # This is the description of your project. It will be used by sweep when creating PRs. You can tell Sweep what's unique about your project, what frameworks you use, or anything else you want.
 # Here's an example: sweepai/sweep is a python project. The main api endpoints are in sweepai/api.py. Write code that adheres to PEP8.
-description: ''
+description: 'Fluere is a rust project. follow the conventional commit when committing to the repo. Write code that follows the rust docs guideline'
 
+docs: {"rustc-dev-guide": "https://rustc-dev-guide.rust-lang.org/conventions.html", "github": "https://gist.github.com/SkuldNorniern/5f641b2898713b2c7721fd0e4efbfdce"}
 # Default Values: https://github.com/sweepai/sweep/blob/main/sweep.yaml
+sandbox:
+  enabled: true
+  image: "Rust"
+  formatter: "cargo fmt; cargo clippy --fix --bin \"fluere\" --allow-dirty --allow-staged"
