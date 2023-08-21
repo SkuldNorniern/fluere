@@ -27,17 +27,18 @@ pub async fn fluereflow_fileparse(arg: Args) {
     let _flow_timeout = arg.parameters.timeout.unwrap();
     let verbose = arg.verbose.unwrap();
 
-    let mut cap = Capture::from_file(file_name).unwrap();
-
+    let mut cap = Capture::from_file(file_name).map_err(|e| {
+        log::error!("Failed to capture from file: {}", e);
+        e
+    })?;
+    
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    if let Err(error) = fs::create_dir_all(<&str>::clone(&file_dir)) {
+        log::error!("Problem creating directory: {:?}", error);
+        return Err(error.into());
+    } else if verbose >= 1 {
+        log::info!("Created directory: {}", file_dir);
+    }
 
     let start = Instant::now();
     let file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
