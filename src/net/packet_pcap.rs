@@ -23,8 +23,7 @@ pub async fn pcap_capture(args: Args) {
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
-        //.buffer_size(1000000000)
-        .open()
+        .open()?;
         .unwrap();
 
     let file_dir = "./output";
@@ -35,13 +34,13 @@ pub async fn pcap_capture(args: Args) {
                 println!("Created directory: {}", file_dir)
             }
         }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
+        Err(error) => return Err(format!("Problem creating directory: {:?}", error)),
     };
 
     let file_path = cur_time_file(pcap_file.as_str(), file_dir, ".pcap").await;
     let mut file: pcap::Savefile = match cap.savefile(file_path) {
         Ok(f) => f,
-        Err(_) => std::process::exit(1),
+        Err(_) => return Err("Failed to create pcap savefile".to_string()),
     };
 
     let start = Instant::now();
