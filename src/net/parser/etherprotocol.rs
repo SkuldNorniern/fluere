@@ -1,16 +1,26 @@
 use crate::net::types::{EtherFrame, EtherProtocol, MacAddress};
 use nom::{bytes::complete::take, IResult};
 
-pub fn _parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {
-    let (packet_data, dest_mac_bytes) = take(6usize)(packet_data)?;
-    let dest_mac = MacAddress::from(dest_mac_bytes);
-    let (packet_data, source_mac_bytes) = take(6usize)(packet_data)?;
-    let source_mac = MacAddress::from(source_mac_bytes);
-    let (packet_data, ether_type_bytes) = take(2usize)(packet_data)?;
-    let mut ether_type_array = [0u8; 2];
-    ether_type_array.copy_from_slice(ether_type_bytes);
-    let ether_protocol: EtherProtocol = EtherProtocol::from(u16::from_be_bytes(ether_type_array));
+// Helper function to take a slice of bytes and convert it to the desired type
+fn take_and_convert<T: From<[u8; N]>, const N: usize>(payload: &[u8]) -> IResult<&[u8], T> {
+    let (payload, bytes) = take(N)(payload)?;
+    let mut array = [0; N];
+    array.copy_from_slice(bytes);
+    Ok((payload, T::from(array)))
+}
 
+pub fn _parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {
+    // Parse the destination MAC address
+    let (packet_data, dest_mac) = take_and_convert::<MacAddress, 6>(packet_data)?;
+
+    // Parse the source MAC address
+    let (packet_data, source_mac) = take_and_convert::<MacAddress, 6>(packet_data)?;
+
+    // Parse the EtherType
+    let (packet_data, ether_protocol) = take_and_convert::<u16, 2>(packet_data)?;
+    let ether_protocol = EtherProtocol::from(ether_protocol);
+
+    // Create the Ethernet frame
     let frame = EtherFrame {
         dest_mac,
         source_mac,
