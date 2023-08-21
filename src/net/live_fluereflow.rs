@@ -84,28 +84,25 @@ pub async fn online_packet_capture(
     let verbose = arg.verbose.unwrap();
 
     let interface = get_interface(interface_name.as_str());
-    let mut cap = Capture::from_device(interface)
-        .unwrap()
+    let mut cap = Capture::from_device(interface)?
         .promisc(true)
-        //.buffer_size(100000000)
-        //.immediate_mode(true)
+        .open()?;
         .open()
         .unwrap();
 
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    fs::create_dir_all(<&str>::clone(&file_dir)).map_err(|error| {
+        log::error!("Problem creating directory: {:?}", error);
+        error
+    })?;
+    if verbose >= 1 {
+        log::info!("Created directory: {}", file_dir);
+    }
 
     let start = Instant::now();
     let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-    let mut file = fs::File::create(file_path.clone()).unwrap();
+    let mut file = fs::File::create(file_path.clone())?;
 
     //let mut wtr = csv::Writer::from_writer(file);
 
