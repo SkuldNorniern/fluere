@@ -296,7 +296,13 @@ async fn main() {
             if verbose >= 1 {
                 println!("Interface {} selected", interface);
             } //net::packet_capture(interface);
-            net::online_fluereflow::packet_capture(args).await;
+            match net::online_fluereflow::packet_capture(args).await {
+                Ok(_) => (),
+                Err(e) => {
+                    utils::log::Log::error(&format!("Error: {}", e));
+                    exit(1);
+                }
+            }
             //net::netflow(_interface);
         }
         Some(("offline", args)) => {
@@ -362,9 +368,13 @@ async fn main() {
             if verbose >= 1 {
                 println!("Interface {} selected", interface);
             } //net::packet_capture(interface);
-            net::live_fluereflow::packet_capture(args)
-                .await
-                .expect("Error on live mode");
+            match net::live_fluereflow::packet_capture(args).await {
+                Ok(_) => (),
+                Err(e) => {
+                    utils::log::Log::error(&format!("Error: {}", e));
+                    exit(1);
+                }
+            }
             //net::netflow(_interface);
         }
         Some(("pcap", args)) => {
@@ -411,7 +421,13 @@ async fn main() {
                 println!("Interface {interface} selected");
             }
 
-            net::pcap_capture(args).await;
+            match net::pcap_capture(args).await {
+                Ok(_) => (),
+                Err(e) => {
+                    utils::log::Log::error(&format!("Error: {}", e));
+                    exit(1);
+                }
+            }
         }
         _ => {
             println!("No mode selected");
