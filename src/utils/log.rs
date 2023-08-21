@@ -1,13 +1,30 @@
-use super::syslog::{self, Logger, Facility, Severity};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
+use std::env;
 
-pub struct log(Logger);
+pub struct Log {
+    file: std::fs::File,
+}
 
-impl Log{
+impl Log {
     pub fn new() -> Self {
-        let logger = match syslog::unix(Facility::LOG_USER) {
-            Ok(logger) => logger,
-            Err(e) => panic!("Failed to connect to syslog: {}", e),
-        };
-        Log(*logger)
+        let mut path = env::current_exe().unwrap();
+        path.pop(); // remove the executable name
+        if cfg!(target_os = "linux") {
+            path = PathBuf::from("/var/log/fluere/");
+        }
+        path.push("fluere.log");
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(path)
+            .unwrap();
+        Log { file }
+    }
+
+    pub fn log(&mut self, level: &str, message: &str) {
+        writeln!(self.file, "[{}] {}", level, message).unwrap();
     }
 }
