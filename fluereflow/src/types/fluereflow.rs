@@ -29,23 +29,19 @@ impl FluereHeader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FluereRecord {
+pub struct SourceDestinationInfo {
     source: IpAddr,
     destination: IpAddr,
-    d_pkts: u32,
-    d_octets: usize,
-    first: u64,
-    last: u64,
     src_port: u16,
     dst_port: u16,
-    min_pkt: u32,
-    max_pkt: u32,
-    min_ttl: u8,
-    max_ttl: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketCounts {
+    d_pkts: u32,
+    d_octets: usize,
     in_pkts: u32,
     out_pkts: u32,
-    in_bytes: usize,
-    out_bytes: usize,
     fin_cnt: u32,
     syn_cnt: u32,
     rst_cnt: u32,
@@ -55,6 +51,20 @@ pub struct FluereRecord {
     ece_cnt: u32,
     cwr_cnt: u32,
     ns_cnt: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FluereRecord {
+    source_destination_info: SourceDestinationInfo,
+    first: u64,
+    last: u64,
+    min_pkt: u32,
+    max_pkt: u32,
+    min_ttl: u8,
+    max_ttl: u8,
+    in_bytes: usize,
+    out_bytes: usize,
+    packet_counts: PacketCounts,
     prot: u8,
     tos: u8,
 }
