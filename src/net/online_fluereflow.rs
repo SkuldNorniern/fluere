@@ -1,3 +1,6 @@
+// This file contains the implementation of the online packet capture functionality.
+// It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
+// The data is then exported to a CSV file.
 extern crate csv;
 
 use pcap::Capture;
@@ -24,6 +27,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+// This function captures packets from a network interface and converts them into NetFlow data.
+// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
+// The function runs indefinitely, capturing packets and exporting the captured data to a CSV file.
 pub async fn packet_capture(
     arg: Args,
 ) {
