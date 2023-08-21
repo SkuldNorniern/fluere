@@ -66,14 +66,6 @@ pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
 }
 pub async fn online_packet_capture(
     arg: Args,
-    //csv_file: &str,
-    // use_mac: bool,
-    // interface_name: &str,
-    // duration: u64,
-    // interval: u64,
-    // flow_timeout: u64,
-    // sleep_windows: u64,
-    // verbose: u8,
 ) -> Result<()> {
     let csv_file = arg.files.csv.ok_or_else(|| anyhow!("CSV file not found"))?;
     let use_mac = arg.parameters.use_mac.ok_or_else(|| anyhow!("Use MAC parameter not found"))?;
@@ -131,7 +123,6 @@ pub async fn online_packet_capture(
                 error!("Failed to parse fluereflow: {}", e);
                 e
             })?;
-        };
 
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
