@@ -63,7 +63,6 @@ pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
     )?;
     terminal.show_cursor()?;
     Ok(())
-}
 
 pub async fn online_packet_capture(
     arg: Args,
