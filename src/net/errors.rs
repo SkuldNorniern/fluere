@@ -9,6 +9,8 @@ pub enum NetError {
     UnknownProtocol { protocol: String },
     #[snafu(display("unknown IP version `{version}`"))]
     UnknownIPVersion { version: String },
+    #[snafu(display("general error `{message}`"))]
+    GeneralError { message: String },
 }
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
