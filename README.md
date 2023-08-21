@@ -44,11 +44,20 @@ The following table provides detailed information about each argument:
 | sleep_windows | Set interval of thread pause for (only)MS Windows per n packet | `-s` or `--sleep` |
 | verbose | Set verbosity level | `-v` or `--verbose` |
 
-## Usage
 
-To use Fluere, you first need to install it using the `cargo install fluere` command. Once installed, you can run Fluere using the `fluere` command followed by the desired subcommand (`online`, `offline`, `pcap`) and the corresponding options.
 
-### Examples of Common Use Cases
+## Prerequisites
+
+Ensure that you have installed `libpcap` on Linux and macOS or `npcap` on Windows.
+- you need to install `npcap` in `winpcap compatible mode` 
+
+## Installation
+
+```sh
+cargo install fluere
+```
+
+## Examples of Common Use Cases
 
 1. **Live NetFlow Capture and Conversion**: To capture NetFlow data in real-time from a specific network interface, use the `online` subcommand. For example:
 
@@ -74,71 +83,11 @@ fluere pcap -i eth0 -d 1000
 
 This command captures packets from the `eth0` interface for a duration of 1000 milliseconds and saves the packets in a pcap file.
 
-For example, to capture netflow online and export it to a csv file, you can use the following command:
+4. **Live Fluereflow Capture and Conversion**: To capture Fluereflow data in real-time with TUI feedback in realtime from a specific network interface, use the `live` subcommand. For example:
 
 ```sh
-fluere online -c output -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
+fluere live -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
 ```
 
-This command will capture netflow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1 and the output will be saved to a csv file named `output.csv`.
+This command captures Fluereflow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1.
 
-## Prerequisites
-
-Ensure that you have installed `libpcap` on Linux and macOS or `npcap` on Windows.
-- you need to install `npcap` in `winpcap compatible mode` 
-
-## Installation
-
-```sh
-cargo install fluere
-```
-
-## Usage
-
-Execute Fluere by entering the `fluere` command in the terminal.
-
-To list available interfaces, use:
-
-```sh
-fluere online -l
-```
-
-or
-
-```sh
-fluere pcap -l
-```
-
-Select the capture mode:
-
-- `online`: Live NetFlow data capture and conversion
-- `offline`: Convert pcap files to NetFlow data
-- `pcap`: Capture packets in pcap format
-
-Specify the desired capture duration in milliseconds (ms):
-
-```sh
--d 1000
-```
-
-Set the output file's title:
-
-```sh
--c file_title
-```
-
-The captured packets or NetFlow data will be saved in the "output" directory within Fluere's installation folder.
-
-## Important Notes
-
-For Linux and macOS users, ensure that you run Fluere with administrator privileges.
-
-### Example
-
-```sh
-sudo fluere online -d 1000 -c my_capture
-```
-
-## License
-
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere?ref=badge_large)
