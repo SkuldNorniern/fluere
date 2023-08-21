@@ -57,52 +57,36 @@ Ensure that you have installed `libpcap` on Linux and macOS or `npcap` on Window
 cargo install fluere
 ```
 
-## Usage
+## Examples of Common Use Cases
 
-Execute Fluere by entering the `fluere` command in the terminal.
-
-To list available interfaces, use:
+1. **Live NetFlow Capture and Conversion**: To capture NetFlow data in real-time from a specific network interface, use the `online` subcommand. For example:
 
 ```sh
-fluere online -l
+fluere online -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
 ```
 
-or
+This command captures NetFlow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1.
+
+2. **Offline pcap to NetFlow Conversion**: To convert a pcap file into NetFlow data, use the `offline` subcommand. For example:
 
 ```sh
-fluere pcap -l
+fluere offline -f input.pcap -c output
 ```
 
-Select the capture mode:
+This command converts the `input.pcap` file into NetFlow data and exports the data to a CSV file named `output.csv`.
 
-- `online`: Live NetFlow data capture and conversion
-- `offline`: Convert pcap files to NetFlow data
-- `pcap`: Capture packets in pcap format
-
-Specify the desired capture duration in milliseconds (ms):
+3. **Packet Capture in pcap Format**: To capture packets in pcap format from a specific network interface, use the `pcap` subcommand. For example:
 
 ```sh
--d 1000
+fluere pcap -i eth0 -d 1000
 ```
 
-Set the output file's title:
+This command captures packets from the `eth0` interface for a duration of 1000 milliseconds and saves the packets in a pcap file.
+
+For example, to capture netflow online and export it to a csv file, you can use the following command:
 
 ```sh
--c file_title
+fluere online -c output -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
 ```
 
-The captured packets or NetFlow data will be saved in the "output" directory within Fluere's installation folder.
-
-## Important Notes
-
-For Linux and macOS users, ensure that you run Fluere with administrator privileges.
-
-### Example
-
-```sh
-sudo fluere online -d 1000 -c my_capture
-```
-
-## License
-
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FSkuldNorniern%2Ffluere?ref=badge_large)
+This command will capture netflow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1 and the output will be saved to a csv file named `output.csv`.
