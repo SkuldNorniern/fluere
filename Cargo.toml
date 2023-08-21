@@ -17,7 +17,7 @@ pnet = { version = "0.34.0", features = ["std"] }
 pnet_macros_support = "0.34.0"
 pnet_macros = "0.34.0"
 pcap = "1.1.0"
-chrono = "0.4.23"
+chrono = { version = "0.4.23", default-features = false, features = ["clock"] }
 libc = "0.2"
 byteorder = "1.4.3"
 syslog = "^6.0"
