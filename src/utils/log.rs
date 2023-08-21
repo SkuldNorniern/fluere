@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use chrono::Local; // Import the Local struct from the chrono crate
 
 pub struct Log {
     file: File,
@@ -36,7 +37,8 @@ impl Log {
     }
 
     pub fn log(&mut self, severity: Severity, message: &str) {
-        let log_message = format!("{:?}: {}", severity, message);
+        let timestamp = Local::now(); // Get the current timestamp using Local::now()
+        let log_message = format!("{:?} {}: {}", timestamp, severity, message); // Format the timestamp and append it to the log message
         self.file.write_all(log_message.as_bytes()).expect("Failed to write to log file");
     }
 }
