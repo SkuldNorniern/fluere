@@ -63,7 +63,7 @@ pub async fn fluereflow_fileparse(arg: Args) {
         };
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
-        let is_reverse = match active_flow.get(&key_value) {
+        /*let is_reverse = match active_flow.get(&key_value) {
             None => match active_flow.get(&reverse_key) {
                 None => {
                     // if the protocol is TCP, check if is a syn packet
@@ -88,7 +88,23 @@ pub async fn fluereflow_fileparse(arg: Args) {
                 Some(_) => true,
             },
             Some(_) => false,
-        };
+        };*/
+        let is_reverse = if active_flow.contains_key(&key_value) {
+            false
+        } else if active_flow.contains_key(&reverse_key) {
+            true
+        } else {
+            if flowdata.get_prot() != 6  && flags.syn > 0  {
+                active_flow.insert(key_value, flowdata);
+                if verbose >= 2 {
+                    println!("flow established");
+                }
+            } else {
+                continue;
+            }
+            false
+        };       
+
         let time = parse_microseconds(
             packet.header.ts.tv_sec as u64,
             packet.header.ts.tv_usec as u64,
