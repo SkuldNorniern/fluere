@@ -48,8 +48,7 @@ pub async fn packet_capture(
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
-        //.buffer_size(100000000)
-        //.immediate_mode(true)
+        .open()?;
         .open()
         .unwrap();
 
@@ -60,13 +59,13 @@ pub async fn packet_capture(
                 println!("Created directory: {}", file_dir)
             }
         }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
+        Err(error) => return Err(format!("Problem creating directory: {:?}", error)),
     };
 
     let start = Instant::now();
     let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-    let mut file = fs::File::create(file_path.clone()).unwrap();
+    let mut file = fs::File::create(file_path.clone())?;
 
     //let mut wtr = csv::Writer::from_writer(file);
 
