@@ -7,7 +7,7 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
-fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
+fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Result<Vec<C_Ipv4Packet>, Box<dyn Error>> {
     let mut packets = Vec::new();
     loop {
         match rx.next() {
@@ -64,17 +64,17 @@ fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
                     }
                 }
             }
-            Err(e) => {
-                // An error occurred while reading the packet
-                panic!("An error occurred while reading: {}", e);
-            }
+    Err(e) => {
+        // An error occurred while reading the packet
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("An error occurred while reading: {}", e))));
+    }
         }
     }
     println!("Packets: {:?}", packets);
     packets
 }
 
-pub fn packet_capture(interface_name: &str) {
+pub fn packet_capture(interface_name: &str) -> Result<(), Box<dyn Error>> {
     println!("Capturing on interface: {}", interface_name);
 
     // Parse the interface str into NetworkInterface
@@ -85,11 +85,8 @@ pub fn packet_capture(interface_name: &str) {
     // Create a channel to receive on
     let (_, mut rx) = match datalink::channel(&interface, Default::default()) {
         Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
-        Ok(_) => panic!("Unhandled channel type"),
-        Err(e) => panic!(
-            "An error occurred when creating the datalink channel: {}",
-            e
-        ),
+        Ok(_) => return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Unhandled channel type"))),
+        Err(e) => return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("An error occurred when creating the datalink channel: {}", e)))),
     };
 
     // Process packets
