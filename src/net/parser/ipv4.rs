@@ -2,46 +2,54 @@ use crate::net::types::ipv4::{IPProtocol, IPv4};
 use nom::{bytes::complete::take, IResult};
 use std::net::Ipv4Addr;
 
-pub fn _parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
-    let (payload, version_header_length) = take(1usize)(payload)?;
-    let version = version_header_length[0] >> 4;
-    let header_length = version_header_length[0] & 15;
-    let (payload, type_of_service) = take(1usize)(payload)?;
-    let (payload, length) = take(2usize)(payload)?;
-    let (payload, id) = take(2usize)(payload)?;
-    let (payload, flag_frag_offset) = take(2usize)(payload)?;
-    let flags = ((flag_frag_offset[0] as u32) >> 13) as u8;
-    let fragment_offset: u32 = (flag_frag_offset[0] as u32) & 8191;
-    let (payload, ttl) = take(1usize)(payload)?;
-    let (payload, protocol) = take(1usize)(payload)?;
-    let (payload, checksum) = take(2usize)(payload)?;
-    let (payload, source_addr) = take(4usize)(payload)?;
-    let source_addr = Ipv4Addr::new(
-        source_addr[0],
-        source_addr[1],
-        source_addr[2],
-        source_addr[3],
-    );
-    let (payload, dest_addr) = take(4usize)(payload)?;
-    let dest_addr = Ipv4Addr::new(dest_addr[0], dest_addr[1], dest_addr[2], dest_addr[3]);
+// Helper function to take a slice of bytes and convert it to the desired type
+fn take_and_convert<T: From<[u8; N]>, const N: usize>(payload: &[u8]) -> IResult<&[u8], T> {
+    let (payload, bytes) = take(N)(payload)?;
+    let mut array = [0; N];
+    array.copy_from_slice(bytes);
+    Ok((payload, T::from(array)))
+}
 
+pub fn _parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {
+    // Parse the version and header length
+    let (payload, version_header_length) = take_and_convert::<u8, 1>(payload)?;
+    let version = version_header_length >> 4;
+    let header_length = version_header_length & 15;
+
+    // Parse the type of service, length, id, flags and fragment offset
+    let (payload, type_of_service) = take_and_convert::<u8, 1>(payload)?;
+    let (payload, length) = take_and_convert::<u16, 2>(payload)?;
+    let (payload, id) = take_and_convert::<u16, 2>(payload)?;
+    let (payload, flag_frag_offset) = take_and_convert::<u16, 2>(payload)?;
+    let flags = ((flag_frag_offset as u32) >> 13) as u8;
+    let fragment_offset: u32 = (flag_frag_offset as u32) & 8191;
+
+    // Parse the ttl, protocol, checksum, source address and destination address
+    let (payload, ttl) = take_and_convert::<u8, 1>(payload)?;
+    let (payload, protocol) = take_and_convert::<u8, 1>(payload)?;
+    let (payload, checksum) = take_and_convert::<u16, 2>(payload)?;
+    let (payload, source_addr) = take_and_convert::<Ipv4Addr, 4>(payload)?;
+    let (payload, dest_addr) = take_and_convert::<Ipv4Addr, 4>(payload)?;
+
+    // Skip the options if the header length is greater than 5
     let (payload, _) = if header_length > 5 {
         take((header_length - 5) * 4)(payload)?
     } else {
         (payload, &[] as &[u8])
     };
 
+    // Create the IPv4 packet
     let v4packet = IPv4 {
         version,
         header_length,
-        type_of_service: u8::from_be_bytes([type_of_service[0]]),
-        length: u16::from_be_bytes([length[0], length[1]]),
-        id: u16::from_be_bytes([id[0], id[1]]),
+        type_of_service,
+        length,
+        id,
         flags,
         fragment_offset,
-        ttl: u8::from_be_bytes([ttl[0]]),
-        protocol: IPProtocol::from(u8::from_be_bytes([protocol[0]])),
-        checksum: u16::from_be_bytes([checksum[0], checksum[1]]),
+        ttl,
+        protocol: IPProtocol::from(protocol),
+        checksum,
         source_addr,
         dest_addr,
     };
