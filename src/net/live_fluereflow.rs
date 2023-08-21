@@ -39,6 +39,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+// This function is responsible for capturing packets
 pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
     println!("TUI");
     online_packet_capture(arg).await;
@@ -55,6 +56,7 @@ struct FlowSummary {
 }
 
 
+// This function is responsible for processing packets and exporting data
 pub async fn online_packet_capture(
     arg: Args,
 ) {
@@ -68,7 +70,7 @@ pub async fn online_packet_capture(
     let verbose = arg.verbose.unwrap();
 
     let interface = get_interface(interface_name.as_str());
-    let mut cap = Capture::from_device(interface)
+    let mut packet_capture = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
         //.buffer_size(100000000)
@@ -147,7 +149,7 @@ pub async fn online_packet_capture(
             reverse_key.mac_defaultate();
         }
 
-        let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+        let (data_octets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
             Ok(result) => result,
             Err(_) => continue,
         };
