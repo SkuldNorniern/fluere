@@ -83,7 +83,7 @@ fluere pcap -i eth0 -d 1000
 
 This command captures packets from the `eth0` interface for a duration of 1000 milliseconds and saves the packets in a pcap file.
 
-4. **Live Fluereflow Capture and Conversion**: To capture Fluereflow data in real-time from a specific network interface, use the `live_fluereflow` subcommand. For example:
+4. **Live Fluereflow Capture and Conversion**: To capture Fluereflow data in real-time from a specific network interface, use the `live_fluereflow` or `online` subcommand. For example:
 
 ```sh
 fluere live_fluereflow -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
