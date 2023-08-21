@@ -38,7 +38,7 @@ use std::{
 
 pub async fn packet_capture(arg: Args) -> Result<(), Box<dyn std::error::Error>> {
     println!("TUI");
-    online_packet_capture(arg).await?;
+    online_packet_capture(arg).await;
     Ok(())
 }
 
