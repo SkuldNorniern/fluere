@@ -29,23 +29,31 @@ impl FluereHeader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FluereRecord {
+pub struct FluerePacketInfo {
     source: IpAddr,
     destination: IpAddr,
+    src_port: u16,
+    dst_port: u16,
+    prot: u8,
+    tos: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FluerePacketStats {
     d_pkts: u32,
     d_octets: usize,
     first: u64,
     last: u64,
-    src_port: u16,
-    dst_port: u16,
     min_pkt: u32,
     max_pkt: u32,
-    min_ttl: u8,
-    max_ttl: u8,
     in_pkts: u32,
     out_pkts: u32,
     in_bytes: usize,
     out_bytes: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FluerePacketFlags {
     fin_cnt: u32,
     syn_cnt: u32,
     rst_cnt: u32,
@@ -55,8 +63,20 @@ pub struct FluereRecord {
     ece_cnt: u32,
     cwr_cnt: u32,
     ns_cnt: u32,
-    prot: u8,
-    tos: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FluerePacketMeta {
+    min_ttl: u8,
+    max_ttl: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FluereRecord {
+    info: FluerePacketInfo,
+    stats: FluerePacketStats,
+    flags: FluerePacketFlags,
+    meta: FluerePacketMeta,
 }
 impl FluereRecord {
     pub fn new(
