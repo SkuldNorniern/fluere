@@ -46,22 +46,28 @@ pub async fn packet_capture(
 
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
-        .unwrap()
+        .map_err(|e| {
+            log::error!("Failed to capture from device: {}", e);
+            e
+        })?
         .promisc(true)
-        //.buffer_size(100000000)
-        //.immediate_mode(true)
+        .map_err(|e| {
+            log::error!("Failed to set promiscuous mode: {}", e);
+            e
+        })?
         .open()
-        .unwrap();
+        .map_err(|e| {
+            log::error!("Failed to open capture: {}", e);
+            e
+        })?;
 
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    if let Err(error) = fs::create_dir_all(<&str>::clone(&file_dir)) {
+        log::error!("Problem creating directory: {:?}", error);
+        return Err(error.into());
+    } else if verbose >= 1 {
+        log::info!("Created directory: {}", file_dir);
+    }
 
     let start = Instant::now();
     let mut last_export = Instant::now();
