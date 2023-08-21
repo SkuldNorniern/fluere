@@ -83,10 +83,11 @@ fluere pcap -i eth0 -d 1000
 
 This command captures packets from the `eth0` interface for a duration of 1000 milliseconds and saves the packets in a pcap file.
 
-For example, to capture netflow online and export it to a csv file, you can use the following command:
+4. **Live Fluereflow Capture and Conversion**: To capture Fluereflow data in real-time from a specific network interface, use the `live_fluereflow` subcommand. For example:
 
 ```sh
-fluere online -c output -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
+fluere live_fluereflow -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
 ```
 
-This command will capture netflow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1 and the output will be saved to a csv file named `output.csv`.
+This command captures Fluereflow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1.
+
