@@ -28,7 +28,7 @@ pub async fn pcap_capture(args: Args) {
         .unwrap();
 
     let file_dir = "./output";
-    let mut packet_count = 0;
+    let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
         Ok(_) => {
             if verbose >= 1 {
