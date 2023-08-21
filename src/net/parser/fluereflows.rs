@@ -25,6 +25,36 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+fn process_packet(time: u64, packet: EthernetPacket) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+    match packet.get_ethertype() {
+        EtherTypes::Ipv4 => {
+            let i = Ipv4Packet::new(packet.payload()).unwrap();
+            if i.payload().is_empty() {
+                return Err(NetError::EmptyPacket);
+            }
+
+            ipv4_packet(time, i)
+        }
+        EtherTypes::Ipv6 => {
+            let i = Ipv6Packet::new(packet.payload()).unwrap();
+            if i.payload().is_empty() {
+                return Err(NetError::EmptyPacket);
+            }
+
+            ipv6_packet(time, i)
+        }
+        EtherTypes::Arp => {
+            let i = ArpPacket::new(packet.payload()).unwrap();
+            arp_packet(time, i)
+        }
+        _ => {
+            return Err(NetError::UnknownProtocol {
+                protocol: packet.get_ethertype().to_string(),
+            })
+        }
+    }
+}
+
 pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
     if packet.is_empty() {
         return Err(NetError::EmptyPacket);
@@ -83,8 +113,6 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
         if udp_payload.is_empty() {
             return Err(NetError::EmptyPacket);
         }
-        //UdpPacket::new(ethernet_packet_unpack.payload()).unwrap().payload().to_vec();
-        //println!("UDP payload: {:?}", udp_payload);
         decapsulated_data = decapsulate_vxlan(&udp_payload);
     }
 
@@ -104,37 +132,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
         packet.header.ts.tv_usec as u64,
     );
 
-    let record_result = match ethernet_packet.get_ethertype() {
-        EtherTypes::Ipv4 => {
-            let i = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
-            if i.payload().is_empty() {
-                return Err(NetError::EmptyPacket);
-            }
-
-            ipv4_packet(time, i)
-        }
-        EtherTypes::Ipv6 => {
-            let i = Ipv6Packet::new(ethernet_packet.payload()).unwrap();
-            if i.payload().is_empty() {
-                return Err(NetError::EmptyPacket);
-            }
-
-            ipv6_packet(time, i)
-        }
-        EtherTypes::Arp => {
-            let i = ArpPacket::new(ethernet_packet.payload()).unwrap();
-            //if i.payload().is_empty() {
-            //    return Err(NetError::EmptyPacket);
-            //}
-
-            arp_packet(time, i)
-        }
-        _ => {
-            return Err(NetError::UnknownProtocol {
-                protocol: ethernet_packet.get_ethertype().to_string(),
-            })
-        }
-    };
+    let record_result = process_packet(time, ethernet_packet);
 
     match record_result {
         Ok(_) => {}
