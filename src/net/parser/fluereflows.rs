@@ -143,33 +143,34 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
     let (doctets, raw_flags, record) = record_result.unwrap();
     Ok((doctets, raw_flags, record))
 }
-fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+// Function to parse the fields of an ARP packet
+fn parse_arp_fields(packet: ArpPacket) -> (std::net::IpAddr, std::net::IpAddr, usize, [u8; 9]) {
     let src_ip = packet.get_sender_proto_addr();
     let dst_ip = packet.get_target_proto_addr();
-
-    // ports parsing
     let src_port = 0;
     let dst_port = 0;
-    // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
     let flags = parse_flags(4, packet.payload());
-
-    //	Autonomous system number of the source and destination, either origin or peer
     let doctets = packet.packet_size();
+    (std::net::IpAddr::V4(src_ip), std::net::IpAddr::V4(dst_ip), doctets, flags)
+}
+
+fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+    let (src_ip, dst_ip, doctets, flags) = parse_arp_fields(packet);
 
     Ok((
         doctets,
         flags,
         FluereRecord::new(
-            std::net::IpAddr::V4(src_ip),
-            std::net::IpAddr::V4(dst_ip),
+            src_ip,
+            dst_ip,
             0,
             0,
             time,
             time,
-            src_port,
-            dst_port,
-            packet.packet_size() as u32,
-            packet.packet_size() as u32,
+            0,
+            0,
+            doctets as u32,
+            doctets as u32,
             0,
             0,
             0,
