@@ -33,6 +33,7 @@ toml = "0.7.1"
 fluereflow = "0.2.1"
 ratatui = { version = "0.22.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
+dogstatsd = "0.9.0"
 
 [workspace]
 members = [

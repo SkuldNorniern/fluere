@@ -8,8 +8,10 @@ use crossterm::{
 use fluereflow::FluereRecord;
 use pcap::Capture;
 use ratatui::{
+    layout::{Constraint, Direction, Layout},
     backend::CrosstermBackend,
-    widgets::{Block, Borders},
+    widgets::{Block, Borders,List, ListItem, Paragraph},
+    text::Line,
     Terminal,
 };
 use tokio::task;
@@ -36,43 +38,12 @@ use std::{
 
 pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
     println!("TUI");
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    terminal.draw(|f| {
-        let size = f.size();
-        let block = Block::default().title("Block").borders(Borders::ALL);
-        f.render_widget(block, size);
-    })?;
-    let tasks = task::spawn(async move {
-        online_packet_capture(arg).await;
-    });
-
-    let _ = tasks.await;
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    online_packet_capture(arg).await;
     Ok(())
 }
 
 pub async fn online_packet_capture(
     arg: Args,
-    //csv_file: &str,
-    // use_mac: bool,
-    // interface_name: &str,
-    // duration: u64,
-    // interval: u64,
-    // flow_timeout: u64,
-    // sleep_windows: u64,
-    // verbose: u8,
 ) {
     let csv_file = arg.files.csv.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
@@ -109,6 +80,13 @@ pub async fn online_packet_capture(
     let mut records: Vec<FluereRecord> = Vec::new();
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
     let mut packet_count = 0;
+
+    enable_raw_mode().expect("Unable to enable raw mode");
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).expect("Unable to enter alt screen");
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::new(backend).expect("Failed to initialize terminal");
+    terminal.clear().expect("Failed to clear terminal");
 
     while let Ok(packet) = cap.next_packet() {
         if verbose >= 3 {
@@ -243,6 +221,36 @@ pub async fn online_packet_capture(
             active_flow.retain(|key, _| !expired_flows.contains(key));
             break;
         }
+        terminal.draw(|f| {
+            // Define the layout
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(2)
+                .constraints(
+                    [
+                        Constraint::Percentage(70),
+                        Constraint::Percentage(30),
+                    ]
+                    .as_ref(),
+                )
+                .split(f.size());
+
+            // List of active flows
+            let flows: Vec<ListItem> = active_flow
+                .iter()
+                .map(|(key, _flow)| {
+                    ListItem::new(format!("{:?}:{:?} -> {:?}:{:?}", key.src_ip,key.src_port, key.dst_ip, key.dst_port))
+                })
+                .collect();
+            let flows_list = List::new(flows)
+                .block(Block::default().borders(Borders::ALL).title("Active Flows"));
+            f.render_widget(flows_list, chunks[0]);
+
+            // Flow count
+            let count = Paragraph::new(Line::from(format!("Active Flows: {}", active_flow.len())))
+                .block(Block::default().borders(Borders::ALL).title("Count"));
+            f.render_widget(count, chunks[1]);
+        }).expect("Failed to draw terminal");
     }
     if verbose >= 1 {
         println!("Captured in {:?}", start.elapsed());
@@ -258,5 +266,14 @@ pub async fn online_packet_capture(
     if verbose >= 1 {
         println!("Exporting task excutation result: {:?}", result);
     }
+    disable_raw_mode().expect("failed to disable raw mode");
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    ).expect("failed to restore terminal");
+    terminal.show_cursor().expect("failed to show the cursor");
+    terminal.clear().expect("failed to clear terminal");
+
     //println!("records {:?}", records);
 }
