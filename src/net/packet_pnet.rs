@@ -8,71 +8,80 @@ use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
 fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
-    let mut packets = Vec::new();
-    loop {
-        match rx.next() {
-            Ok(packet) => {
-                // Process the packet
-                let ethernet_packet = EthernetPacket::new(packet).unwrap();
-
-                let protocol = ethernet_packet.get_ethertype();
-                match protocol {
-                    EtherTypes::Ipv4 => {
-                        // Parse the IP packet
-                        let ipv4_packet = Ipv4Packet::new(ethernet_packet.packet()).unwrap();
-                        let c_packet = C_Ipv4Packet::new(ipv4_packet);
-                        let src_ip = c_packet.get_source();
-                        let dst_ip = c_packet.get_destination();
-                        let protocol = c_packet.get_next_level_protocol();
-                        let mut src_port = 0;
-                        let mut dst_port = 0;
-                        //println!("protocol: {:?}", c_packet.get_next_level_protocol());
-                        match protocol.0 {
-                            6 => {
-                                let tcp_packet = TcpPacket::new(c_packet.get_payload()).unwrap();
-                                src_port = tcp_packet.get_source();
-                                dst_port = tcp_packet.get_destination();
-                                println!(
-                                    "TCP packet: {}:{} > {}:{}",
-                                    src_ip, src_port, dst_ip, dst_port
-                                );
-                            }
-                            17 => {
-                                let udp_packet = UdpPacket::new(c_packet.get_payload()).unwrap();
-                                src_port = udp_packet.get_source();
-                                dst_port = udp_packet.get_destination();
-                                println!(
-                                    "UDP packet: {}:{} > {}:{}",
-                                    src_ip, src_port, dst_ip, dst_port
-                                );
-                            }
-                            // Add other protocol cases here
-                            _ => {
-                                // Ignore other protocols
-                            }
-                        }
-
-                        println!(
-                            "protocol: {} packet: {}:{} > {}:{}",
-                            protocol, src_ip, src_port, dst_ip, dst_port
-                        );
-                        packets.push(c_packet.clone());
-                    }
-                    _ => {
-                        println!("Other packet: {:?}", protocol)
-                        // Ignore other packet types
-                    }
-                }
+    fn process_ip_packet(c_packet: C_Ipv4Packet) {
+        let src_ip = c_packet.get_source();
+        let dst_ip = c_packet.get_destination();
+        let protocol = c_packet.get_next_level_protocol();
+        let mut src_port = 0;
+        let mut dst_port = 0;
+        match protocol.0 {
+            6 => {
+                let tcp_packet = TcpPacket::new(c_packet.get_payload()).unwrap();
+                src_port = tcp_packet.get_source();
+                dst_port = tcp_packet.get_destination();
+                println!(
+                    "TCP packet: {}:{} > {}:{}",
+                    src_ip, src_port, dst_ip, dst_port
+                );
             }
-            Err(e) => {
-                // An error occurred while reading the packet
-                panic!("An error occurred while reading: {}", e);
+            17 => {
+                let udp_packet = UdpPacket::new(c_packet.get_payload()).unwrap();
+                src_port = udp_packet.get_source();
+                dst_port = udp_packet.get_destination();
+                println!(
+                    "UDP packet: {}:{} > {}:{}",
+                    src_ip, src_port, dst_ip, dst_port
+                );
+            }
+            // Add other protocol cases here
+            _ => {
+                // Ignore other protocols
             }
         }
+    
+        println!(
+            "protocol: {} packet: {}:{} > {}:{}",
+            protocol, src_ip, src_port, dst_ip, dst_port
+        );
     }
-    println!("Packets: {:?}", packets);
-    packets
-}
+    
+    fn process_ethernet_packet(packet: &[u8]) -> Vec<C_Ipv4Packet> {
+        let mut packets = Vec::new();
+        let ethernet_packet = EthernetPacket::new(packet).unwrap();
+        let protocol = ethernet_packet.get_ethertype();
+        match protocol {
+            EtherTypes::Ipv4 => {
+                // Parse the IP packet
+                let ipv4_packet = Ipv4Packet::new(ethernet_packet.packet()).unwrap();
+                let c_packet = C_Ipv4Packet::new(ipv4_packet);
+                process_ip_packet(c_packet.clone());
+                packets.push(c_packet);
+            }
+            _ => {
+                println!("Other packet: {:?}", protocol)
+                // Ignore other packet types
+            }
+        }
+        packets
+    }
+    
+    fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
+        let mut packets = Vec::new();
+        loop {
+            match rx.next() {
+                Ok(packet) => {
+                    // Process the packet
+                    packets.extend(process_ethernet_packet(packet));
+                }
+                Err(e) => {
+                    // An error occurred while reading the packet
+                    panic!("An error occurred while reading: {}", e);
+                }
+            }
+        }
+        println!("Packets: {:?}", packets);
+        packets
+    }
 
 pub fn packet_capture(interface_name: &str) {
     println!("Capturing on interface: {}", interface_name);
