@@ -1,13 +1,10 @@
-mod ether;
-mod flags;
-pub mod ipv4;
-mod key;
-mod protocols;
+mod ethernet;
+mod ip;
 
-pub use ether::EtherFrame;
-pub use ether::EtherProtocol;
-pub use ether::MacAddress;
-pub use flags::TcpFlags;
-pub use key::Key;
-pub use protocols::Ports;
-pub use protocols::Udp;
+pub use ethernet::EtherFrame;
+pub use ethernet::EtherProtocol;
+pub use ethernet::MacAddress;
+pub use ip::TcpFlags;
+pub use ip::Key;
+pub use ip::Ports;
+pub use ip::Udp;
