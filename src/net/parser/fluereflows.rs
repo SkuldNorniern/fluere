@@ -25,16 +25,20 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+pub fn parse_packet(packet: pcap::Packet) -> Result<EthernetPacket, NetError> {
     if packet.is_empty() {
         return Err(NetError::EmptyPacket);
     }
 
     let ethernet_packet_raw = EthernetPacket::new(packet.data);
-    let ethernet_packet_unpack = match ethernet_packet_raw {
-        None => return Err(NetError::EmptyPacket),
-        Some(e) => e,
-    };
+    match ethernet_packet_raw {
+        None => Err(NetError::EmptyPacket),
+        Some(e) => Ok(e),
+    }
+}
+
+pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+    let ethernet_packet_unpack = parse_packet(packet)?;
 
     let is_udp: bool = match ethernet_packet_unpack.get_ethertype() {
         EtherTypes::Ipv6 => {
