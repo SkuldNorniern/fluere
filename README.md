@@ -44,43 +44,7 @@ The following table provides detailed information about each argument:
 | sleep_windows | Set interval of thread pause for (only)MS Windows per n packet | `-s` or `--sleep` |
 | verbose | Set verbosity level | `-v` or `--verbose` |
 
-## Usage
 
-To use Fluere, you first need to install it using the `cargo install fluere` command. Once installed, you can run Fluere using the `fluere` command followed by the desired subcommand (`online`, `offline`, `pcap`) and the corresponding options.
-
-### Examples of Common Use Cases
-
-1. **Live NetFlow Capture and Conversion**: To capture NetFlow data in real-time from a specific network interface, use the `online` subcommand. For example:
-
-```sh
-fluere online -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
-```
-
-This command captures NetFlow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1.
-
-2. **Offline pcap to NetFlow Conversion**: To convert a pcap file into NetFlow data, use the `offline` subcommand. For example:
-
-```sh
-fluere offline -f input.pcap -c output
-```
-
-This command converts the `input.pcap` file into NetFlow data and exports the data to a CSV file named `output.csv`.
-
-3. **Packet Capture in pcap Format**: To capture packets in pcap format from a specific network interface, use the `pcap` subcommand. For example:
-
-```sh
-fluere pcap -i eth0 -d 1000
-```
-
-This command captures packets from the `eth0` interface for a duration of 1000 milliseconds and saves the packets in a pcap file.
-
-For example, to capture netflow online and export it to a csv file, you can use the following command:
-
-```sh
-fluere online -c output -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
-```
-
-This command will capture netflow data from the `eth0` interface for a duration of 1000 milliseconds, with a flow timeout of 600000 milliseconds and an export interval of 1800000 milliseconds. The verbosity level is set to 1 and the output will be saved to a csv file named `output.csv`.
 
 ## Prerequisites
 
