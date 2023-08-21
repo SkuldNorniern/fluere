@@ -85,22 +85,25 @@ pub async fn online_packet_capture(
 
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
-        .unwrap()
+        .map_err(|error| {
+            log::error!("Failed to capture from device: {:?}", error);
+            error
+        })?
         .promisc(true)
-        //.buffer_size(100000000)
-        //.immediate_mode(true)
         .open()
-        .unwrap();
+        .map_err(|error| {
+            log::error!("Failed to open capture: {:?}", error);
+            error
+        })?;
 
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    fs::create_dir_all(<&str>::clone(&file_dir)).map_err(|error| {
+        log::error!("Problem creating directory: {:?}", error);
+        error
+    })?;
+    if verbose >= 1 {
+        log::info!("Created directory: {}", file_dir);
+    }
 
     let start = Instant::now();
     let mut last_export = Instant::now();
