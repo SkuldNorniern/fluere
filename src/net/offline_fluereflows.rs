@@ -28,16 +28,16 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<()> {
     let use_mac = arg.parameters.use_mac.ok_or_else(|| anyhow!("Use MAC parameter not found"))?;
     let _flow_timeout = arg.parameters.timeout.ok_or_else(|| anyhow!("Flow timeout parameter not found"))?;
     let verbose = arg.verbose.ok_or_else(|| anyhow!("Verbose parameter not found"))?;
-
-    let mut cap = Capture::from_file(file_name)
-        .map_err(|e| anyhow!("Failed to capture from file: {}", e))?;
-
-    let file_dir = "./output";
-    fs::create_dir_all(<&str>::clone(&file_dir))
-        .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
-    if verbose >= 1 {
-        info!("Created directory: {}", file_dir);
-    }
+    let mut cap = Capture::from_file(file_name).map_err(|e| anyhow!("Failed to capture from file: {}", e))?; 
+    let mut file = fs::File::create(file_path.clone()).map_err(|e| anyhow!("Failed to create file: {}", e))?; 
+    info!("Received packet");
+    info!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
+    info!("Flow finished");
+    info!("Flow expired");
+    info!("Captured in {:?}", start.elapsed());
+    info!("Active flow {:?}", active_flow.len());
+    info!("Ended flow {:?}", records.len());
+    info!("Export {} result: {:?}", file_path, result);
 
     let start = Instant::now();
     let file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
