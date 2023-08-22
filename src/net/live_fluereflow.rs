@@ -42,6 +42,8 @@ use std::{
     time::{Duration, Instant,SystemTime},
 };
 
+const MAX_RECENT_FLOWS: usize = 50;
+
 // This function is the entry point for the live packet capture functionality.
 // It takes the command line arguments as input and calls the online_packet_capture function.
 // It returns a Result indicating whether the operation was successful.
@@ -96,8 +98,8 @@ pub async fn online_packet_capture(
     };
 
     let start = Instant::now();
-    let mut last_export_unix_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs();
-    let mut last_export = Instant::now();
+    let last_export_unix_time =  Arc::new(Mutex::new(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs()));
+    let last_export = Arc::new(Mutex::new(Instant::now()));
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
     let mut file = fs::File::create(file_path.clone()).unwrap();
 
@@ -119,6 +121,9 @@ pub async fn online_packet_capture(
     let terminal_clone = Arc::clone(&terminal);
     let recent_flows_clone = Arc::clone(&recent_flows);
     let active_flow_clone = active_flow.clone();
+    let last_export_clone = Arc::clone(&last_export);
+    let last_export_unix_time_clone = Arc::clone(&last_export_unix_time);
+
 
     let draw_task = tokio::task::spawn(async move {
         loop {
@@ -132,12 +137,16 @@ pub async fn online_packet_capture(
             let mut terminal = terminal_clone.lock().unwrap();
             
             terminal.draw(|f| {
-                let progress = last_export.elapsed().as_millis() as f64 / interval as f64;
+                let last_export_unix_time_guard = last_export_unix_time_clone.lock().unwrap();
+                let last_export_guard = last_export_clone.lock().unwrap();
+
+                let progress = (last_export_guard.elapsed().as_millis() as f64 / interval as f64).min(1.0).max(0.0);
+
                 let active_flow_count = match active_flow_clone.try_lock(){
                     Some(ac_flow) => ac_flow.len(),
                     None => 0
                 };
-                let recent_exported_time = last_export_unix_time.clone();// or however you format the time
+                let recent_exported_time = last_export_unix_time_guard.clone();// or however you format the time
 
                 draw_ui(f, &flow_summaries, progress, active_flow_count,recent_exported_time);
             }).unwrap();
@@ -189,6 +198,9 @@ pub async fn online_packet_capture(
                                 protocol: key_value.protocol.to_string()
                                 //flow_data: format!("{:?}", flowdata),
                             });
+                            if recent_flows_guard.len() > MAX_RECENT_FLOWS {
+                                recent_flows_guard.remove(0);
+                            }
                         } else {
                             continue;
                         }
@@ -206,6 +218,9 @@ pub async fn online_packet_capture(
                             protocol: key_value.protocol.to_string()
                             //flow_data: format!("{:?}", flowdata),
                         });
+                        if recent_flows_guard.len() > MAX_RECENT_FLOWS {
+                            recent_flows_guard.remove(0);
+                        }
                     }
 
                     false
@@ -214,6 +229,8 @@ pub async fn online_packet_capture(
             },
             Some(_) => false,
         };
+
+
 
         let time = parse_microseconds(
             packet.header.ts.tv_sec as u64,
@@ -257,7 +274,9 @@ pub async fn online_packet_capture(
         }
 
         // Export flows if the interval has been reached
-        if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0 {
+        let mut last_export_guard = last_export.lock().unwrap();
+        let mut last_export_unix_time_guard = last_export_unix_time.lock().unwrap();
+        if last_export_guard.elapsed() >= Duration::from_millis(interval) && interval != 0 {
             let mut expired_flows = vec![];
             packet_count = 0;
             for (key, flow) in active_flow_guard.iter() {
@@ -278,12 +297,12 @@ pub async fn online_packet_capture(
 
             let _result = tasks.await;
             /*if verbose >= 1 {
-                println!("Export {} result: {:?}", file_path, result);
+            println!("Export {} result: {:?}", file_path, result);
             }*/
             file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
             file = fs::File::create(file_path.clone()).unwrap();
-            last_export = Instant::now();
-            last_export_unix_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs();
+            *last_export_guard = Instant::now();
+            *last_export_unix_time_guard = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs();
         }
 
         // Check if the duration has been reached
