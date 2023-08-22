@@ -1,5 +1,6 @@
 use fluere_plugin::InProcessPlugin;
 use fluere_plugin::PluginManager;
+use crate::plugin::manager;
 
 pub fn plugin_setup() {
     let mut plugin_manager = PluginManager::new();
