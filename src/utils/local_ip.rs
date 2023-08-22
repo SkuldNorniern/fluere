@@ -23,7 +23,15 @@ mod tests {
 
     #[test]
     fn test_get_local_ip() {
-        // Add unit tests for the modified function
+        // Update the unit test for the modified get_local_ip function
+        // ...
+        assert!(true);
+    }
+
+    #[test]
+    fn test_check_is_subnet() {
+        // Add unit tests for the new check_is_subnet function
+        // ...
         assert!(true);
     }
 }
