@@ -11,7 +11,7 @@ pub mod utils;
 use clap::{Arg, ArgAction, Command};
 use pnet::datalink;
 
-use crate::plugin::manager;
+use crate::plugin::manager::PluginManager;
 
 use std::process::exit;
 
