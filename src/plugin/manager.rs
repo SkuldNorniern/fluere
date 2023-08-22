@@ -1,5 +1,5 @@
-use fluere_plugin::PluginManager;
-use fluere_plugin::InProcessPlugin;
+use fluereplugin::PluginManager;
+use fluereplugin::InProcessPlugin;
 
 pub fn plugin_setup() {
     let mut plugin_manager = PluginManager::new();
