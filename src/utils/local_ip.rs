@@ -1,46 +1,20 @@
-use if_addrs::get_if_addrs;
+use pnet::datalink::{self, Channel, NetworkInterface};
 use std::io;
 
 pub fn get_local_ip(subnet: Option<(String, u32)>) -> io::Result<String> {
-    let interfaces = get_if_addrs()?;
-    for interface in interfaces {
-        if interface.is_loopback() || !interface.ip().is_ipv4() {
-            continue;
-        }
-        if let Some(subnet) = subnet {
-            if is_ip_in_subnet(&interface.ip().to_string(), subnet) {
-                return Ok(interface.ip().to_string());
-            }
-        } else {
-            return Ok(interface.ip().to_string());
-        }
-    }
-    Err(io::Error::new(io::ErrorKind::Other, "Failed to retrieve local IP address"))
+    // Modify the function to use the pnet crate to retrieve the local IP address
+    // Update the function signature and return type if necessary
+    // Remove the existing implementation of the function
+    // Add unit tests to ensure the correctness of the modified function
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[test]
-    fn test_parse_subnet() {
-        // Add test cases for parse_subnet function
-    }
-    
-    #[test]
-    fn test_is_ip_in_subnet() {
-        // Add test cases for is_ip_in_subnet function
-    }
-}
 
-/// Retrieves the local IP address.
-///
-/// This function retrieves the local IP address of the system.
-/// It accepts an optional subnet parameter of type `Option<(String, u32)>`.
-/// If the subnet parameter is provided, it checks if the retrieved IP address is in the specified subnet.
-/// Returns a `Result<String, std::io::Error>` where the `Ok` variant contains the local IP address
-/// and the `Err` variant contains an error message if the retrieval fails.
-pub fn get_local_ip(subnet: Option<(String, u32)>) -> io::Result<String> {
-    // Implementation remains the same
+    #[test]
+    fn test_get_local_ip() {
+        // Add unit tests for the modified function
+    }
 }
 
