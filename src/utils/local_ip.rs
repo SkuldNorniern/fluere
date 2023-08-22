@@ -1,6 +1,5 @@
 use if_addrs::get_if_addrs;
 use std::io;
-use crate::utils::ip_parser::{parse_subnet, is_ip_in_subnet};
 
 pub fn get_local_ip(subnet: Option<(String, u32)>) -> io::Result<String> {
     let interfaces = get_if_addrs()?;
