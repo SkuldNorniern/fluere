@@ -20,8 +20,3 @@ pub use time::parse_microseconds;
 pub use time::microseconds_to_timestamp;
 pub use tos::dscp_to_tos;
 pub use udp::_parse_udp;
-
-#[cfg(test)]
-mod tests {
-    // No functions to test in the 'mod' module
-}
