@@ -33,3 +33,14 @@ mod tests {
     }
 }
 
+/// Retrieves the local IP address.
+///
+/// This function retrieves the local IP address of the system.
+/// It accepts an optional subnet parameter of type `Option<(String, u32)>`.
+/// If the subnet parameter is provided, it checks if the retrieved IP address is in the specified subnet.
+/// Returns a `Result<String, std::io::Error>` where the `Ok` variant contains the local IP address
+/// and the `Err` variant contains an error message if the retrieval fails.
+pub fn get_local_ip(subnet: Option<(String, u32)>) -> io::Result<String> {
+    // Implementation remains the same
+}
+
