@@ -18,3 +18,18 @@ pub fn get_local_ip(subnet: Option<(String, u32)>) -> io::Result<String> {
     Err(io::Error::new(io::ErrorKind::Other, "Failed to retrieve local IP address"))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_parse_subnet() {
+        // Add test cases for parse_subnet function
+    }
+    
+    #[test]
+    fn test_is_ip_in_subnet() {
+        // Add test cases for is_ip_in_subnet function
+    }
+}
+
