@@ -252,8 +252,11 @@ fn cli() -> Command {
 // It gets the command line arguments, parses them, and calls the appropriate functions based on the arguments.
 #[tokio::main]
 async fn main() {
+    plugin::manager::plugin_setup();
+    plugin::manager::plugin_execute();
+
     let args = cli().get_matches();
-    let interfaces = net::list_interfaces(); //let _plugins = scan_plugins("plugins");
+    let interfaces = net::list_interfaces();
                                              //println!("Plugins: {:?}", plugins);
                                              //match generate_config() {
                                              //    Ok(_) => println!("Config file generated"),
