@@ -24,7 +24,7 @@ pub fn scan_plugins(folder: &str) -> Vec<String> {
             None => continue,
         };
         let ext = ext.to_str().unwrap();
-        if ext != "lua" && ext != "py" && ext != "nkl" {
+        if ext != "lua" && ext != "py" && ext != "nkl" && ext != "rs" && ext != "dll" {
             continue;
         }
         let plugin = match path.to_str() {
