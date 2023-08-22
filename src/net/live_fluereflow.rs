@@ -4,14 +4,13 @@
 extern crate csv;
 
 use crossterm::{
-    event::{self, KeyCode, KeyEvent, KeyModifiers,DisableMouseCapture, EnableMouseCapture},
+    event::{self, KeyCode, KeyEvent, DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use fluereflow::FluereRecord;
 use pcap::Capture;
 use ratatui::{
-    prelude::Line,
     layout::{Constraint, Direction, Layout},
     backend::{CrosstermBackend,Backend},
     widgets::{Block, Borders,List, ListItem,Gauge, Paragraph},
@@ -22,13 +21,14 @@ use ratatui::{
 use tokio::task;
 use tokio::time::sleep;
 
+
 use super::interface::get_interface;
 
 use crate::{
     net::{
-        parser::{parse_fluereflow, parse_keys, parse_microseconds}, 
+        parser::{parse_fluereflow, parse_keys, parse_microseconds,microseconds_to_timestamp}, 
         flows::update_flow,
-        types::{Key, TcpFlags},
+        types::TcpFlags,
     },
     types::{Args,UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
@@ -39,7 +39,7 @@ use std::{
     fs,
     io,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::{Duration, Instant,SystemTime},
 };
 
 // This function is the entry point for the live packet capture functionality.
@@ -96,6 +96,7 @@ pub async fn online_packet_capture(
     };
 
     let start = Instant::now();
+    let mut last_export_unix_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs();
     let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
     let mut file = fs::File::create(file_path.clone()).unwrap();
@@ -104,7 +105,7 @@ pub async fn online_packet_capture(
 
     let mut records: Vec<FluereRecord> = Vec::new();
     let recent_flows: Arc<Mutex<Vec<FlowSummary>>> = Arc::new(Mutex::new(Vec::new()));
-    let active_flow = Arc::new(Mutex::new(HashMap::new()));
+    let active_flow = Arc::new(async_mutex::Mutex::new(HashMap::new()));
 
     let mut packet_count = 0;
     
@@ -132,10 +133,13 @@ pub async fn online_packet_capture(
             
             terminal.draw(|f| {
                 let progress = last_export.elapsed().as_millis() as f64 / interval as f64;
-                let active_flow_count = active_flow_clone.lock().unwrap().clone().len();
-                let recent_exported_time = format!("{:?}", last_export); // or however you format the time
+                let active_flow_count = match active_flow_clone.try_lock(){
+                    Some(ac_flow) => ac_flow.len(),
+                    None => 0
+                };
+                let recent_exported_time = last_export_unix_time.clone();// or however you format the time
 
-                draw_ui(f, &flow_summaries, progress, active_flow_count,&recent_exported_time);
+                draw_ui(f, &flow_summaries, progress, active_flow_count,recent_exported_time);
             }).unwrap();
         }
     });
@@ -164,7 +168,7 @@ pub async fn online_packet_capture(
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
         //let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
-        let mut active_flow_guard = active_flow.lock().unwrap();
+        let mut active_flow_guard = active_flow.lock().await;
 
         let is_reverse = match active_flow_guard.get(&key_value) {
             None => match active_flow_guard.get(&reverse_key) {
@@ -272,13 +276,14 @@ pub async fn online_packet_capture(
                 fluere_exporter(cloned_records, file).await;
             });
 
-            let result = tasks.await;
-            if verbose >= 1 {
+            let _result = tasks.await;
+            /*if verbose >= 1 {
                 println!("Export {} result: {:?}", file_path, result);
-            }
+            }*/
             file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
             file = fs::File::create(file_path.clone()).unwrap();
             last_export = Instant::now();
+            last_export_unix_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs();
         }
 
         // Check if the duration has been reached
@@ -300,7 +305,7 @@ pub async fn online_packet_capture(
     if verbose >= 1 {
         println!("Captured in {:?}", start.elapsed());
     }
-    let active_flow_guard = active_flow.lock().unwrap();
+    let active_flow_guard = active_flow.lock().await;
 
     for (_key, flow) in active_flow_guard.iter() {
         records.push(*flow);
@@ -330,7 +335,7 @@ fn draw_ui<B: Backend>(
     recent_flows: &[FlowSummary],
     progress: f64,
     active_flow_count: usize,
-    recent_exported_time: &str
+    recent_exported_time: u64
 ) {
     // Define the layout
     let chunks = Layout::default()
@@ -356,7 +361,7 @@ fn draw_ui<B: Backend>(
     // Summary box
     let summary_text = vec![
         format!("Active Flow Count: {}", active_flow_count),
-        format!("Recent Exported Time: {}", recent_exported_time),
+        format!("Recent Exported Time: {}", microseconds_to_timestamp(recent_exported_time).as_str()),
     ];
     let summary_paragraph = Paragraph::new(summary_text.join("  |  "))
         .block(Block::default().borders(Borders::ALL).title("Summary"));

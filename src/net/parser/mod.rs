@@ -17,6 +17,7 @@ pub use keys::parse_keys;
 pub use ports::parse_ports;
 pub use protocol::protocol_to_number;
 pub use time::parse_microseconds;
+pub use time::microseconds_to_timestamp;
 pub use tos::dscp_to_tos;
 pub use udp::_parse_udp;
 

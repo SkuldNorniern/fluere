@@ -9,6 +9,7 @@ pub mod types;
 pub mod utils;
 
 use clap::{Arg, ArgAction, Command};
+use pnet::datalink;
 
 use std::process::exit;
 
@@ -253,7 +254,7 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() {
     let args = cli().get_matches();
-    let interfaces = net::list_interfaces(); //let _plugins = scan_plugins("plugins");
+    let interfaces = datalink::interfaces();//let _plugins = scan_plugins("plugins");
                                              //println!("Plugins: {:?}", plugins);
                                              //match generate_config() {
                                              //    Ok(_) => println!("Config file generated"),
@@ -263,10 +264,11 @@ async fn main() {
     match args.subcommand() {
         Some(("online", args)) => {
             println!("Online mode");
+            utils::get_local_ip();
             if args.get_flag("list") {
                 println!("List of interfaces");
-                for (i, interface) in interfaces.iter().enumerate() {
-                    println!("[{}]: {}", i, interface.name);
+                for iface in interfaces {
+                    println!("[{}]: {}", iface.index, iface.name);
                 }
 
                 exit(0);
