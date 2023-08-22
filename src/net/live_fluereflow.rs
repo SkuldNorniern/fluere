@@ -1,3 +1,6 @@
+// This file contains the implementation of the live packet capture functionality.
+// It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
+// The data is then displayed in a terminal user interface using the ratatui library.
 extern crate csv;
 
 use crossterm::{
@@ -39,6 +42,9 @@ use std::{
     time::{Duration, Instant,SystemTime},
 };
 
+// This function is the entry point for the live packet capture functionality.
+// It takes the command line arguments as input and calls the online_packet_capture function.
+// It returns a Result indicating whether the operation was successful.
 pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
     println!("TUI");
     online_packet_capture(arg).await;
@@ -55,6 +61,9 @@ struct FlowSummary {
 }
 
 
+// This function captures packets from a network interface and converts them into NetFlow data.
+// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
+// The function runs indefinitely, capturing packets and updating the terminal user interface with the captured data.
 pub async fn online_packet_capture(
     arg: Args,
 ) {
