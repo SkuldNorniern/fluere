@@ -1,10 +1,14 @@
-use std::net;
+use if_addrs::get_if_addrs;
 use std::io;
 
 pub fn get_local_ip() -> io::Result<String> {
-    let socket = net::UdpSocket::bind("0.0.0.0:0")?;
-    socket.connect("8.8.8.8:80")?;
-    let local_ip = socket.local_addr()?;
-    Ok(local_ip.to_string())
+    let interfaces = get_if_addrs()?;
+    for interface in interfaces {
+        if interface.is_loopback() || !interface.ip().is_ipv4() {
+            continue;
+        }
+        return Ok(interface.ip().to_string());
+    }
+    Err(io::Error::new(io::ErrorKind::Other, "Failed to retrieve local IP address"))
 }
 
