@@ -3,6 +3,8 @@ use std::collections::HashMap;
 // A trait that all plugins must implement
 trait Plugin {
     fn run(&self);
+    fn init(&self);
+    fn cleanup(&self);
 }
 
 // A struct that represents an in-process plugin
@@ -24,6 +26,20 @@ impl Plugin for InProcessPlugin {
             self.name, self.path
         );
     }
+
+    fn init(&self) {
+        println!(
+            "Initializing in-process plugin: {} from path: {}",
+            self.name, self.path
+        );
+    }
+
+    fn cleanup(&self) {
+        println!(
+            "Cleaning up in-process plugin: {} from path: {}",
+            self.name, self.path
+        );
+    }
 }
 
 // A struct that represents an external program plugin
@@ -42,6 +58,20 @@ impl Plugin for ExternalProgramPlugin {
     fn run(&self) {
         println!(
             "Running external program plugin: {} from path: {}",
+            self.name, self.path
+        );
+    }
+
+    fn init(&self) {
+        println!(
+            "Initializing external program plugin: {} from path: {}",
+            self.name, self.path
+        );
+    }
+
+    fn cleanup(&self) {
+        println!(
+            "Cleaning up external program plugin: {} from path: {}",
             self.name, self.path
         );
     }
@@ -72,6 +102,18 @@ impl PluginManager {
     pub fn run_plugins(&self) {
         for (_, plugin) in self.plugins.iter() {
             plugin.run();
+        }
+    }
+
+    pub fn load_plugin(&mut self, name: String, path: String) {
+        let plugin = InProcessPlugin::new(name.clone(), path.clone());
+        plugin.init();
+        self.plugins.insert(name, Box::new(plugin) as Box<dyn Plugin>);
+    }
+
+    pub fn unload_plugin(&mut self, name: String) {
+        if let Some(plugin) = self.plugins.remove(&name) {
+            plugin.cleanup();
         }
     }
 }
