@@ -1,5 +1,5 @@
 [package]
-name = "fluere_plugin"
+name = "fluereplugin"
 version = "0.1.0"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"

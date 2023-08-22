@@ -29,7 +29,7 @@ serde = "1.0.152"
 serde_json = "1.0.91"
 toml = "0.7.1"
 
-fluere_plugin = { path = "./plugin" }
+fluereplugin = { path = "./fluereplugin" }
 fluereflow = "0.2.1"
 ratatui = { version = "0.22.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
@@ -38,7 +38,7 @@ async-mutex = "1.4.0"
 
 [workspace]
 members = [
-    "plugin",
+    "fluereplugin",
     "fluereflow"
 ]
 
