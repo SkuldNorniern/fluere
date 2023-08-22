@@ -11,6 +11,8 @@ pub mod utils;
 use clap::{Arg, ArgAction, Command};
 use pnet::datalink;
 
+use crate::plugin::manager;
+
 use std::process::exit;
 
 // This function sets up the command line interface for the application using the clap library.
@@ -253,8 +255,8 @@ fn cli() -> Command {
 // It gets the command line arguments, parses them, and calls the appropriate functions based on the arguments.
 #[tokio::main]
 async fn main() {
-    plugin::manager::plugin_setup();
-    plugin::manager::plugin_execute();
+    crate::plugin::manager::plugin_setup();
+    crate::plugin::manager::plugin_execute();
 
     let args = cli().get_matches();
     let interfaces = datalink::interfaces();//let _plugins = scan_plugins("plugins");
