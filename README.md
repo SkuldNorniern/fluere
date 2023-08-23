@@ -19,7 +19,7 @@
 </p>
 
 <div align="center">
-    <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/main.png" alt="Help Image" width="770" height="401"></img>
+    <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/help_image.png" alt="Help Image" width="770" height="401"></img>
 </div>
 
 ## Project Description
