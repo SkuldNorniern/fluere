@@ -129,7 +129,7 @@ fn cli() -> Command {
         )
         .subcommand(
             Command::new("live")
-                .about("Capture netflow online with live feedback")
+                .about("Capture netflow online with live TUI feedback")
                 .arg(
                     Arg::new("csv")
                         .help("Title of the exported csv file")
