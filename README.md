@@ -16,11 +16,17 @@
 </p>
 <p align="center" align="right">
   Windows, MacOS, and Linux are All Supported! YAY!
-</p>
+
 
 <div align="center">
     <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/help_image.png" alt="Help Image" width="770" height="401"></img>
 </div>
+<div align="center">
+    <img src="https://github.com/SkuldNorniern/fluere/blob/main/images/TUI Screen.png" alt="Help Image" width="770" height="401"></img>
+</div> 
+<p align="center" align="right">
+  public ips are masked cause of the privacy issue (except of the DNS & Local broadcast)
+
 
 ## Project Description
 
