@@ -12,7 +12,7 @@ repository = "https://github.com/SkuldNorniern/fluere"
 
 [dependencies]
 clap = {version = "4.0.32", features = ["cargo"]}
-tokio = { version = "1.22", features = ["full","macros", "rt-multi-thread"] }
+tokio = { version = "1.32", features = ["full","macros", "rt-multi-thread"] }
 pnet = { version = "0.34.0", features = ["std"] }
 pnet_macros_support = "0.34.0"
 pnet_macros = "0.34.0"
@@ -34,7 +34,7 @@ fluereflow = "0.2.1"
 ratatui = { version = "0.22.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
 dogstatsd = "0.9.0"
-async-mutex = "1.4.0"
+
 
 [workspace]
 members = [
