@@ -255,12 +255,30 @@ fn cli() -> Command {
 async fn main() {
     let args = cli().get_matches();
     let interfaces = datalink::interfaces();
-    let plugins = plugin::scanner::scan_directory("plugins").unwrap();
+    let plugins = match plugin::scanner::scan_directory("plugins") {
+        Ok(plugins) => plugins,
+        Err(e) => {
+            eprintln!("Error scanning directory for plugins: {}", e);
+            exit(1);
+        }
+    };
     for plugin in &plugins {
-        plugin::loader::load_plugin(plugin).unwrap();
+        match plugin::loader::load_plugin(plugin) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Error loading plugin {}: {}", plugin, e);
+                exit(1);
+            }
+        }
     }
     for plugin in &plugins {
-        plugin::scheduler::execute_plugin(plugin).unwrap();
+        match plugin::scheduler::execute_plugin(plugin) {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("Error executing plugin {}: {}", plugin, e);
+                exit(1);
+            }
+        }
     }
                                              //println!("Plugins: {:?}", plugins);
                                              //match generate_config() {
