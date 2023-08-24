@@ -20,6 +20,7 @@ use ratatui::{
 };
 use tokio::task;
 use tokio::time::sleep;
+use tokio::sync::Mutex;
 
 
 use super::interface::get_interface;
@@ -38,7 +39,7 @@ use std::{
     collections::HashMap,
     fs,
     io,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant,SystemTime},
 };
 
@@ -107,7 +108,7 @@ pub async fn online_packet_capture(
 
     let mut records: Vec<FluereRecord> = Vec::new();
     let recent_flows: Arc<Mutex<Vec<FlowSummary>>> = Arc::new(Mutex::new(Vec::new()));
-    let active_flow = Arc::new(async_mutex::Mutex::new(HashMap::new()));
+    let active_flow = Arc::new(Mutex::new(HashMap::new()));
 
     let mut packet_count = 0;
     
@@ -116,7 +117,7 @@ pub async fn online_packet_capture(
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture).expect("Unable to enter alt screen");
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Arc::new(Mutex::new(Terminal::new(backend).expect("Failed to initialize terminal")));
-    terminal.lock().unwrap().clear().expect("Failed to clear terminal");
+    terminal.lock().await.clear().expect("Failed to clear terminal");
 
     let terminal_clone = Arc::clone(&terminal);
     let recent_flows_clone = Arc::clone(&recent_flows);
@@ -127,27 +128,24 @@ pub async fn online_packet_capture(
 
     let draw_task = tokio::task::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
 
             let flow_summaries: Vec<FlowSummary> = {
-                let recent_flows_guard = recent_flows_clone.lock().unwrap();
+                let recent_flows_guard = recent_flows_clone.lock().await;
                 recent_flows_guard.clone().into_iter().collect()
 
             };
-            let mut terminal = terminal_clone.lock().unwrap();
-            
-            terminal.draw(|f| {
-                let last_export_unix_time_guard = last_export_unix_time_clone.lock().unwrap();
-                let last_export_guard = last_export_clone.lock().unwrap();
+            let mut terminal = terminal_clone.lock().await;
+            let last_export_unix_time_guard = last_export_unix_time_clone.lock().await;
+            let last_export_guard = last_export_clone.lock().await;
+            let active_flow_guard = active_flow_clone.lock().await;
 
+            terminal.draw(|f| {
                 let progress = (last_export_guard.elapsed().as_millis() as f64 / interval as f64).min(1.0).max(0.0);
 
-                let active_flow_count = match active_flow_clone.try_lock(){
-                    Some(ac_flow) => ac_flow.len(),
-                    None => 0
-                };
-                let recent_exported_time = last_export_unix_time_guard.clone();// or however you format the time
+                let active_flow_count = active_flow_guard.len();
 
+                let recent_exported_time = *last_export_unix_time_guard;// or however you format the time
                 draw_ui(f, &flow_summaries, progress, active_flow_count,recent_exported_time);
             }).unwrap();
         }
@@ -189,7 +187,7 @@ pub async fn online_packet_capture(
                             if verbose >= 2 {
                                 println!("flow established");
                             }
-                            let mut recent_flows_guard = recent_flows.lock().unwrap();
+                            let mut recent_flows_guard = recent_flows.lock().await;
                             recent_flows_guard.push(FlowSummary {
                                 src: key_value.src_ip.to_string(),
                                 dst: key_value.dst_ip.to_string(),
@@ -209,7 +207,7 @@ pub async fn online_packet_capture(
                         if verbose >= 2 {
                             println!("flow established");
                         }
-                        let mut recent_flows_guard = recent_flows.lock().unwrap();
+                        let mut recent_flows_guard = recent_flows.lock().await;
                         recent_flows_guard.push(FlowSummary {
                             src: key_value.src_ip.to_string(),
                             dst: key_value.dst_ip.to_string(),
@@ -274,8 +272,8 @@ pub async fn online_packet_capture(
         }
 
         // Export flows if the interval has been reached
-        let mut last_export_guard = last_export.lock().unwrap();
-        let mut last_export_unix_time_guard = last_export_unix_time.lock().unwrap();
+        let mut last_export_guard = last_export.lock().await;
+        let mut last_export_unix_time_guard = last_export_unix_time.lock().await;
         if last_export_guard.elapsed() >= Duration::from_millis(interval) && interval != 0 {
             let mut expired_flows = vec![];
             packet_count = 0;
@@ -339,13 +337,16 @@ pub async fn online_packet_capture(
     }
     let _ =draw_task.await;
     disable_raw_mode().expect("failed to disable raw mode");
+    let mut terminal_guard = terminal.lock().await;
     execute!(
-        terminal.lock().unwrap().backend_mut(),
+        terminal_guard.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
     ).expect("failed to restore terminal");
-    terminal.lock().unwrap().show_cursor().expect("failed to show the cursor");
-    terminal.lock().unwrap().clear().expect("failed to clear terminal");
+
+
+    terminal.lock().await.show_cursor().expect("failed to show the cursor");
+    terminal.lock().await.clear().expect("failed to clear terminal");
 
     //println!("records {:?}", records);
 }
@@ -424,11 +425,11 @@ async fn listen_for_exit_keys() -> Result<(), crossterm::ErrorKind> {
             if let event::Event::Key(KeyEvent { code, modifiers, .. }) = event::read()? {
                 match code {
                     KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
-                        println!("Ctrl+C pressed. Exiting...");
+                        //println!("Ctrl+C pressed. Exiting...");
                         std::process::exit(0);
                     },
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        println!("'q' or 'Q' pressed. Exiting...");
+                        //println!("'q' or 'Q' pressed. Exiting...");
                         std::process::exit(0);
                     },
                     _ => {}
