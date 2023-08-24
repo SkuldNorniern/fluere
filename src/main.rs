@@ -254,7 +254,14 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() {
     let args = cli().get_matches();
-    let interfaces = datalink::interfaces();//let _plugins = scan_plugins("plugins");
+    let interfaces = datalink::interfaces();
+    let plugins = plugin::scanner::scan_directory("plugins").unwrap();
+    for plugin in &plugins {
+        plugin::loader::load_plugin(plugin).unwrap();
+    }
+    for plugin in &plugins {
+        plugin::scheduler::execute_plugin(plugin).unwrap();
+    }
                                              //println!("Plugins: {:?}", plugins);
                                              //match generate_config() {
                                              //    Ok(_) => println!("Config file generated"),
