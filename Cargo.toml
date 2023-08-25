@@ -27,20 +27,25 @@ csv = "1.1"
 nom = "7.1.2"
 num_cpus = "1.15.0"
 snafu = "0.7.4"
-serde = "1.0.152"
+serde = { version = "1.0.186", features = ["derive"]}
 serde_json = "1.0.91"
 toml = "0.7.1"
 
-#fluere_plugin = { path = "./plugin" }
+fluere_plugin = { path = "./fluere-plugin" }
+fluere-config = { path = "./fluere-config" }
 fluereflow = "0.2.1"
+
 ratatui = { version = "0.22.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
 dogstatsd = "0.9.0"
+dirs = "5.0.1"
+ipc-channel = "0.17.0"
 
 
 [workspace]
 members = [
-    "plugin",
+    "fluere-plugin",
+	"fluere-config",
     "fluereflow"
 ]
 
