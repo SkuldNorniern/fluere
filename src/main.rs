@@ -2,7 +2,7 @@
 // Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data.
 // It also supports live capture and conversion of NetFlow data.
 // This file contains the main function which parses the command line arguments and calls the appropriate functions based on the arguments.
-pub mod config;
+
 pub mod net;
 pub mod plugin;
 pub mod types;
