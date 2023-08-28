@@ -6,19 +6,15 @@ use tokio::task;
 
 use crate::{
     net::{
-        parser::{parse_fluereflow, parse_keys, parse_microseconds}, 
         flows::update_flow,
+        parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
     },
-    types::{Args,UDFlowKey},
+    types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
 };
 
-use std::{
-    collections::HashMap,
-    fs,
-    time::Instant,
-};
+use std::{collections::HashMap, fs, time::Instant};
 
 pub async fn fluereflow_fileparse(arg: Args) {
     let csv_file = arg.files.csv.unwrap();
@@ -67,7 +63,7 @@ pub async fn fluereflow_fileparse(arg: Args) {
             None => match active_flow.get(&reverse_key) {
                 None => {
                     // if the protocol is TCP, check if is a syn packet
-                    if flowdata.get_prot() == 6 {
+                    if flowdata.prot == 6 {
                         if flags.syn > 0 {
                             active_flow.insert(key_value, flowdata);
                             if verbose >= 2 {
@@ -103,14 +99,14 @@ pub async fn fluereflow_fileparse(arg: Args) {
                 continue;
             }
             false
-        };*/ 
+        };*/
 
         let time = parse_microseconds(
             packet.header.ts.tv_sec as u64,
             packet.header.ts.tv_usec as u64,
         );
-        let pkt = flowdata.get_min_pkt();
-        let ttl = flowdata.get_min_ttl();
+        let pkt = flowdata.min_pkt;
+        let ttl = flowdata.min_ttl;
         //println!("active flows: {:?}", active_flow.len());
         //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
         let flow_key = if is_reverse { &reverse_key } else { &key_value };
@@ -125,7 +121,10 @@ pub async fn fluereflow_fileparse(arg: Args) {
             update_flow(flow, is_reverse, update_key);
 
             if verbose >= 2 {
-                println!("{} flow updated", if is_reverse { "reverse" } else { "forward" });
+                println!(
+                    "{} flow updated",
+                    if is_reverse { "reverse" } else { "forward" }
+                );
             }
 
             if flags.fin == 1 || flags.rst == 1 {
@@ -134,7 +133,7 @@ pub async fn fluereflow_fileparse(arg: Args) {
                 }
                 records.push(*flow);
                 active_flow.remove(flow_key);
-            }   
+            }
         }
     }
     if verbose >= 1 {
