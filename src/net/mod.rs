@@ -1,5 +1,6 @@
 pub mod errors;
 //mod fluereflow;
+mod flows;
 mod interface;
 pub mod live_fluereflow;
 mod offline_fluereflows;
@@ -7,7 +8,6 @@ pub mod online_fluereflow;
 mod packet_pcap;
 pub mod parser;
 pub mod types;
-mod flows;
 
 //pub use flows::packet_capture;
 pub use interface::list_interface_names;

@@ -1,19 +1,15 @@
-use dirs::home_dir;
+use dirs::config_dir;
 
+use crate::Config;
 
-
-use crate::{Config};
-
-
-use std::{default::Default, fs, path::Path, path::PathBuf};
-
+use std::{default::Default, fs, path::Path, path::PathBuf, env};
 
 impl Config {
-    pub fn new(_name: &str, _version: &str) -> Self {
+    pub fn new() -> Self {
         let path_base = home_config_path();
 
-        let path_file = path_base.join(Path::new("pacify.toml"));
-
+        let path_file = path_base.join(Path::new("cofig.toml"));
+        println!("path_file: {:?}", path_file);
         if !path_base.exists() {
             fs::create_dir_all(path_base).unwrap();
         }
@@ -50,12 +46,22 @@ impl Config {
 }
 
 fn home_config_path() -> PathBuf {
-    let path_base = home_dir().unwrap();
-    #[cfg(target_os = "windows")]
-    let path_config = path_base.join("AppData").join("Roaming").join("pacify");
-    #[cfg(target_os = "macos")]
-    let path_config = path_base.join(".config").join("pacify");
-    #[cfg(target_os = "linux")]
-    let path_config = path_base.join(".config").join("pacify");
+    // Check for the SUDO_USER environment variable
+    let sudo_user = env::var("SUDO_USER");
+
+    let path_base = match sudo_user {
+        Ok(user) => {
+            // If SUDO_USER is set, construct the path using the user's home directory
+            let user_home = format!("/home/{}", user);
+            Path::new(&user_home).join(".config")
+        }
+        Err(_) => {
+            // If not running under sudo, just use the config_dir function as before
+            config_dir().unwrap()
+        }
+    };
+
+    let path_config = path_base.join("fluere");
     path_config
 }
+
