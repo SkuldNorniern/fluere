@@ -1,44 +1,59 @@
-use ipc_channel::ipc::{self, IpcSender, IpcReceiver};
-use tokio::task;
-use std::sync::Arc;
-use std::thread;
-
-use fluere_config::Plugin;
-use fluere_config::Plugins;
 use fluere_config::Config;
-use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Write};
+use fluereflow::FluereRecord;
+use rlua::{Lua, Result};
 
 pub struct PluginManager {
-    plugins: Plugins,
-    ipc_senders: Vec<IpcSender<String>>,
+    lua: Lua,
 }
 
 impl PluginManager {
-    pub fn new() -> Self {
-        PluginManager {
-            plugins: Plugins::new(),
-            ipc_senders: Vec::new(),
+    pub fn new() -> Result<Self> {
+        let lua = Lua::new();
+        Ok(PluginManager { lua })
+    }
+
+    pub fn load_plugins(&self, config: &Config) -> Result<()> {
+        for (name, plugin_config) in &config.plugins {
+            if plugin_config.enabled {
+                // Assuming the path in the config points to a Lua script
+                let lua_code = match std::fs::read_to_string(&plugin_config.path){
+                    Ok(code) => code,
+                    Err(_) => {
+                        println!("Failed to read plugin: {}", name);
+                        continue;
+                    }
+                };
+
+                self.lua.context(|ctx| {
+                    // Load and execute the Lua plugin code
+                    ctx.load(&lua_code).exec()
+                }).expect("Failed to load plugin {name}");
+                println!("Loaded plugin {}", name);
+            }
         }
+        Ok(())
     }
 
-    pub async fn load_plugin(&mut self, path: &str) {
-        // Create an IPC channel
-        let (tx, rx) = ipc::channel().unwrap();
 
-        // Store the sender in the manager
-        self.ipc_senders.push(tx);
+    pub fn process_flow_data(&self, data: &FluereRecord) -> Result<()> {
+    self.lua.context(|ctx| {
+        // Convert the FluereRecord to a Vec<String>
+        let lua_slice = data.to_slice();
 
-        // Start the plugin in a new tokio task
-        //task::spawn(async move {
-
-        //});
-    }
-
-    pub async fn process_flow_data(&mut self, data: &str) {
-        // Send the data to all plugins via IPC
-        for sender in &self.ipc_senders {
-            sender.send(data.to_string()).unwrap();
+        // Convert the Vec<String> to a Lua table
+        let lua_table = ctx.create_table()?;
+        for (index, value) in lua_slice.iter().enumerate() {
+            lua_table.set(index + 1, value.as_str())?;
         }
-    }
+
+        // Assuming there's a function in Lua named `process_data`
+        let func: rlua::Function = ctx.globals().get("process_data")?;
+        func.call(lua_table)
+    })?;
+    Ok(())
+}
+
+
+
+
 }

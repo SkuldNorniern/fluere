@@ -122,7 +122,8 @@ impl FluereRecord {
             tos,
         }
     }
-    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+    #[allow(dead_code)]
+    pub fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("source", |_, this, _: ()| Ok(this.source.to_string()));
         methods.add_method("destination", |_, this, _: ()| Ok(this.destination.to_string()));
         methods.add_method("d_pkts", |_, this, _: ()| Ok(this.d_pkts));
@@ -151,6 +152,67 @@ impl FluereRecord {
         methods.add_method("prot", |_, this, _: ()| Ok(this.prot));
         methods.add_method("tos", |_, this, _: ()| Ok(this.tos));
     }
-
+    pub fn to_lua_slice<'a>(&self, ctx: &'a rlua::Context<'a>) -> Result<Vec<rlua::Value<'a>>, rlua::Error> {
+        Ok(vec![
+            rlua::Value::String(ctx.create_string(&self.source.to_string())?), // Convert IpAddr to LuaString
+            rlua::Value::String(ctx.create_string(&self.destination.to_string())?), // Convert IpAddr to LuaString           
+            rlua::Value::Integer(self.d_pkts as i64),
+            rlua::Value::Integer(self.d_octets as i64),
+            rlua::Value::Integer(self.first as i64),
+            rlua::Value::Integer(self.last as i64),
+            rlua::Value::Integer(self.src_port as i64),
+            rlua::Value::Integer(self.dst_port as i64),
+            rlua::Value::Integer(self.min_pkt as i64),
+            rlua::Value::Integer(self.max_pkt as i64),
+            rlua::Value::Integer(self.min_ttl as i64),
+            rlua::Value::Integer(self.max_ttl as i64),
+            rlua::Value::Integer(self.in_pkts as i64),
+            rlua::Value::Integer(self.out_pkts as i64),
+            rlua::Value::Integer(self.in_bytes as i64),
+            rlua::Value::Integer(self.out_bytes as i64),
+            rlua::Value::Integer(self.fin_cnt as i64),
+            rlua::Value::Integer(self.syn_cnt as i64),
+            rlua::Value::Integer(self.rst_cnt as i64),
+            rlua::Value::Integer(self.psh_cnt as i64),
+            rlua::Value::Integer(self.ack_cnt as i64),
+            rlua::Value::Integer(self.urg_cnt as i64),
+            rlua::Value::Integer(self.ece_cnt as i64),
+            rlua::Value::Integer(self.cwr_cnt as i64),
+            rlua::Value::Integer(self.ns_cnt as i64),
+            rlua::Value::Integer(self.prot as i64),
+            rlua::Value::Integer(self.tos as i64),
+        ])
+    }
+    pub fn to_slice(&self) -> Vec<String> {
+        vec![
+            self.source.to_string(), // Convert IpAddr to String
+            self.destination.to_string(), // Convert IpAddr to String
+            self.d_pkts.to_string(),
+            self.d_octets.to_string(),
+            self.first.to_string(),
+            self.last.to_string(),
+            self.src_port.to_string(),
+            self.dst_port.to_string(),
+            self.min_pkt.to_string(),
+            self.max_pkt.to_string(),
+            self.min_ttl.to_string(),
+            self.max_ttl.to_string(),
+            self.in_pkts.to_string(),
+            self.out_pkts.to_string(),
+            self.in_bytes.to_string(),
+            self.out_bytes.to_string(),
+            self.fin_cnt.to_string(),
+            self.syn_cnt.to_string(),
+            self.rst_cnt.to_string(),
+            self.psh_cnt.to_string(),
+            self.ack_cnt.to_string(),
+            self.urg_cnt.to_string(),
+            self.ece_cnt.to_string(),
+            self.cwr_cnt.to_string(),
+            self.ns_cnt.to_string(),
+            self.prot.to_string(),
+            self.tos.to_string(),
+        ]
+    }
 }
 

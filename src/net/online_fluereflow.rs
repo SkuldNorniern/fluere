@@ -42,10 +42,10 @@ pub async fn packet_capture(arg: Args) {
     let flow_timeout = arg.parameters.timeout.unwrap();
     let sleep_windows = arg.parameters.sleep_windows.unwrap();
     let verbose = arg.verbose.unwrap();
-    //let config = Config::new();
-    //println!("config: {:?}", config);
-    //let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
-    //plugin_manager.load_plugins(&config).expect("Failed to load plugins");
+    let config = Config::new();
+    println!("config: {:?}", config);
+    let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
+    plugin_manager.load_plugins(&config).expect("Failed to load plugins");
     
 
 
@@ -172,7 +172,7 @@ pub async fn packet_capture(arg: Args) {
                 if verbose >= 2 {
                     println!("flow finished");
                 }
-                //plugin_manager.process_flow_data(flow);
+                plugin_manager.process_flow_data(flow).expect("Failed to process flow data");
                 records.push(*flow);
 
                 active_flow.remove(flow_key);

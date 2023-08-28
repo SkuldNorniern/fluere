@@ -1,10 +1,9 @@
-use ipc_channel::ipc::{self, IpcReceiver};
-
+use ipc_channel::ipc::IpcReceiver;
 use std::sync::Arc;
 
 pub trait PluginWrapperTrait {
     fn name(&self) -> String;
-    fn process_flow_data(&mut self, data: &str);
+    fn run(&mut self, receiver: Arc<IpcReceiver<String>>);
 }
 
 pub struct PluginWrapper {
@@ -21,14 +20,7 @@ impl PluginWrapper {
     }
 
     pub fn run(&mut self) {
-        loop {
-            match self.receiver.recv() {
-                Ok(data) => {
-                    self.plugin.process_flow_data(&data);
-                }
-                Err(_) => break, // Handle error or exit condition
-            }
-        }
+        self.plugin.run(self.receiver.clone());
     }
 }
 

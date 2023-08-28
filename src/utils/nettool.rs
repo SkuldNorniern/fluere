@@ -1,7 +1,7 @@
 use pnet::datalink;
 
 pub fn get_local_ip() {
-    let interfaces = datalink::interfaces();
+    let _interfaces = datalink::interfaces();
     //for iface in interfaces {
         //println!("{:?}", iface);
     //}
