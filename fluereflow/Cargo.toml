@@ -10,3 +10,4 @@ keywords = ["netflow", "fluereflow"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rlua = "0.19.7"
