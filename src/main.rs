@@ -8,6 +8,7 @@ pub mod plugin;
 pub mod types;
 pub mod utils;
 
+
 use clap::{Arg, ArgAction, Command};
 use pnet::datalink;
 
@@ -254,7 +255,7 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() {
     let args = cli().get_matches();
-    let interfaces = datalink::interfaces();//let _plugins = scan_plugins("plugins");
+    let interfaces = datalink::interfaces(); //let _plugins = scan_plugins("plugins");
                                              //println!("Plugins: {:?}", plugins);
                                              //match generate_config() {
                                              //    Ok(_) => println!("Config file generated"),

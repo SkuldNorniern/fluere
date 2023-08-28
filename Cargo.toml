@@ -33,7 +33,7 @@ toml = "0.7.1"
 
 fluere_plugin = { path = "./fluere-plugin" }
 fluere-config = { path = "./fluere-config" }
-fluereflow = "0.2.1"
+fluereflow = { version = "0.3.0", path = "./fluereflow" }
 
 ratatui = { version = "0.22.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
@@ -46,6 +46,7 @@ ipc-channel = "0.17.0"
 members = [
     "fluere-plugin",
 	"fluere-config",
+	"fluere-plugin-trait",
     "fluereflow"
 ]
 
