@@ -8,7 +8,6 @@ pub mod plugin;
 pub mod types;
 pub mod utils;
 
-
 use clap::{Arg, ArgAction, Command};
 use pnet::datalink;
 
