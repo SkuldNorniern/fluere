@@ -200,6 +200,7 @@ pub async fn packet_capture(arg: Args) {
                     if verbose >= 2 {
                         println!("flow expired");
                     }
+                    plugin_manager.process_flow_data(*flow).await.unwrap();
                     records.push(*flow);
                     expired_flows.push(*key);
                 }
@@ -240,6 +241,7 @@ pub async fn packet_capture(arg: Args) {
         println!("Captured in {:?}", start.elapsed());
     }
     for (_key, flow) in active_flow.iter() {
+        plugin_manager.process_flow_data(*flow).await.unwrap();
         records.push(*flow);
     }
     let tasks = task::spawn(async {
