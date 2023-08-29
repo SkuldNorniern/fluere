@@ -23,4 +23,3 @@ impl PluginWrapper {
         self.plugin.run(self.receiver.clone());
     }
 }
-

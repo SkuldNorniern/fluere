@@ -10,8 +10,6 @@ use crossterm::{
 };
 use fluereflow::FluereRecord;
 
-
-
 use pcap::Capture;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
@@ -50,7 +48,7 @@ const MAX_RECENT_FLOWS: usize = 50;
 // It returns a Result indicating whether the operation was successful.
 pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
     println!("TUI");
-        
+
     online_packet_capture(arg).await;
     Ok(())
 }

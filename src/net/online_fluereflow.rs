@@ -1,13 +1,13 @@
-// This file contains the implementation of the online packet capture functionality.
+// This file contains the implementation of the online packet capture functionality.online
 // It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
 // The data is then exported to a CSV file.
 extern crate csv;
 
 use pcap::Capture;
 
-use fluereflow::FluereRecord;
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
+use fluereflow::FluereRecord;
 
 use tokio::task;
 use tokio::time::sleep;
@@ -45,9 +45,10 @@ pub async fn packet_capture(arg: Args) {
     let config = Config::new();
     println!("config: {:?}", config);
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
-    plugin_manager.load_plugins(&config).expect("Failed to load plugins");
-    
-
+    plugin_manager
+        .load_plugins(&config)
+        .await
+        .expect("Failed to load plugins");
 
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
@@ -172,7 +173,9 @@ pub async fn packet_capture(arg: Args) {
                 if verbose >= 2 {
                     println!("flow finished");
                 }
-                plugin_manager.process_flow_data(flow).expect("Failed to process flow data");
+                // plugin_manager.process_flow_data(flow).expect("Failed to process flow data");
+                plugin_manager.process_flow_data(*flow).await.unwrap();
+
                 records.push(*flow);
 
                 active_flow.remove(flow_key);
@@ -242,7 +245,7 @@ pub async fn packet_capture(arg: Args) {
     let tasks = task::spawn(async {
         fluere_exporter(records, file).await;
     });
-
+    plugin_manager.await_completion().await;
     let result = tasks.await;
     if verbose >= 1 {
         println!("Exporting task excutation result: {:?}", result);

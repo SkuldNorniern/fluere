@@ -2,7 +2,7 @@ use dirs::config_dir;
 
 use crate::Config;
 
-use std::{default::Default, fs, path::Path, path::PathBuf, env};
+use std::{default::Default, env, fs, path::Path, path::PathBuf};
 
 impl Config {
     pub fn new() -> Self {
@@ -64,4 +64,3 @@ fn home_config_path() -> PathBuf {
     let path_config = path_base.join("fluere");
     path_config
 }
-

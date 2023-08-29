@@ -1,5 +1,5 @@
-use std::net::IpAddr;
 use rlua::{UserData, UserDataMethods};
+use std::net::IpAddr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FluereFlow {
@@ -125,7 +125,9 @@ impl FluereRecord {
     #[allow(dead_code)]
     pub fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("source", |_, this, _: ()| Ok(this.source.to_string()));
-        methods.add_method("destination", |_, this, _: ()| Ok(this.destination.to_string()));
+        methods.add_method("destination", |_, this, _: ()| {
+            Ok(this.destination.to_string())
+        });
         methods.add_method("d_pkts", |_, this, _: ()| Ok(this.d_pkts));
         methods.add_method("d_octets", |_, this, _: ()| Ok(this.d_octets));
         methods.add_method("first", |_, this, _: ()| Ok(this.first));
@@ -152,10 +154,13 @@ impl FluereRecord {
         methods.add_method("prot", |_, this, _: ()| Ok(this.prot));
         methods.add_method("tos", |_, this, _: ()| Ok(this.tos));
     }
-    pub fn to_lua_slice<'a>(&self, ctx: &'a rlua::Context<'a>) -> Result<Vec<rlua::Value<'a>>, rlua::Error> {
+    pub fn to_lua_slice<'a>(
+        &self,
+        ctx: &'a rlua::Context<'a>,
+    ) -> Result<Vec<rlua::Value<'a>>, rlua::Error> {
         Ok(vec![
             rlua::Value::String(ctx.create_string(&self.source.to_string())?), // Convert IpAddr to LuaString
-            rlua::Value::String(ctx.create_string(&self.destination.to_string())?), // Convert IpAddr to LuaString           
+            rlua::Value::String(ctx.create_string(&self.destination.to_string())?), // Convert IpAddr to LuaString
             rlua::Value::Integer(self.d_pkts as i64),
             rlua::Value::Integer(self.d_octets as i64),
             rlua::Value::Integer(self.first as i64),
@@ -183,9 +188,9 @@ impl FluereRecord {
             rlua::Value::Integer(self.tos as i64),
         ])
     }
-    pub fn to_slice(&self) -> Vec<String> {
+    pub fn to_vec(&self) -> Vec<String> {
         vec![
-            self.source.to_string(), // Convert IpAddr to String
+            self.source.to_string(),      // Convert IpAddr to String
             self.destination.to_string(), // Convert IpAddr to String
             self.d_pkts.to_string(),
             self.d_octets.to_string(),
@@ -215,4 +220,3 @@ impl FluereRecord {
         ]
     }
 }
-
