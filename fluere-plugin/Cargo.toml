@@ -12,7 +12,7 @@ license = "Apache-2.0"
 [dependencies]
 tokio = { version = "1.32", features = ["full","macros", "rt-multi-thread"] }
 fluere-config = { path = "../fluere-config" }
-fluere-plugin-trait = { path = "../fluere-plugin-trait" }
+#fluere-plugin-trait = { path = "../fluere-plugin-trait" }
 rlua = "0.19.7"
 fluereflow = { path = "../fluereflow" }
 

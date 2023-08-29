@@ -43,7 +43,7 @@ dirs = "5.0.1"
 members = [
     "fluere-plugin",
 	"fluere-config",
-	"fluere-plugin-trait",
+	#"fluere-plugin-trait",
     "fluereflow"
 ]
 
