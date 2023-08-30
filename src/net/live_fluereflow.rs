@@ -80,7 +80,7 @@ pub async fn online_packet_capture(arg: Args) {
         .unwrap()
         .promisc(true)
         //.buffer_size(100000000)
-        //.immediate_mode(true)
+        .immediate_mode(true)
         .open()
         .unwrap();
 
@@ -168,173 +168,180 @@ pub async fn online_packet_capture(arg: Args) {
     });
 
     tokio::spawn(listen_for_exit_keys());
+    loop {
+    match cap.next_packet() {
+            Err(_) => {
+                continue;
+            }
+            Ok(packet) => {
 
-    while let Ok(packet) = cap.next_packet() {
-        if verbose >= 3 {
-            println!("received packet");
-        }
-
-        let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
-            Ok(keys) => keys,
-            Err(_) => continue,
-        };
-        if !use_mac {
-            key_value.mac_defaultate();
-            reverse_key.mac_defaultate();
-        }
-
-        let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
-            Ok(result) => result,
-            Err(_) => continue,
-        };
-
-        let flags = TcpFlags::new(raw_flags);
-        //pushing packet in to active_flows if it is not present
-        //let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
-        let mut active_flow_guard = active_flow.lock().await;
-
-        let is_reverse = match active_flow_guard.get(&key_value) {
-            None => match active_flow_guard.get(&reverse_key) {
-                None => {
-                    // if the protocol is TCP, check if is a syn packet
-                    if flowdata.prot == 6 {
-                        if flags.syn > 0 {
-                            active_flow_guard.insert(key_value, flowdata);
-                            if verbose >= 2 {
-                                println!("flow established");
-                            }
-                            let mut recent_flows_guard = recent_flows.lock().await;
-                            recent_flows_guard.push(FlowSummary {
-                                src: key_value.src_ip.to_string(),
-                                dst: key_value.dst_ip.to_string(),
-                                src_port: key_value.src_port.to_string(),
-                                dst_port: key_value.dst_port.to_string(),
-                                protocol: key_value.protocol.to_string(), //flow_data: format!("{:?}", flowdata),
-                            });
-                            if recent_flows_guard.len() > MAX_RECENT_FLOWS {
-                                recent_flows_guard.remove(0);
-                            }
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        active_flow_guard.insert(key_value, flowdata);
-                        if verbose >= 2 {
-                            println!("flow established");
-                        }
-                        let mut recent_flows_guard = recent_flows.lock().await;
-                        recent_flows_guard.push(FlowSummary {
-                            src: key_value.src_ip.to_string(),
-                            dst: key_value.dst_ip.to_string(),
-                            src_port: key_value.src_port.to_string(),
-                            dst_port: key_value.dst_port.to_string(),
-                            protocol: key_value.protocol.to_string(), //flow_data: format!("{:?}", flowdata),
-                        });
-                        if recent_flows_guard.len() > MAX_RECENT_FLOWS {
-                            recent_flows_guard.remove(0);
-                        }
-                    }
-
-                    false
+                if verbose >= 3 {
+                    println!("received packet");
                 }
-                Some(_) => true,
-            },
-            Some(_) => false,
-        };
 
-        let time = parse_microseconds(
-            packet.header.ts.tv_sec as u64,
-            packet.header.ts.tv_usec as u64,
-        );
-        //println!("time: {:?}", time);
-        let pkt = flowdata.min_pkt;
-        let ttl = flowdata.min_ttl;
-        //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
-        let flow_key = if is_reverse { &reverse_key } else { &key_value };
-        if let Some(flow) = active_flow_guard.get_mut(flow_key) {
-            let update_key = UDFlowKey {
-                doctets,
-                pkt,
-                ttl,
-                flags,
-                time,
-            };
-            update_flow(flow, is_reverse, update_key);
+                let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
+                    Ok(keys) => keys,
+                    Err(_) => continue,
+                };
+                if !use_mac {
+                    key_value.mac_defaultate();
+                    reverse_key.mac_defaultate();
+                }
 
-            if verbose >= 2 {
-                println!(
-                    "{} flow updated",
-                    if is_reverse { "reverse" } else { "forward" }
+                let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+                    Ok(result) => result,
+                    Err(_) => continue,
+                };
+
+                let flags = TcpFlags::new(raw_flags);
+                //pushing packet in to active_flows if it is not present
+                //let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
+                let mut active_flow_guard = active_flow.lock().await;
+
+                let is_reverse = match active_flow_guard.get(&key_value) {
+                    None => match active_flow_guard.get(&reverse_key) {
+                        None => {
+                            // if the protocol is TCP, check if is a syn packet
+                            if flowdata.prot == 6 {
+                                if flags.syn > 0 {
+                                    active_flow_guard.insert(key_value, flowdata);
+                                    if verbose >= 2 {
+                                        println!("flow established");
+                                    }
+                                    let mut recent_flows_guard = recent_flows.lock().await;
+                                    recent_flows_guard.push(FlowSummary {
+                                        src: key_value.src_ip.to_string(),
+                                        dst: key_value.dst_ip.to_string(),
+                                        src_port: key_value.src_port.to_string(),
+                                        dst_port: key_value.dst_port.to_string(),
+                                        protocol: key_value.protocol.to_string(), //flow_data: format!("{:?}", flowdata),
+                                    });
+                                    if recent_flows_guard.len() > MAX_RECENT_FLOWS {
+                                        recent_flows_guard.remove(0);
+                                    }
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                active_flow_guard.insert(key_value, flowdata);
+                                if verbose >= 2 {
+                                    println!("flow established");
+                                }
+                                let mut recent_flows_guard = recent_flows.lock().await;
+                                recent_flows_guard.push(FlowSummary {
+                                    src: key_value.src_ip.to_string(),
+                                    dst: key_value.dst_ip.to_string(),
+                                    src_port: key_value.src_port.to_string(),
+                                    dst_port: key_value.dst_port.to_string(),
+                                    protocol: key_value.protocol.to_string(), //flow_data: format!("{:?}", flowdata),
+                                });
+                                if recent_flows_guard.len() > MAX_RECENT_FLOWS {
+                                    recent_flows_guard.remove(0);
+                                }
+                            }
+
+                            false
+                        }
+                        Some(_) => true,
+                    },
+                    Some(_) => false,
+                };
+
+                let time = parse_microseconds(
+                    packet.header.ts.tv_sec as u64,
+                    packet.header.ts.tv_usec as u64,
                 );
-            }
+                //println!("time: {:?}", time);
+                let pkt = flowdata.min_pkt;
+                let ttl = flowdata.min_ttl;
+                //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
+                let flow_key = if is_reverse { &reverse_key } else { &key_value };
+                if let Some(flow) = active_flow_guard.get_mut(flow_key) {
+                    let update_key = UDFlowKey {
+                        doctets,
+                        pkt,
+                        ttl,
+                        flags,
+                        time,
+                    };
+                    update_flow(flow, is_reverse, update_key);
 
-            if flags.fin == 1 || flags.rst == 1 {
-                if verbose >= 2 {
-                    println!("flow finished");
-                }
-                records.push(*flow);
-                active_flow_guard.remove(flow_key);
-            }
-        }
-
-        packet_count += 1;
-        // slow down the loop for windows to avoid random shutdown
-        if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
-            if verbose >= 3 {
-                println!("Slow down the loop for windows");
-            }
-            sleep(Duration::from_millis(0)).await;
-        }
-
-        // Export flows if the interval has been reached
-        let mut last_export_guard = last_export.lock().await;
-        let mut last_export_unix_time_guard = last_export_unix_time.lock().await;
-        if last_export_guard.elapsed() >= Duration::from_millis(interval) && interval != 0 {
-            let mut expired_flows = vec![];
-            packet_count = 0;
-            for (key, flow) in active_flow_guard.iter() {
-                if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
                     if verbose >= 2 {
-                        println!("flow expired");
+                        println!(
+                            "{} flow updated",
+                            if is_reverse { "reverse" } else { "forward" }
+                        );
                     }
-                    records.push(*flow);
-                    expired_flows.push(*key);
+
+                    if flags.fin == 1 || flags.rst == 1 {
+                        if verbose >= 2 {
+                            println!("flow finished");
+                        }
+                        records.push(*flow);
+                        active_flow_guard.remove(flow_key);
+                    }
+                }
+
+                packet_count += 1;
+                // slow down the loop for windows to avoid random shutdown
+                if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
+                    if verbose >= 3 {
+                        println!("Slow down the loop for windows");
+                    }
+                    sleep(Duration::from_millis(0)).await;
+                }
+
+                // Export flows if the interval has been reached
+                let mut last_export_guard = last_export.lock().await;
+                let mut last_export_unix_time_guard = last_export_unix_time.lock().await;
+                if last_export_guard.elapsed() >= Duration::from_millis(interval) && interval != 0 {
+                    let mut expired_flows = vec![];
+                    packet_count = 0;
+                    for (key, flow) in active_flow_guard.iter() {
+                        if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
+                            if verbose >= 2 {
+                                println!("flow expired");
+                            }
+                            records.push(*flow);
+                            expired_flows.push(*key);
+                        }
+                    }
+                    active_flow_guard.retain(|key, _| !expired_flows.contains(key));
+                    let cloned_records = records.clone();
+                    records.clear();
+                    let tasks = task::spawn(async {
+                        fluere_exporter(cloned_records, file).await;
+                    });
+
+                    let _result = tasks.await;
+                    /*if verbose >= 1 {
+                    println!("Export {} result: {:?}", file_path, result);
+                    }*/
+                    file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
+                    file = fs::File::create(file_path.clone()).unwrap();
+                    *last_export_guard = Instant::now();
+                    *last_export_unix_time_guard = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .expect("SystemTime before UNIX EPOCH")
+                        .as_secs();
+                }
+
+                // Check if the duration has been reached
+                if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
+                    let mut expired_flows = vec![];
+                    for (key, flow) in active_flow_guard.iter() {
+                        if flow.last < (time - (flow_timeout * 1000)) {
+                            if verbose >= 2 {
+                                println!("flow expired");
+                            }
+                            records.push(*flow);
+                            expired_flows.push(*key);
+                        }
+                    }
+                    active_flow_guard.retain(|key, _| !expired_flows.contains(key));
+                    break;
                 }
             }
-            active_flow_guard.retain(|key, _| !expired_flows.contains(key));
-            let cloned_records = records.clone();
-            records.clear();
-            let tasks = task::spawn(async {
-                fluere_exporter(cloned_records, file).await;
-            });
-
-            let _result = tasks.await;
-            /*if verbose >= 1 {
-            println!("Export {} result: {:?}", file_path, result);
-            }*/
-            file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-            file = fs::File::create(file_path.clone()).unwrap();
-            *last_export_guard = Instant::now();
-            *last_export_unix_time_guard = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("SystemTime before UNIX EPOCH")
-                .as_secs();
-        }
-
-        // Check if the duration has been reached
-        if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
-            let mut expired_flows = vec![];
-            for (key, flow) in active_flow_guard.iter() {
-                if flow.last < (time - (flow_timeout * 1000)) {
-                    if verbose >= 2 {
-                        println!("flow expired");
-                    }
-                    records.push(*flow);
-                    expired_flows.push(*key);
-                }
-            }
-            active_flow_guard.retain(|key, _| !expired_flows.contains(key));
-            break;
         }
     }
     if verbose >= 1 {
@@ -379,20 +386,20 @@ pub async fn online_packet_capture(arg: Args) {
 fn draw_ui<B: Backend>(
     f: &mut Frame<B>,
     recent_flows: &[FlowSummary],
-    progress: f64,
-    active_flow_count: usize,
-    recent_exported_time: u64,
+progress: f64,
+active_flow_count: usize,
+recent_exported_time: u64,
 ) {
     // Define the layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints(
-            [
-                Constraint::Length(3),       // For the progress bar
-                Constraint::Length(5),       // For the summary box
-                Constraint::Percentage(100), // For the list of flows
-            ]
+        [
+        Constraint::Length(3),       // For the progress bar
+        Constraint::Length(5),       // For the summary box
+        Constraint::Percentage(100), // For the list of flows
+        ]
             .as_ref(),
         )
         .split(f.size());
@@ -424,14 +431,14 @@ fn draw_ui<B: Backend>(
     let flow_columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(
-            [
-                Constraint::Percentage(33), // src
-                Constraint::Percentage(10), // src_port
-                Constraint::Percentage(5),  // arrow
-                Constraint::Percentage(33), // dst
-                Constraint::Percentage(10), // dst_port
-                Constraint::Percentage(9),  // protocol
-            ]
+        [
+        Constraint::Percentage(33), // src
+        Constraint::Percentage(10), // src_port
+        Constraint::Percentage(5),  // arrow
+        Constraint::Percentage(33), // dst
+        Constraint::Percentage(10), // dst_port
+        Constraint::Percentage(9),  // protocol
+        ]
             .as_ref(),
         )
         .split(chunks[2]);
@@ -490,22 +497,22 @@ fn draw_ui<B: Backend>(
 async fn listen_for_exit_keys() -> Result<(), crossterm::ErrorKind> {
     loop {
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let event::Event::Key(KeyEvent {
-                code, modifiers, ..
-            }) = event::read()?
-            {
-                match code {
-                    KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
-                        //println!("Ctrl+C pressed. Exiting...");
-                        std::process::exit(0);
-                    }
-                    KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        //println!("'q' or 'Q' pressed. Exiting...");
-                        std::process::exit(0);
-                    }
-                    _ => {}
+        if let event::Event::Key(KeyEvent {
+        code, modifiers, ..
+        }) = event::read()?
+        {
+            match code {
+                KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
+                    //println!("Ctrl+C pressed. Exiting...");
+                    std::process::exit(0);
                 }
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    //println!("'q' or 'Q' pressed. Exiting...");
+                    std::process::exit(0);
+                }
+                _ => {}
             }
+        }
         }
     }
 }
