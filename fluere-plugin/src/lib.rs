@@ -4,6 +4,13 @@ use rlua::{Lua, Result};
 use tokio::sync::{mpsc, Mutex};
 
 use std::sync::Arc;
+
+mod downloader;
+mod util;
+
+use downloader::download_plugin_from_github;
+use util::home_cache_path;
+
 pub struct PluginManager {
     lua: Arc<Mutex<Lua>>,
     sender: mpsc::Sender<FluereRecord>,
@@ -72,22 +79,53 @@ impl PluginManager {
         for (name, plugin_config) in &config.plugins {
             if plugin_config.enabled {
                 // Assuming the path in the config points to a Lua script
-                let lua_code = match std::fs::read_to_string(&plugin_config.path.clone().unwrap()) {
-                    Ok(code) => code,
-                    Err(_) => {
-                        println!("Failed to read plugin: {}", name);
-                        continue;
+                match plugin_config.path.clone() {
+                    Some(path) => {
+                        match std::fs::read_to_string(path) {
+                            Ok(code) => {
+                                let lua_clone = self.lua.clone();
+                                let lua_guard = lua_clone.lock().await;
+                                lua_guard
+                                    .context(|ctx| {
+                                        // Load and execute the Lua plugin code
+                                        ctx.load(&code).exec()
+                                    })
+                                    .expect(format!("Error on plugin: {}", name).as_str());
+                                println!("Loaded plugin {}", name);
+                            }
+                            Err(_) => {
+                                println!("Failed to read plugin: {}", name);
+                                 continue;
+                            }
+                        };
                     }
-                };
-                let lua_clone = self.lua.clone();
-                let lua_guard = lua_clone.lock().await;
-                lua_guard
-                    .context(|ctx| {
-                        // Load and execute the Lua plugin code
-                        ctx.load(&lua_code).exec()
-                    })
-                    .expect(format!("Failed to load plugin: {}", name).as_str());
-                println!("Loaded plugin {}", name);
+                    None => {
+                        match download_plugin_from_github(name) {
+                            Ok(_) => {
+                                match std::fs::read_to_string(home_cache_path().join(name.split('/').last().unwrap()).join("init.lua")) {
+                                    Ok(code) => {
+                                        let lua_clone = self.lua.clone();
+                                        let lua_guard = lua_clone.lock().await;
+                                        lua_guard
+                                            .context(|ctx| {
+                                                // Load and execute the Lua plugin code
+                                                ctx.load(&code).exec()
+                                            })
+                                            .expect(format!("Error on plugin: {}", name).as_str());
+                                    }
+                                    Err(_) => {
+                                        println!("Not able to find init.lua for plugin: {}", name);
+                                    }
+                                }
+                                println!("Loaded plugin {}", name);
+                            }
+                            Err(_) => {
+                                println!("Unable to download plugin: {}", name);
+                            }
+                        }
+                    }
+                }
+                
             }
         }
         Ok(())
