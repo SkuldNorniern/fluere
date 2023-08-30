@@ -9,7 +9,7 @@ pub type Plugins = BTreeMap<String, Plugin>;
 pub struct Plugin {
     pub enabled: bool,
     pub path: Option<String>, // for unpublished plugins
-    pub extra_arguments: Option<HashMap<String, String>>, 
+    pub extra_arguments: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
