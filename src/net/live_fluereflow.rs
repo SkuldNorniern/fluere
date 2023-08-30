@@ -8,6 +8,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+
+use fluere_config::Config;
+use fluere_plugin::PluginManager;
 use fluereflow::FluereRecord;
 
 use pcap::Capture;
@@ -73,7 +76,13 @@ pub async fn online_packet_capture(arg: Args) {
     let flow_timeout = arg.parameters.timeout.unwrap();
     let sleep_windows = arg.parameters.sleep_windows.unwrap();
     let verbose = arg.verbose.unwrap();
-    //let config = Config::new();
+    let config = Config::new();
+    let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
+
+    plugin_manager
+        .load_plugins(&config)
+        .await
+        .expect("Failed to load plugins");
 
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
@@ -169,12 +178,11 @@ pub async fn online_packet_capture(arg: Args) {
 
     tokio::spawn(listen_for_exit_keys());
     loop {
-    match cap.next_packet() {
+        match cap.next_packet() {
             Err(_) => {
                 continue;
             }
             Ok(packet) => {
-
                 if verbose >= 3 {
                     println!("received packet");
                 }
@@ -277,6 +285,7 @@ pub async fn online_packet_capture(arg: Args) {
                         if verbose >= 2 {
                             println!("flow finished");
                         }
+                        plugin_manager.process_flow_data(*flow).await.unwrap();
                         records.push(*flow);
                         active_flow_guard.remove(flow_key);
                     }
@@ -302,6 +311,7 @@ pub async fn online_packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
+                            plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
@@ -334,6 +344,7 @@ pub async fn online_packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
+                            plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
@@ -350,8 +361,10 @@ pub async fn online_packet_capture(arg: Args) {
     let active_flow_guard = active_flow.lock().await;
 
     for (_key, flow) in active_flow_guard.iter() {
+        plugin_manager.process_flow_data(*flow).await.unwrap();
         records.push(*flow);
     }
+    plugin_manager.await_completion().await;
     let tasks = task::spawn(async {
         fluere_exporter(records, file).await;
     });
@@ -386,20 +399,20 @@ pub async fn online_packet_capture(arg: Args) {
 fn draw_ui<B: Backend>(
     f: &mut Frame<B>,
     recent_flows: &[FlowSummary],
-progress: f64,
-active_flow_count: usize,
-recent_exported_time: u64,
+    progress: f64,
+    active_flow_count: usize,
+    recent_exported_time: u64,
 ) {
     // Define the layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints(
-        [
-        Constraint::Length(3),       // For the progress bar
-        Constraint::Length(5),       // For the summary box
-        Constraint::Percentage(100), // For the list of flows
-        ]
+            [
+                Constraint::Length(3),       // For the progress bar
+                Constraint::Length(5),       // For the summary box
+                Constraint::Percentage(100), // For the list of flows
+            ]
             .as_ref(),
         )
         .split(f.size());
@@ -431,14 +444,14 @@ recent_exported_time: u64,
     let flow_columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(
-        [
-        Constraint::Percentage(33), // src
-        Constraint::Percentage(10), // src_port
-        Constraint::Percentage(5),  // arrow
-        Constraint::Percentage(33), // dst
-        Constraint::Percentage(10), // dst_port
-        Constraint::Percentage(9),  // protocol
-        ]
+            [
+                Constraint::Percentage(33), // src
+                Constraint::Percentage(10), // src_port
+                Constraint::Percentage(5),  // arrow
+                Constraint::Percentage(33), // dst
+                Constraint::Percentage(10), // dst_port
+                Constraint::Percentage(9),  // protocol
+            ]
             .as_ref(),
         )
         .split(chunks[2]);
@@ -497,22 +510,22 @@ recent_exported_time: u64,
 async fn listen_for_exit_keys() -> Result<(), crossterm::ErrorKind> {
     loop {
         if event::poll(std::time::Duration::from_millis(100))? {
-        if let event::Event::Key(KeyEvent {
-        code, modifiers, ..
-        }) = event::read()?
-        {
-            match code {
-                KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
-                    //println!("Ctrl+C pressed. Exiting...");
-                    std::process::exit(0);
+            if let event::Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) = event::read()?
+            {
+                match code {
+                    KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
+                        //println!("Ctrl+C pressed. Exiting...");
+                        std::process::exit(0);
+                    }
+                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        //println!("'q' or 'Q' pressed. Exiting...");
+                        std::process::exit(0);
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('q') | KeyCode::Char('Q') => {
-                    //println!("'q' or 'Q' pressed. Exiting...");
-                    std::process::exit(0);
-                }
-                _ => {}
             }
-        }
         }
     }
 }
