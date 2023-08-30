@@ -15,6 +15,7 @@ fluere-config = { path = "../fluere-config" }
 #fluere-plugin-trait = { path = "../fluere-plugin-trait" }
 rlua = "0.19.7"
 fluereflow = { path = "../fluereflow" }
+dirs = "5.0.1"
 
 [lib]
 name = "fluere_plugin"
