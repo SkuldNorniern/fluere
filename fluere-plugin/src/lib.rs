@@ -86,7 +86,7 @@ impl PluginManager {
                         // Load and execute the Lua plugin code
                         ctx.load(&lua_code).exec()
                     })
-                    .expect("Failed to load plugin {name}");
+                    .expect(format!("Failed to load plugin: {}", name).as_str());
                 println!("Loaded plugin {}", name);
             }
         }
@@ -102,5 +102,4 @@ impl PluginManager {
         let worker_clone = self.worker.clone();
         let _ = worker_clone.lock().await;
     }
-
 }
