@@ -33,7 +33,7 @@ fluere_plugin = { path = "./fluere-plugin" }
 fluere-config = { path = "./fluere-config" }
 fluereflow = { path = "./fluereflow" }
 
-ratatui = { version = "0.22.0", features = ["all-widgets"] }
+ratatui = { version = "0.23.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
 dirs = "5.0.1"
 
