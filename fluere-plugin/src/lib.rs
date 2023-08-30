@@ -7,7 +7,7 @@ use std::sync::Arc;
 pub struct PluginManager {
     lua: Arc<Mutex<Lua>>,
     sender: mpsc::Sender<FluereRecord>,
-    worker: tokio::task::JoinHandle<()>,
+    worker: Arc<Mutex<tokio::task::JoinHandle<()>>>,
 }
 
 impl PluginManager {
@@ -16,7 +16,7 @@ impl PluginManager {
         let (sender, mut receiver) = mpsc::channel::<FluereRecord>(100); // 100 is the channel capacity
 
         let lua_clone = lua.clone();
-        let worker = tokio::spawn(async move {
+        let worker = Arc::new(Mutex::new(tokio::spawn(async move {
             while let Some(data) = receiver.recv().await {
                 let lua_guard = lua_clone.lock().await;
                 let _ = lua_guard.context(|ctx| -> rlua::Result<()> {
@@ -59,7 +59,7 @@ impl PluginManager {
                     Ok(())
                 });
             }
-        });
+        })));
 
         Ok(PluginManager {
             lua,
@@ -72,7 +72,7 @@ impl PluginManager {
         for (name, plugin_config) in &config.plugins {
             if plugin_config.enabled {
                 // Assuming the path in the config points to a Lua script
-                let lua_code = match std::fs::read_to_string(&plugin_config.path) {
+                let lua_code = match std::fs::read_to_string(&plugin_config.path.clone().unwrap()) {
                     Ok(code) => code,
                     Err(_) => {
                         println!("Failed to read plugin: {}", name);
@@ -98,7 +98,9 @@ impl PluginManager {
         Ok(())
     }
 
-    pub async fn await_completion(self) {
-        self.worker.await.unwrap();
+    pub async fn await_completion(&self) {
+        let worker_clone = self.worker.clone();
+        let _ = worker_clone.lock().await;
     }
+
 }
