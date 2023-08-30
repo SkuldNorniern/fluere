@@ -43,8 +43,8 @@ pub async fn packet_capture(arg: Args) {
     let sleep_windows = arg.parameters.sleep_windows.unwrap();
     let verbose = arg.verbose.unwrap();
     let config = Config::new();
-    println!("config: {:?}", config);
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
+
     plugin_manager
         .load_plugins(&config)
         .await
@@ -72,7 +72,7 @@ pub async fn packet_capture(arg: Args) {
     let start = Instant::now();
     let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-    let mut file = fs::File::create(file_path.clone()).unwrap();
+    //let mut file = fs::File::create(file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -219,13 +219,12 @@ pub async fn packet_capture(arg: Args) {
                         fluere_exporter(cloned_records, file).await;
                     });
 
-
                     let result = tasks.await;
                     if verbose >= 1 {
                         println!("Export {} result: {:?}", file_path, result);
                     }
                     file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-                    file = fs::File::create(file_path.clone()).unwrap();
+                    //file = fs::File::create(file_path.clone()).unwrap();
                     last_export = Instant::now();
                 }
 
@@ -237,6 +236,7 @@ pub async fn packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
+                            plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
@@ -267,5 +267,4 @@ pub async fn packet_capture(arg: Args) {
         println!("Exporting task excutation result: {:?}", result);
     }
     //println!("records {:?}", records);
-
 }
