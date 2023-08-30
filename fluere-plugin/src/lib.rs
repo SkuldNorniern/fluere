@@ -95,14 +95,18 @@ impl PluginManager {
                             }
                             Err(_) => {
                                 println!("Failed to read plugin: {}", name);
-                                 continue;
+                                continue;
                             }
                         };
                     }
                     None => {
                         match download_plugin_from_github(name) {
                             Ok(_) => {
-                                match std::fs::read_to_string(home_cache_path().join(name.split('/').last().unwrap()).join("init.lua")) {
+                                match std::fs::read_to_string(
+                                    home_cache_path()
+                                        .join(name.split('/').last().unwrap())
+                                        .join("init.lua"),
+                                ) {
                                     Ok(code) => {
                                         let lua_clone = self.lua.clone();
                                         let lua_guard = lua_clone.lock().await;
@@ -125,7 +129,6 @@ impl PluginManager {
                         }
                     }
                 }
-                
             }
         }
         Ok(())
