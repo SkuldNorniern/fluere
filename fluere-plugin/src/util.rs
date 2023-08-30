@@ -1,7 +1,7 @@
 use dirs::cache_dir;
 
-use std::path::{Path, PathBuf};
 use std::env;
+use std::path::{Path, PathBuf};
 
 pub fn home_cache_path() -> PathBuf {
     // Check for the SUDO_USER environment variable
@@ -22,4 +22,3 @@ pub fn home_cache_path() -> PathBuf {
     let path_config = path_base.join("fluere");
     path_config
 }
-
