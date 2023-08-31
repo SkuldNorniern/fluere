@@ -1,6 +1,7 @@
 use dirs::cache_dir;
 
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn home_cache_path() -> PathBuf {
@@ -20,5 +21,8 @@ pub fn home_cache_path() -> PathBuf {
     };
 
     let path_config = path_base.join("fluere");
+    if !path_config.exists() {
+            fs::create_dir_all(path_config.clone()).unwrap();
+        }
     path_config
 }
