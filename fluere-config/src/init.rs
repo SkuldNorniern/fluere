@@ -8,7 +8,7 @@ impl Config {
     pub fn new() -> Self {
         let path_base = home_config_path();
 
-        let path_file = path_base.join(Path::new("cofig.toml"));
+        let path_file = path_base.join(Path::new("fluere.toml"));
         println!("path_file: {:?}", path_file);
         if !path_base.exists() {
             fs::create_dir_all(path_base).unwrap();
