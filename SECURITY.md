@@ -6,7 +6,7 @@ Fluere is a powerful and versatile tool designed for network monitoring and anal
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.5.x (Latest) | :white_check_mark: |
+| <= 1.x (Latest) | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
