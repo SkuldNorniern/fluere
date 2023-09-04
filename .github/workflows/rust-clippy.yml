@@ -34,7 +34,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - name: Install cargo-audit binary crate
-        run: cargo install audit
+        run: cargo install cargo-audit
 
       - name: Install libpcap
         run: sudo apt-get install -y libpcap-dev
