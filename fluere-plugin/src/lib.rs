@@ -1,7 +1,6 @@
 use fluere_config::Config;
 use fluereflow::FluereRecord;
 use mlua::{Lua, Result};
-use rlua::prelude::LuaTable;
 use tokio::sync::{mpsc, Mutex};
 
 use std::sync::Arc;
