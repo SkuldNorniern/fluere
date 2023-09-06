@@ -12,7 +12,6 @@ use fluereflow::FluereRecord;
 use tokio::task;
 use tokio::time::sleep;
 
-
 use super::interface::get_interface;
 
 use crate::{
@@ -28,7 +27,7 @@ use crate::{
 use std::{
     collections::HashMap,
     fs,
-    time::{Duration, Instant}
+    time::{Duration, Instant},
 };
 
 // This function captures packets from a network interface and converts them into NetFlow data.
@@ -181,7 +180,7 @@ pub async fn packet_capture(arg: Args) {
                             println!("flow finished");
                         }
                         // plugin_manager.process_flow_data(flow).expect("Failed to process flow data");
-                        plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+                        plugin_manager.process_flow_data(*flow).await.unwrap();
                         println!("{:?}", flow);
 
                         records.push(*flow);
@@ -209,15 +208,15 @@ pub async fn packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
-                            plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+                            plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
                     }
                     active_flow.retain(|key, _| !expired_flows.contains(key));
-                    let cloned_records = records.clone();   
+                    let cloned_records = records.clone();
                     records.clear();
-                    
+
                     //let file_path_clone = file_path.clone();
                     //let file = fs::File::create(file_path_clone).unwrap();
                     let tasks = task::spawn(async {
@@ -241,7 +240,7 @@ pub async fn packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
-                            plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+                            plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
@@ -256,7 +255,7 @@ pub async fn packet_capture(arg: Args) {
         println!("Captured in {:?}", start.elapsed());
     }
     for (_key, flow) in active_flow.iter() {
-        plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+        plugin_manager.process_flow_data(*flow).await.unwrap();
         records.push(*flow);
     }
     let cloned_records = records.clone();

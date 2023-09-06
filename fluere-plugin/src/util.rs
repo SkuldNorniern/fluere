@@ -22,7 +22,7 @@ pub fn home_cache_path() -> PathBuf {
 
     let path_config = path_base.join("fluere");
     if !path_config.exists() {
-            fs::create_dir_all(path_config.clone()).unwrap();
-        }
+        fs::create_dir_all(path_config.clone()).unwrap();
+    }
     path_config
 }
