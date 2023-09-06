@@ -78,16 +78,17 @@ pub async fn online_packet_capture(arg: Args) {
     let verbose = arg.verbose.unwrap();
     let config = Config::new();
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
+    let plugin_worker = plugin_manager.start_worker();
 
     plugin_manager
         .load_plugins(&config)
         .await
-        .expect("Failed to load plugins");
-
+        .expect("Failed to load plugins");    
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
         .unwrap()
         .promisc(true)
+        .timeout(60000)
         //.buffer_size(100000000)
         .immediate_mode(true)
         .open()
@@ -143,7 +144,7 @@ pub async fn online_packet_capture(arg: Args) {
 
     let draw_task = tokio::task::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
 
             let flow_summaries: Vec<FlowSummary> = {
                 let recent_flows_guard = recent_flows_clone.lock().await;
@@ -285,7 +286,7 @@ pub async fn online_packet_capture(arg: Args) {
                         if verbose >= 2 {
                             println!("flow finished");
                         }
-                        plugin_manager.process_flow_data(*flow).await.unwrap();
+                        plugin_manager.process_flow_data(flow.clone()).await.unwrap();
                         records.push(*flow);
                         active_flow_guard.remove(flow_key);
                     }
@@ -311,16 +312,17 @@ pub async fn online_packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
-                            plugin_manager.process_flow_data(*flow).await.unwrap();
+                            plugin_manager.process_flow_data(flow.clone()).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
                     }
                     active_flow_guard.retain(|key, _| !expired_flows.contains(key));
                     let cloned_records = records.clone();
+                    println!("{} flows exported", records.len());
                     records.clear();
                     let tasks = task::spawn(async {
-                        fluere_exporter(cloned_records, file).await;
+                        fluere_exporter(cloned_records, file);
                     });
 
                     let _result = tasks.await;
@@ -344,7 +346,7 @@ pub async fn online_packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
-                            plugin_manager.process_flow_data(*flow).await.unwrap();
+                            plugin_manager.process_flow_data(flow.clone()).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
@@ -361,12 +363,12 @@ pub async fn online_packet_capture(arg: Args) {
     let active_flow_guard = active_flow.lock().await;
 
     for (_key, flow) in active_flow_guard.iter() {
-        plugin_manager.process_flow_data(*flow).await.unwrap();
+        plugin_manager.process_flow_data(flow.clone()).await.unwrap();
         records.push(*flow);
     }
-    plugin_manager.await_completion().await;
+    plugin_manager.await_completion(plugin_worker).await;
     let tasks = task::spawn(async {
-        fluere_exporter(records, file).await;
+        fluere_exporter(records, file);
     });
 
     let result = tasks.await;
