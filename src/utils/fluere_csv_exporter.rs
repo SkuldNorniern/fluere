@@ -1,9 +1,11 @@
 use fluereflow::FluereRecord;
 use std::fs::File;
 
-pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
+pub fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
     let mut wtr = csv::Writer::from_writer(file);
-
+   
+    println! ("Writing {} records", records.len());
+    println!(" record: {:?}", records);
     wtr.write_record([
         "source",
         "destination",
