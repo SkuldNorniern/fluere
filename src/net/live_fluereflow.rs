@@ -83,7 +83,7 @@ pub async fn online_packet_capture(arg: Args) {
     plugin_manager
         .load_plugins(&config)
         .await
-        .expect("Failed to load plugins");    
+        .expect("Failed to load plugins");
     let interface = get_interface(interface_name.as_str());
     let mut cap = Capture::from_device(interface)
         .unwrap()
@@ -286,7 +286,7 @@ pub async fn online_packet_capture(arg: Args) {
                         if verbose >= 2 {
                             println!("flow finished");
                         }
-                        plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+                        plugin_manager.process_flow_data(*flow).await.unwrap();
                         records.push(*flow);
                         active_flow_guard.remove(flow_key);
                     }
@@ -312,7 +312,7 @@ pub async fn online_packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
-                            plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+                            plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
@@ -346,7 +346,7 @@ pub async fn online_packet_capture(arg: Args) {
                             if verbose >= 2 {
                                 println!("flow expired");
                             }
-                            plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+                            plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
                         }
@@ -363,7 +363,7 @@ pub async fn online_packet_capture(arg: Args) {
     let active_flow_guard = active_flow.lock().await;
 
     for (_key, flow) in active_flow_guard.iter() {
-        plugin_manager.process_flow_data(flow.clone()).await.unwrap();
+        plugin_manager.process_flow_data(*flow).await.unwrap();
         records.push(*flow);
     }
     plugin_manager.await_completion(plugin_worker).await;

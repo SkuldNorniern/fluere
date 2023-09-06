@@ -3,8 +3,8 @@ use std::fs::File;
 
 pub fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
     let mut wtr = csv::Writer::from_writer(file);
-   
-    println! ("Writing {} records", records.len());
+
+    println!("Writing {} records", records.len());
     println!(" record: {:?}", records);
     wtr.write_record([
         "source",
