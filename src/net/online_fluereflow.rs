@@ -181,10 +181,8 @@ pub async fn packet_capture(arg: Args) {
                         }
                         // plugin_manager.process_flow_data(flow).expect("Failed to process flow data");
                         plugin_manager.process_flow_data(*flow).await.unwrap();
-                        println!("{:?}", flow);
 
                         records.push(*flow);
-                        println!("record: {:?}", records);
 
                         active_flow.remove(flow_key);
                     }
