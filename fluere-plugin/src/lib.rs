@@ -25,7 +25,7 @@ impl PluginManager {
         let lua = Arc::new(Mutex::new(Lua::new()));
         let (sender, receiver) = mpsc::channel::<FluereRecord>(100); // 100 is the channel capacity
         let plugins = Arc::new(Mutex::new(HashSet::new()));
-                                                                             
+
         Ok(PluginManager {
             lua,
             sender,
@@ -43,15 +43,31 @@ impl PluginManager {
                 // Assuming the path in the config points to a Lua script
                 match plugin_config.path.clone() {
                     Some(path) => {
-                        match std::fs::read_to_string(path) {
+                        let mut owned_path_str = path.clone();
+                        let name_of_main_file = "/init.lua";
+                        owned_path_str.push_str(name_of_main_file);
+                        // println!("path: {}", owned_path_str);
+                        match std::fs::read_to_string(owned_path_str) {
                             Ok(code) => {
                                 let lua_clone = self.lua.clone();
                                 let lua_guard = lua_clone.lock().await;
                                 let lua = &*lua_guard;
+                                // println!("lua path: {}", path);
+                                let lua_plugin_path = format!("package.path = package.path .. \";{}/?.lua\"", path);
+                                let _ = lua.load(lua_plugin_path).exec();
+
                                 let chunk = lua.load(&code);
                                 let plugin_table: mlua::Table = chunk.eval()?;
                                 let func: mlua::Function = plugin_table.get("init")?;
-                                func.call("alive")?;
+                                
+                                let argument_table = lua.create_table()?;
+
+                                // println!("extra argument details{:?}", plugin_config.extra_arguments);
+                                for (key, value) in plugin_config.extra_arguments.clone().unwrap().iter() {
+                                    argument_table.set(key.as_str(), value.as_str())?;
+                                }
+                                
+                                func.call(argument_table)?;
                                 lua.globals().set(name.as_str(), plugin_table)?;
                                 /*let _ = lua_guard.context(|ctx| -> mlua::Result<()> {
                                 // Load the Lua plugin code into a chunk
@@ -74,8 +90,9 @@ impl PluginManager {
                                 plugins_guard.insert(name.clone());
                                 println!("Loaded plugin {}", name);
                             }
-                            Err(_) => {
+                            Err(err) => {
                                 println!("Failed to read plugin: {}", name);
+                                println!("Error: {}", err);
                                 continue;
                             }
                         };
@@ -83,19 +100,30 @@ impl PluginManager {
                     None => {
                         match download_plugin_from_github(name) {
                             Ok(_) => {
-                                match std::fs::read_to_string(
-                                    home_cache_path()
-                                        .join(name.split('/').last().unwrap())
-                                        .join("init.lua"),
-                                ) {
+                                let path = home_cache_path().join(name.split('/').last().unwrap());
+                                match std::fs::read_to_string(path.join("init.lua")) 
+                                {
                                     Ok(code) => {
                                         let lua_clone = self.lua.clone();
                                         let lua_guard = lua_clone.lock().await;
                                         let lua = &*lua_guard;
+
+                                        let lua_plugin_path = format!("package.path = package.path .. \";{}/?.lua\"", path.to_str().unwrap());
+                                        let _ = lua.load(lua_plugin_path).exec();
+                                        // println!("lua path: {}", path.to_str().unwrap());
+
                                         let chunk = lua.load(&code);
                                         let plugin_table: mlua::Table = chunk.eval()?;
                                         let func: mlua::Function = plugin_table.get("init")?;
-                                        func.call("alive")?;
+
+                                        let argument_table = lua.create_table()?;
+
+                                        // println!("extra argument details{:?}", plugin_config.extra_arguments);
+                                        for (key, value) in plugin_config.extra_arguments.clone().unwrap().iter() {
+                                            argument_table.set(key.as_str(), value.as_str())?;
+                                        }
+
+                                        func.call(argument_table)?;
                                         lua.globals().set(name.as_str(), plugin_table)?;
                                         /*let _ = lua_guard.context(|ctx| -> rlua::Result<()> {
                                         // Load the Lua plugin code into a chunk
@@ -121,7 +149,6 @@ impl PluginManager {
                                         continue;
                                     }
                                 }
-                                println!("Loaded plugin {}", name);
                             }
                             Err(_) => {
                                 println!("Unable to download plugin: {}", name);
