@@ -7,6 +7,7 @@ description = "Customized flow feature inspired by netflow and cicflowmeter."
 readme = "README.md"
 license = "Apache-2.0"
 keywords = ["netflow", "fluereflow"]
+repository = "https://github.com/SkuldNorniern/fluere"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
