@@ -2,8 +2,11 @@
 name = "fluere-config"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+readme = "README.md"
+description = "Configuration manager for Fluere."
+license = "Apache-2.0"
+keywords = ["netflow", "fluereflow","fluere", "network"]
+repository = "https://github.com/SkuldNorniern/fluere"
 
 [dependencies]
 dirs = "5.0.1"
