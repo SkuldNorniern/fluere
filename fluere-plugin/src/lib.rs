@@ -249,5 +249,28 @@ impl PluginManager {
         let _ = worker_clone.lock().await;
 
         // Cleanup each plugin before exiting
+        let lua_clone = self.lua.clone();
+        let plugins_clone = self.plugins.clone();
+        
+        let lua = lua_clone.lock().await;
+        let plugins = plugins_clone.lock().await;
+
+        for plugin_name in plugins.iter() {
+            let plugin_table: mlua::Table = lua
+                .globals()
+                .get(plugin_name.as_str())
+                .expect("Plugin table not found");
+
+            if let Ok(func) = plugin_table.get::<_, mlua::Function>("cleanup") {
+                func.call::<(), ()>(()).expect(format!("Error on plugin: {}", plugin_name).as_str());
+            } else {
+                println!(
+                    "cleanup function not found in plugin: {}",
+                    plugin_name
+                );
+            }
+        }
+
+
     }
 }
