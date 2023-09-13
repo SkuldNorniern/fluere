@@ -6,6 +6,9 @@ edition = "2021"
 description = "Plugin API for Fluere."
 readme = "README.md"
 license = "Apache-2.0"
+keywords = ["netflow", "fluereflow","fluere", "network"]
+repository = "https://github.com/SkuldNorniern/fluere"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
