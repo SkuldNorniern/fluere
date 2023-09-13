@@ -10,13 +10,13 @@ keywords = ["netflow", "fluereflow","fluere", "network"]
 repository = "https://github.com/SkuldNorniern/fluere"
 
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 
 [dependencies]
 tokio = { version = "1.32", features = ["full","macros", "rt-multi-thread"] }
-fluere-config = { path = "../fluere-config" }
+fluere-config = { version = "0.1.0", path = "../fluere-config" }
 #fluere-plugin-trait = { path = "../fluere-plugin-trait" }
-fluereflow = { path = "../fluereflow" }
+fluereflow = { version = "0.3.1", path = "../fluereflow" }
 dirs = "5.0.1"
 mlua = { version = "0.9.1", features = ["lua54", "vendored","async","send"] }
 
