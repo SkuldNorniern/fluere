@@ -34,6 +34,8 @@ fluereflow = { version = "0.3.1", path = "./fluereflow" }
 ratatui = { version = "0.23.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
 dirs = "5.0.1"
+logs = "0.7.1"
+env_logger = "0.10.0"
 
 
 
