@@ -1,4 +1,4 @@
-use dirs::config_dir;
+use dirs::{config_dir, home_dir};
 
 use crate::Config;
 
@@ -58,7 +58,7 @@ fn home_config_path() -> PathBuf {
     let path_base = match sudo_user {
         Ok(user) => {
             // If SUDO_USER is set, construct the path using the user's home directory
-            let user_home = format!("/home/{}", user);
+            let user_home = home_dir().unwrap().join(user);
             Path::new(&user_home).join(".config")
         }
         Err(_) => {
