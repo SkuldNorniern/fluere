@@ -53,20 +53,23 @@ impl PluginManager {
                                 let lua_guard = lua_clone.lock().await;
                                 let lua = &*lua_guard;
                                 // println!("lua path: {}", path);
-                                let lua_plugin_path = format!("package.path = package.path .. \";{}/?.lua\"", path);
+                                let lua_plugin_path =
+                                    format!("package.path = package.path .. \";{}/?.lua\"", path);
                                 let _ = lua.load(lua_plugin_path).exec();
 
                                 let chunk = lua.load(&code);
                                 let plugin_table: mlua::Table = chunk.eval()?;
                                 let func: mlua::Function = plugin_table.get("init")?;
-                                
+
                                 let argument_table = lua.create_table()?;
 
                                 // println!("extra argument details{:?}", plugin_config.extra_arguments);
-                                for (key, value) in plugin_config.extra_arguments.clone().unwrap().iter() {
+                                for (key, value) in
+                                    plugin_config.extra_arguments.clone().unwrap().iter()
+                                {
                                     argument_table.set(key.as_str(), value.as_str())?;
                                 }
-                                
+
                                 func.call(argument_table)?;
                                 lua.globals().set(name.as_str(), plugin_table)?;
                                 /*let _ = lua_guard.context(|ctx| -> mlua::Result<()> {
@@ -101,14 +104,16 @@ impl PluginManager {
                         match download_plugin_from_github(name) {
                             Ok(_) => {
                                 let path = home_cache_path().join(name.split('/').last().unwrap());
-                                match std::fs::read_to_string(path.join("init.lua")) 
-                                {
+                                match std::fs::read_to_string(path.join("init.lua")) {
                                     Ok(code) => {
                                         let lua_clone = self.lua.clone();
                                         let lua_guard = lua_clone.lock().await;
                                         let lua = &*lua_guard;
 
-                                        let lua_plugin_path = format!("package.path = package.path .. \";{}/?.lua\"", path.to_str().unwrap());
+                                        let lua_plugin_path = format!(
+                                            "package.path = package.path .. \";{}/?.lua\"",
+                                            path.to_str().unwrap()
+                                        );
                                         let _ = lua.load(lua_plugin_path).exec();
                                         // println!("lua path: {}", path.to_str().unwrap());
 
@@ -119,7 +124,9 @@ impl PluginManager {
                                         let argument_table = lua.create_table()?;
 
                                         // println!("extra argument details{:?}", plugin_config.extra_arguments);
-                                        for (key, value) in plugin_config.extra_arguments.clone().unwrap().iter() {
+                                        for (key, value) in
+                                            plugin_config.extra_arguments.clone().unwrap().iter()
+                                        {
                                             argument_table.set(key.as_str(), value.as_str())?;
                                         }
 
@@ -251,7 +258,7 @@ impl PluginManager {
         // Cleanup each plugin before exiting
         let lua_clone = self.lua.clone();
         let plugins_clone = self.plugins.clone();
-        
+
         let lua = lua_clone.lock().await;
         let plugins = plugins_clone.lock().await;
 
@@ -262,15 +269,11 @@ impl PluginManager {
                 .expect("Plugin table not found");
 
             if let Ok(func) = plugin_table.get::<_, mlua::Function>("cleanup") {
-                func.call::<(), ()>(()).expect(format!("Error on plugin: {}", plugin_name).as_str());
+                func.call::<(), ()>(())
+                    .expect(format!("Error on plugin: {}", plugin_name).as_str());
             } else {
-                println!(
-                    "cleanup function not found in plugin: {}",
-                    plugin_name
-                );
+                println!("cleanup function not found in plugin: {}", plugin_name);
             }
         }
-
-
     }
 }
