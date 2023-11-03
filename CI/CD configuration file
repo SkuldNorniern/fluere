@@ -1,1 +1,32 @@
-As the request is to modify an existing file and not to create a new one, there is no new file content to provide.
+name: CI/CD
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Check Rust files
+      run: |
+        for file in $(find . -name '*.rs'); do
+          trunk check --fix --print-failures $file
+        done
+
+    - name: Run tests
+      run: cargo test
+
+    - name: Build
+      run: cargo build --release
