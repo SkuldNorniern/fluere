@@ -52,25 +52,8 @@ impl Config {
 }
 
 fn home_config_path() -> PathBuf {
-    // Check for the SUDO_USER environment variable
-    let sudo_user = env::var("SUDO_USER");
-
-    let path_base = match sudo_user {
-        Ok(user) => {
-            // If SUDO_USER is set, construct the path using the user's home directory
-            let user_home = home_dir().unwrap();
-            let config_path = Path::new(&user_home).join(".config");
-            if !config_path.exists() {
-                let mut file = File::create(&config_path).unwrap();
-                write!(file, "{}", toml::to_string(&Config::default()).unwrap()).unwrap();
-            }
-            config_path
-        }
-        Err(_) => {
-            // If not running under sudo, just use the config_dir function as before
-            config_dir().unwrap()
-        }
-    };
+    let home_dir = env::var("HOME").unwrap();
+    let path_base = Path::new(&home_dir).join(".config");
 
     let path_config = path_base.join("fluere");
     path_config
