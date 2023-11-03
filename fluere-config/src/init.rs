@@ -11,7 +11,13 @@ impl Config {
         let path_file = path_base.join(Path::new("fluere.toml"));
         println!("path_file: {:?}", path_file);
         if !path_base.exists() {
-            fs::create_dir_all(path_base).unwrap();
+            match fs::create_dir_all(&path_base) {
+                Ok(_) => (),
+                Err(e) => {
+                    eprintln!("Failed to create directory at {:?}: {}", path_base, e);
+                    return Config::default();
+                }
+            }
         }
 
         if !path_file.exists() {
