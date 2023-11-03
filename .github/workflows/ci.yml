@@ -24,7 +24,10 @@ jobs:
           override: true
 
       - name: Check Rust files
-        run: cargo check --all-targets --all-features
+        run: |
+          for file in $(find . -name '*.rs'); do
+            cargo check --all-targets --all-features $file
+          done
 
       - name: Run tests
         run: cargo test
