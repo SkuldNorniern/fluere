@@ -11,20 +11,20 @@ repository = "https://github.com/SkuldNorniern/fluere"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = {version = "4.0.32", features = ["cargo"]}
-tokio = { version = "1.32", features = ["full","macros", "rt-multi-thread"] }
+clap = { version = "4.0.32", features = ["cargo"] }
+tokio = { version = "1.32", features = ["full", "macros", "rt-multi-thread"] }
 pnet = { version = "0.34.0", features = ["std"] }
 pnet_macros_support = "0.34.0"
 pnet_macros = "0.34.0"
 # using custom forked version of pcap-rs for fixing audits
-pcap = { version = "1.1.0",git = "https://github.com/SkuldNorniern/pcap", rev= "40f1163"}
+pcap = { version = "1.1.0", git = "https://github.com/SkuldNorniern/pcap", rev = "40f1163" }
 
 chrono = { version = "0.4.29", default-features = false, features = ["clock"] }
 libc = "0.2"
 csv = "1.1"
 nom = "7.1.2"
 snafu = "0.7.4"
-serde = { version = "1.0.186", features = ["derive"]}
+serde = { version = "1.0.186", features = ["derive"] }
 toml = "0.7.1"
 
 fluere_plugin = { version = "0.1.0", path = "./fluere-plugin" }
@@ -38,13 +38,12 @@ logs = "0.7.1"
 env_logger = "0.10.0"
 
 
-
 [workspace]
 members = [
-    "fluere-plugin",
-	"fluere-config",
-	#"fluere-plugin-trait",
-    "fluereflow"
+  "fluere-plugin",
+  "fluere-config",
+  #"fluere-plugin-trait",
+  "fluereflow",
 ]
 
 [package.metadata.rpm]
@@ -61,5 +60,5 @@ libpcap = "*"
 
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/fluere", dest = "/usr/bin/fluere", mode = "755" },
+  { source = "target/release/fluere", dest = "/usr/bin/fluere", mode = "755" },
 ]
