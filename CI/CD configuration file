@@ -22,7 +22,7 @@ jobs:
     - name: Check Rust files
       run: |
         for file in $(find . -name '*.rs'); do
-          trunk check --fix --print-failures $file
+          cargo check --all-targets --all-features $file
         done
 
     - name: Run tests
