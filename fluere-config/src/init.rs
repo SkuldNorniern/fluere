@@ -58,7 +58,7 @@ fn home_config_path() -> PathBuf {
     let path_base = match sudo_user {
         Ok(user) => {
             // If SUDO_USER is set, construct the path using the user's home directory
-            let user_home = home_dir().unwrap().join(user);
+            let user_home = home_dir().unwrap();
             let config_path = Path::new(&user_home).join(".config");
             if !config_path.exists() {
                 let mut file = File::create(&config_path).unwrap();
