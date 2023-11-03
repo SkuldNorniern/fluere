@@ -2,7 +2,7 @@ use dirs::{config_dir, home_dir};
 
 use crate::Config;
 
-use std::{default::Default, env, fs, path::Path, path::PathBuf};
+use std::{default::Default, env, fs, fs::File, io::Write, path::Path, path::PathBuf};
 
 impl Config {
     pub fn new() -> Self {
@@ -59,7 +59,12 @@ fn home_config_path() -> PathBuf {
         Ok(user) => {
             // If SUDO_USER is set, construct the path using the user's home directory
             let user_home = home_dir().unwrap().join(user);
-            Path::new(&user_home).join(".config")
+            let config_path = Path::new(&user_home).join(".config");
+            if !config_path.exists() {
+                let mut file = File::create(&config_path).unwrap();
+                write!(file, "{}", toml::to_string(&Config::default()).unwrap()).unwrap();
+            }
+            config_path
         }
         Err(_) => {
             // If not running under sudo, just use the config_dir function as before
