@@ -58,7 +58,11 @@ fn home_config_path() -> PathBuf {
     let path_base = match sudo_user {
         Ok(user) => {
             // If SUDO_USER is set, construct the path using the user's home directory
-            let user_home = format!("/home/{}", user);
+            let user_home = if cfg!(target_os = "macos") {
+                dirs::home_dir().unwrap()
+            } else {
+                format!("/home/{}", user)
+            };
             Path::new(&user_home).join(".config")
         }
         Err(_) => {
