@@ -65,5 +65,10 @@ fn home_config_path() -> PathBuf {
             return config_dir.join("fluere");
         }
     }
+    } else if cfg!(target_os = "macos") {
+        if let Some(home_dir) = dirs::home_dir() {
+            return home_dir.join(".config").join("fluere");
+        }
+    }
     panic!("Unsupported operating system");
 }
