@@ -52,15 +52,22 @@ impl Config {
 }
 
 fn home_config_path() -> PathBuf {
-    if cfg!(target_os = "linux") {
-        let uid = unsafe { libc::getuid() };
-        if uid == 0 {
-            let sudo_user = env::var("SUDO_USER").expect("Failed to get SUDO_USER");
-            let user_home = format!("/home/{}", sudo_user);
-            return Path::new(&user_home).join(".config").join("fluere");
+    // Check for the SUDO_USER environment variable
+    let sudo_user = env::var("SUDO_USER");
+
+    let path_base = match sudo_user {
+        Ok(user) => {
+            // If SUDO_USER is set, construct the path using the user's home directory
+            let user_home = format!("/home/{}", user);
+            Path::new(&user_home).join(".config")
         }
-        return Path::new("/root").join(".config").join("fluere");
-    } else if cfg!(target_os = "windows") {
+        Err(_) => {
+            config_dir().unwrap()
+        }
+    };
+
+    let path_config = path_base.join("fluere");
+    path_config
         if let Some(config_dir) = dirs::config_dir() {
             return config_dir.join("fluere");
         }
