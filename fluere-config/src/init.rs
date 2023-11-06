@@ -57,20 +57,21 @@ fn home_config_path() -> PathBuf {
 
     let path_base = match sudo_user {
         Ok(user) => {
-            // If SUDO_USER is set, construct the path using the user's home directory
-            let user_home = if cfg!(target_os = "macos") {
-                dirs::home_dir().unwrap()
-            } else {
-                format!("/home/{}", user)
-            };
-            Path::new(&user_home).join(".config")
+            // on macOS just return the config_dir()
+            if env::consts::OS == "macos" {
+                config_dir().unwrap()
+            }
+            else {
+                // If SUDO_USER is set, construct the path using the user's home directory
+                let user_home = format!("/home/{}", user);
+                Path::new(&user_home).join(".config")
+            }
         }
         Err(_) => {
             // If not running under sudo, just use the config_dir function as before
             config_dir().unwrap()
         }
     };
-
     let path_config = path_base.join("fluere");
     path_config
 }
