@@ -2,7 +2,7 @@ use dirs::config_dir;
 
 use crate::Config;
 
-use std::{default::Default, env, fs, path::Path, path::PathBuf};
+use std::{default::Default, env, fs, os, path::Path, path::PathBuf};
 
 impl Config {
     pub fn new() -> Self {
@@ -52,7 +52,13 @@ impl Config {
 }
 
 fn home_config_path() -> PathBuf {
-    let home_dir = dirs::home_dir().expect("Failed to get home directory");
-    let path_config = home_dir.join(".config").join("fluere");
-    path_config
+    if cfg!(target_os = "linux") {
+        let uid = os::unix::fs::MetadataExt::uid();
+        if uid == 0 {
+            let sudo_user = env::var("SUDO_USER").expect("Failed to get SUDO_USER");
+            let user_home = format!("/home/{}", sudo_user);
+            return Path::new(&user_home).join(".config").join("fluere");
+        }
+    }
+    Path::new("/root").join(".config").join("fluere")
 }
