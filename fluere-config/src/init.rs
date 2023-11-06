@@ -70,5 +70,10 @@ fn home_config_path() -> PathBuf {
             return home_dir.join(".config").join("fluere");
         }
     }
+    else {
+        if let Some(home_dir) = dirs::home_dir() {
+            return home_dir.join(".config").join("fluere");
+        }
+    }
     panic!("Unsupported operating system");
 }
