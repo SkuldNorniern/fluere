@@ -60,18 +60,15 @@ fn home_config_path() -> PathBuf {
             return Path::new(&user_home).join(".config").join("fluere");
         }
         return Path::new("/root").join(".config").join("fluere");
-    } 
-    else if cfg!(target_os = "windows") {
+    } else if cfg!(target_os = "windows") {
         if let Some(config_dir) = dirs::config_dir() {
             return config_dir.join("fluere");
         }
-    } 
-    else if cfg!(target_os = "macos") {
+    } else if cfg!(target_os = "macos") {
         if let Some(home_dir) = dirs::home_dir() {
             return home_dir.join(".config").join("fluere");
         }
-    }
-    else {
+    } else {
         if let Some(home_dir) = dirs::home_dir() {
             return home_dir.join(".config").join("fluere");
         }
