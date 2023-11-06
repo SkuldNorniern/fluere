@@ -53,12 +53,17 @@ impl Config {
 
 fn home_config_path() -> PathBuf {
     if cfg!(target_os = "linux") {
-        let uid = os::unix::fs::MetadataExt::uid();
+        let uid = unsafe { libc::getuid() };
         if uid == 0 {
             let sudo_user = env::var("SUDO_USER").expect("Failed to get SUDO_USER");
             let user_home = format!("/home/{}", sudo_user);
             return Path::new(&user_home).join(".config").join("fluere");
         }
+        return Path::new("/root").join(".config").join("fluere");
+    } else if cfg!(target_os = "windows") {
+        if let Some(config_dir) = dirs::config_dir() {
+            return config_dir.join("fluere");
+        }
     }
-    Path::new("/root").join(".config").join("fluere")
+    panic!("Unsupported operating system");
 }
