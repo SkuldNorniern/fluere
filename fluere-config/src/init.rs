@@ -52,21 +52,7 @@ impl Config {
 }
 
 fn home_config_path() -> PathBuf {
-    // Check for the SUDO_USER environment variable
-    let sudo_user = env::var("SUDO_USER");
-
-    let path_base = match sudo_user {
-        Ok(user) => {
-            // If SUDO_USER is set, construct the path using the user's home directory
-            let user_home = format!("/home/{}", user);
-            Path::new(&user_home).join(".config")
-        }
-        Err(_) => {
-            // If not running under sudo, just use the config_dir function as before
-            config_dir().unwrap()
-        }
-    };
-
-    let path_config = path_base.join("fluere");
+    let home_dir = dirs::home_dir().expect("Failed to get home directory");
+    let path_config = home_dir.join(".config").join("fluere");
     path_config
 }
