@@ -21,6 +21,8 @@ jobs:
         run: cargo install cargo-deb
       - name: Install rpm generator
         run: cargo install cargo-generate-rpm
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2.2.1
       - name: Run tests
         run: cargo test --verbose
       - name: Run Clippy
