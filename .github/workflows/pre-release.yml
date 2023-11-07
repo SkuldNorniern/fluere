@@ -17,12 +17,23 @@ jobs:
 
       - name: Install libpcap
         run: sudo apt-get install -y libpcap-dev
-      - name: Build
-        run: cargo build --release --verbose
+      - name: Install deb generator
+        run: cargo install cargo-deb
+      - name: Install rpm generator
+        run: cargo install cargo-generate-rpm
       - name: Run tests
         run: cargo test --verbose
       - name: Run Clippy
         run: cargo clippy --fix --allow-dirty --allow-staged --release --verbose
+      - name: Build
+        run: cargo build --release --verbose
+      - name: Build deb
+        run: cargo deb ; mv target/debian/fluere_*.deb target/debian/fluere_latest_x86_64.deb
+      - name: Strip Builded file
+        run: strip -s target/release/fluere
+      - name: Build rpm
+        run: cargo generate-rpm; mv target/generate-rpm/fluere-*.rpm target/generate-rpm/fluere_latest_x86_64.rpm
+
 
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
@@ -30,3 +41,6 @@ jobs:
           automatic_release_tag: "latest"
           prerelease: true
           title: "Development Build"
+          files: |
+            target/debian/fluere_*.deb
+            target/generate-rpm/fluere_*.rpm
