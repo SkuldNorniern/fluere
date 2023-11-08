@@ -124,8 +124,11 @@ impl PluginManager {
                                         let argument_table = lua.create_table()?;
 
                                         // println!("extra argument details{:?}", plugin_config.extra_arguments);
-                                        for (key, value) in
-                                            plugin_config.extra_arguments.clone().expect("not enough argument").iter()
+                                        for (key, value) in plugin_config
+                                            .extra_arguments
+                                            .clone()
+                                            .expect("not enough argument")
+                                            .iter()
                                         {
                                             argument_table.set(key.as_str(), value.as_str())?;
                                         }
