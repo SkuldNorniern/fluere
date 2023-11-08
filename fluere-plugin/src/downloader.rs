@@ -4,14 +4,14 @@ use std::process::Command;
 pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error> {
     let url = format!("https://github.com/{}.git", repo_name);
     let path = home_cache_path();
-    let cd_cmd = format!("cd {}", path.display());
+    let cd_cmd = format!("cd {}/{}", path.display(), repo_name.split('/').last().unwrap());
     if !path.exists() {
         std::fs::create_dir_all(path.clone())?;
     }
     if path.join(repo_name.split('/').last().unwrap()).exists() {
         Command::new("bash")
             .arg("-c")
-            .arg(cd_cmd + ";git fetch ;git pull")
+            .arg(cd_cmd + ";git fetch ;git pull origin master")
             .output()?;
     } else {
         Command::new("bash")
