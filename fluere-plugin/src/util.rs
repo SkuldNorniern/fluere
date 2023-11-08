@@ -16,7 +16,7 @@ pub fn home_cache_path() -> PathBuf {
         }
         Err(_) => {
             // If not running under sudo, just use the config_dir function as before
-            cache_dir().unwrap()
+            cache_dir()?
         }
     };
 
