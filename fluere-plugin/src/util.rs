@@ -12,11 +12,11 @@ pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
         Ok(user) => {
             // on macOS just return the cache_dir()
             if env::consts::OS == "macos" {
-                cache_dir().expect("Could not determine the home directory")
+                Ok(cache_dir().expect("Could not determine the home directory"))
             } else {
                 // If SUDO_USER is set, construct the path using the user's home directory
                 let user_home = format!("/home/{}", user);
-                Path::new(&user_home).join(".cache")
+                Ok(Path::new(&user_home).join(".cache"))
             }
         }
         Err(_) => {
