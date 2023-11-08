@@ -21,7 +21,10 @@ pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
         }
         Err(_) => {
             // If not running under sudo, just use the cache_dir function as before
-            cache_dir().ok_or(std::io::Error::new(std::io::ErrorKind::NotFound, "Could not determine the cache directory"))
+            cache_dir().ok_or(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Could not determine the cache directory",
+            ))
         }
     };
     let path_cache = path_base.join("fluere");
