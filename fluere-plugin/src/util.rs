@@ -31,5 +31,5 @@ pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
     if !path_cache.exists() {
         fs::create_dir_all(path_cache.clone())?;
     }
-    path_cache
+    Ok(path_cache)
 }
