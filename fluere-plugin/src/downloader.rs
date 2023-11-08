@@ -14,7 +14,10 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error
             .arg(cd_cmd + ";git fetch ;git pull")
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "git pull operation failed"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "git pull operation failed",
+            ));
         }
     } else {
         let output = Command::new("bash")
@@ -22,7 +25,10 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error
             .arg(cd_cmd + "; git clone " + &url)
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "git clone operation failed"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "git clone operation failed",
+            ));
         }
     }
     Ok(())

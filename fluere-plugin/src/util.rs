@@ -18,7 +18,12 @@ pub fn home_cache_path() -> std::io::Result<PathBuf> {
             // If not running under sudo, just use the config_dir function as before
             match cache_dir() {
                 Ok(dir) => dir,
-                Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::Other, "Operation not supported by the OS")),
+                Err(_) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Operation not supported by the OS",
+                    ))
+                }
             }
         }
     };
