@@ -27,7 +27,7 @@ pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
             ))
         }
     };
-    let path_cache = path_base.join("fluere");
+    let path_cache = path_base?.join("fluere");
     if !path_cache.exists() {
         fs::create_dir_all(path_cache.clone())?;
     }
