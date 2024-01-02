@@ -509,7 +509,7 @@ fn draw_ui(
         flow_columns[5],
     );
 }
-async fn listen_for_exit_keys() -> Result<(), crossterm::ErrorKind> {
+async fn listen_for_exit_keys() -> Result<(),std::io::Error> {
     loop {
         if event::poll(std::time::Duration::from_millis(100))? {
             if let event::Event::Key(KeyEvent {
