@@ -6,6 +6,8 @@ edition = "2021"
 description = "Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool"
 readme = "README.md"
 license = "Apache-2.0"
+keywords = ["netflow", "fluereflow","cross-platform", "netflow-collector", "network-security"]
+categories = ["network-programming"]
 repository = "https://github.com/SkuldNorniern/fluere"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -23,12 +25,12 @@ chrono = { version = "0.4.29", default-features = false, features = ["clock"] }
 libc = "0.2"
 csv = "1.1"
 nom = "7.1.2"
-snafu = "0.7.4"
+snafu = "0.8.0"
 serde = { version = "1.0.186", features = ["derive"] }
-toml = "0.7.1"
+toml = "0.8.8"
 
 fluere_plugin = { version = "0.1.0", path = "./fluere-plugin" }
-fluere-config = { version = "0.1.1", path = "./fluere-config" }
+fluere-config = { version = "0.1.2", path = "./fluere-config" }
 fluereflow = { version = "0.3.1", path = "./fluereflow" }
 
 ratatui = { version = "0.23.0", features = ["all-widgets"] }
