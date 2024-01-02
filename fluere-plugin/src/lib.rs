@@ -103,7 +103,7 @@ impl PluginManager {
                     None => {
                         match download_plugin_from_github(name) {
                             Ok(_) => {
-                                let path = home_cache_path().join(name.split('/').last().unwrap());
+                                let path = home_cache_path()?.join(name.split('/').last().unwrap());
                                 match std::fs::read_to_string(path.join("init.lua")) {
                                     Ok(code) => {
                                         let lua_clone = self.lua.clone();
