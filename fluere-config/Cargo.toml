@@ -1,6 +1,6 @@
 [package]
 name = "fluere-config"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 readme = "README.md"
 description = "Configuration manager for Fluere."
@@ -10,8 +10,8 @@ repository = "https://github.com/SkuldNorniern/fluere"
 
 [dependencies]
 dirs = "5.0.1"
-serde = { version = "1.0.186", features = ["derive"]}
-toml = "0.7.6"
+serde = { version = "1.0.193", features = ["derive"]}
+toml = "0.8.8"
 
 [lib]
 name = "fluere_config"
