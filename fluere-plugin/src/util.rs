@@ -4,7 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn home_cache_path() -> PathBuf {
+pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
     // Check for the SUDO_USER environment variable
     let sudo_user = env::var("SUDO_USER");
 
@@ -16,13 +16,13 @@ pub fn home_cache_path() -> PathBuf {
         }
         Err(_) => {
             // If not running under sudo, just use the config_dir function as before
-            cache_dir().unwrap()
+            cache_dir().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Failed to find cache directory"))?
         }
     };
 
     let path_config = path_base.join("fluere");
     if !path_config.exists() {
-        fs::create_dir_all(path_config.clone()).map_err(|e| e.to_string())?;
+        fs::create_dir_all(path_config.clone())?;
     }
     path_config
 }
