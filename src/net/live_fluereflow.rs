@@ -15,7 +15,7 @@ use fluereflow::FluereRecord;
 
 use pcap::Capture;
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
+    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
@@ -398,8 +398,8 @@ pub async fn online_packet_capture(arg: Args) {
 
     //println!("records {:?}", records);
 }
-fn draw_ui<B: Backend>(
-    f: &mut Frame<B>,
+fn draw_ui(
+    f: &mut Frame,
     recent_flows: &[FlowSummary],
     progress: f64,
     active_flow_count: usize,
