@@ -30,7 +30,7 @@ toml = "0.8.8"
 
 fluere_plugin = { version = "0.1.0", path = "./fluere-plugin" }
 fluere-config = { version = "0.1.2", path = "./fluere-config" }
-fluereflow = { version = "0.3.1", path = "./fluereflow" }
+fluereflow = { version = "0.3.2", path = "./fluereflow" }
 
 ratatui = { version = "0.25.0", features = ["all-widgets"] }
 crossterm = "0.26.1"
