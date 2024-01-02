@@ -1,7 +1,7 @@
 use crate::util::home_cache_path;
 use git2;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error> {
     let url = format!("https://github.com/{}.git", repo_name);
