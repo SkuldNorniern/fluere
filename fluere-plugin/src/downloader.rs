@@ -8,7 +8,7 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error
     let path = home_cache_path()?;
     let cd_cmd = format!("cd {}", path.display());
     if !path?.exists() {
-        std::fs::create_dir_all(path.clone())?;
+        std::fs::create_dir_all(path?.clone())?;
     }
     let repository_path = Path::new(&path);
 
