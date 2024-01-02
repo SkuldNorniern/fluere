@@ -5,7 +5,7 @@ use std::path::Path;
 
 pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error> {
     let url = format!("https://github.com/{}.git", repo_name);
-    let path = home_cache_path();
+    let path = home_cache_path()?;
     let cd_cmd = format!("cd {}", path.display());
     if !path.exists() {
         std::fs::create_dir_all(path.clone())?;
