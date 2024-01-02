@@ -29,5 +29,5 @@ pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
     if !path_config.exists() {
         fs::create_dir_all(path_config.clone())?;
     }
-    path_config
+    Ok(path_config)
 }
