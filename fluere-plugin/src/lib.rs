@@ -170,14 +170,16 @@ impl PluginManager {
                                         plugins_guard.insert(name.clone());
                                         println!("Loaded plugin {}", name);
                                     }
-                                    Err(_) => {
+                                    Err(eri) => {
                                         println!("Failed to read plugin: {}", name);
+                                        println!("Error: {}", eri);
                                         continue;
                                     }
                                 }
                             }
-                            Err(_) => {
+                            Err(eri) => {
                                 println!("Unable to download plugin: {}", name);
+                                println!("Error: {}", eri);
                             }
                         }
                     }
