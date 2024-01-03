@@ -3,6 +3,29 @@ use git2;
 use std::io;
 use std::path::Path;
 
+/// Fetch changes from a GitHub repository by `repo_name`.
+pub fn fetch_from_github(repo_name: &str) -> Result<(), std::io::Error> {
+    let url = format!("https://github.com/{}/.git", repo_name);
+    let path = home_cache_path()?;
+    let repo_path = path.join(repo_name.split('/').last().unwrap());
+    let repository = git2::Repository::open(&repo_path);
+
+    match repository {
+        Ok(repo) => {
+            let origin = repo.find_remote("origin");
+            match origin {
+                Ok(mut remote) => {
+                    remote.fetch(&["refs/heads/*:refs/heads/*"], None, None)?;
+                },
+                Err(e) => return Err(e.into()),
+            }
+        },
+        Err(e) => return Err(e.into()),
+    }
+
+    Ok(())
+}
+
 pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error> {
     let url = format!("https://github.com/{}", repo_name);
     let path = home_cache_path()?;
