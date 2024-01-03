@@ -14,7 +14,6 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), std::io::Error
     let repo_path = path.join(repo_name.split('/').last().unwrap());
     let repository_path = Path::new(&repo_path);
     // println!("repository_path: {:?}", repository_path);
-   
 
     match git2::Repository::open(repository_path) {
         Ok(repo) => {
