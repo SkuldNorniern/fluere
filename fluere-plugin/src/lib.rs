@@ -104,25 +104,6 @@ impl PluginManager {
                         match download_plugin_from_github(name) {
                             Ok(_) => {
                                 let path = home_cache_path()?.join(name.split('/').last().unwrap());
-                                if path.starts_with(&home_cache_path()?) {
-                                    match git2::Repository::open(&path) {
-                                        Ok(repo) => match repo.find_remote("origin") {
-                                            Ok(mut remote) => {
-                                                remote.fetch(
-                                                    &["refs/heads/*:refs/heads/*"],
-                                                    None,
-                                                    None,
-                                                )?;
-                                            }
-                                            Err(fetch_err) => {
-                                                return Err(mlua::Error::external(fetch_err))
-                                            }
-                                        },
-                                        Err(open_err) => {
-                                            return Err(mlua::Error::external(open_err))
-                                        }
-                                    }
-                                }
                                 match std::fs::read_to_string(path.join("init.lua")) {
                                     Ok(code) => {
                                         let lua_clone = self.lua.clone();
