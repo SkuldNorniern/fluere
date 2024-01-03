@@ -16,10 +16,10 @@ pub fn fetch_from_github(repo_name: &str) -> Result<(), std::io::Error> {
             match origin {
                 Ok(mut remote) => {
                     remote.fetch(&["refs/heads/*:refs/heads/*"], None, None)?;
-                },
+                }
                 Err(e) => return Err(e.into()),
             }
-        },
+        }
         Err(e) => return Err(e.into()),
     }
 
