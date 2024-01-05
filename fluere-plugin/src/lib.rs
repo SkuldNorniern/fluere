@@ -16,7 +16,6 @@ pub struct PluginManager {
     lua: Arc<Mutex<Lua>>,
     sender: mpsc::Sender<FluereRecord>,
     receiver: Arc<Mutex<mpsc::Receiver<FluereRecord>>>,
-    //worker: Arc<Mutex<tokio::task::JoinHandle<()>>>,
     plugins: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -30,7 +29,6 @@ impl PluginManager {
             lua,
             sender,
             receiver: Arc::new(Mutex::new(receiver)),
-            //worker: Arc::new(Mutex::new(tokio::task::JoinHandle::new())),
             plugins,
         })
     }
@@ -46,7 +44,7 @@ impl PluginManager {
                         let mut owned_path_str = path.clone();
                         let name_of_main_file = "/init.lua";
                         owned_path_str.push_str(name_of_main_file);
-                        // println!("path: {}", owned_path_str);
+
                         match std::fs::read_to_string(owned_path_str) {
                             Ok(code) => {
                                 let lua_clone = self.lua.clone();
@@ -222,7 +220,7 @@ impl PluginManager {
                     {
                         lua_table
                             .set(*key, record_vec[index].clone())
-                            .expect(format!("Failed to set key: {}", key).as_str());
+                            .unwrap_or_else(|_| panic!("Failed to set key: {}", key));
                     }
 
                     for plugin_name in plugins.iter() {
@@ -233,7 +231,7 @@ impl PluginManager {
 
                         if let Ok(func) = plugin_table.get::<_, mlua::Function>("process_data") {
                             func.call::<mlua::Table<'_>, ()>(lua_table.clone())
-                                .expect(format!("Error on plugin: {}", plugin_name).as_str());
+                                .unwrap_or_else(|_| panic!("Error on plugin: {}", plugin_name));
                         } else {
                             println!(
                                 "'process_data' function not found in plugin: {}",
@@ -272,7 +270,7 @@ impl PluginManager {
 
             if let Ok(func) = plugin_table.get::<_, mlua::Function>("cleanup") {
                 func.call::<(), ()>(())
-                    .expect(format!("Error on plugin: {}", plugin_name).as_str());
+                    .unwrap_or_else(|_| panic!("Error on plugin: {}", plugin_name));
             } else {
                 println!("cleanup function not found in plugin: {}", plugin_name);
             }
