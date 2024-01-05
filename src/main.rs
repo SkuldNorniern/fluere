@@ -17,7 +17,7 @@ use std::process::exit;
 // It defines the available commands and their arguments.
 fn cli() -> Command {
     Command::new("fluere")
-        .version("0.6.1")
+        .version("0.6.2")
         .author("Skuld Norniern. <skuldnorniern@gmail.com>")
         .about("Netflow Capture Tool")
         .subcommand_required(true)
