@@ -177,11 +177,7 @@ pub async fn online_packet_capture(arg: Args) {
         }
     });
 
-    tokio::spawn(async {
-        if let Err(e) = listen_for_exit_keys().await {
-            println!("Error listening for exit keys: {}", e);
-        }
-    });
+    tokio::spawn(listen_for_exit_keys());
     loop {
         match cap.next_packet() {
             Err(_) => {
@@ -523,7 +519,7 @@ async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
                 match code {
                     KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
                         //println!("Ctrl+C pressed. Exiting...");
-                        return Ok(());
+                        std::process::exit(0);
                     }
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
                         //println!("'q' or 'Q' pressed. Exiting...");
