@@ -12,11 +12,11 @@ use tokio::time::sleep;
 
 use crate::{
     net::{
+        find_device,
         flows::update_flow,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
         CaptureDevice,
-        find_device,
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},

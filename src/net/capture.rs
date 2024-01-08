@@ -1,4 +1,4 @@
-use pcap::{Capture, Active, Device,Error as PcapError,Address};
+use pcap::{Active, Address, Capture, Device, Error as PcapError};
 use std::time::Instant;
 
 #[derive(Debug)]
@@ -22,14 +22,14 @@ impl From<String> for CaptureError {
     }
 }
 
-pub struct CaptureDevice{
+pub struct CaptureDevice {
     pub name: String,
     pub desc: String,
     pub address: Vec<Address>,
     pub capture: Capture<Active>,
 }
 
-impl CaptureDevice{
+impl CaptureDevice {
     pub fn new(device: Device) -> Result<CaptureDevice, CaptureError> {
         let capture = initialize_capture(device.clone())?;
 
@@ -41,9 +41,11 @@ impl CaptureDevice{
         })
     }
 }
+
 pub fn list_devices() -> Result<Vec<Device>, CaptureError> {
-    Ok(Device::list().map_err(CaptureError::Cap)?)
+    Device::list().map_err(CaptureError::Cap)
 }
+
 pub fn find_device(identifier: &str) -> Result<Device, CaptureError> {
     let start = Instant::now();
     println!("Requested Device: {}", identifier);
