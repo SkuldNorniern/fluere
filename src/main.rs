@@ -11,6 +11,8 @@ pub mod utils;
 use clap::{Arg, ArgAction, Command};
 use pnet::datalink;
 
+use crate::net::list_devices;
+
 use std::process::exit;
 
 // This function sets up the command line interface for the application using the clap library.
@@ -266,11 +268,11 @@ async fn main() {
             println!("Online mode");
             utils::get_local_ip();
             if args.get_flag("list") {
-                println!("List of interfaces");
-                for iface in interfaces {
-                    println!("[{}]: {}", iface.index, iface.name);
+                let interfaces = list_devices().unwrap();
+                println!("Found {} devices", interfaces.len());
+                for (i, interface) in interfaces.iter().enumerate() {
+                    println!("[{}]: {}", i, interface.name);
                 }
-
                 exit(0);
             }
             let use_mac = args.get_flag("useMACaddress");
@@ -332,11 +334,11 @@ async fn main() {
         Some(("live", args)) => {
             println!("Live mode");
             if args.get_flag("list") {
-                println!("List of interfaces");
+                let interfaces = list_devices().unwrap();
+                println!("Found {} devices", interfaces.len());
                 for (i, interface) in interfaces.iter().enumerate() {
                     println!("[{}]: {}", i, interface.name);
-                }
-
+                } 
                 exit(0);
             }
             let use_mac = args.get_flag("useMACaddress");
