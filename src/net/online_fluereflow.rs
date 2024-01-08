@@ -3,8 +3,6 @@
 // The data is then exported to a CSV file.
 extern crate csv;
 
-use pcap::Capture;
-
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
 use fluereflow::FluereRecord;
@@ -12,13 +10,13 @@ use fluereflow::FluereRecord;
 use tokio::task;
 use tokio::time::sleep;
 
-use super::interface::get_interface;
-
 use crate::{
     net::{
         flows::update_flow,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
+        CaptureDevice,
+        find_device,
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
@@ -51,14 +49,17 @@ pub async fn packet_capture(arg: Args) {
         .await
         .expect("Failed to load plugins");
 
-    let interface = get_interface(interface_name.as_str());
-    let mut cap = Capture::from_device(interface)
-        .unwrap()
-        .promisc(true)
-        //.buffer_size(100000000)
-        .immediate_mode(true)
-        .open()
-        .unwrap();
+    let interface = find_device(interface_name.as_str()).unwrap();
+    let cap_device = CaptureDevice::new(interface.clone()).unwrap();
+    let mut cap = cap_device.capture;
+    // let mut cp_device
+    // let mut cap = Capture::from_device(interface)
+    //     .unwrap()
+    //     .promisc(true)
+    //     //.buffer_size(100000000)
+    //     .immediate_mode(true)
+    //     .open()
+    //     .unwrap();
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
