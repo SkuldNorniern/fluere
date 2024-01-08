@@ -26,11 +26,11 @@ use tokio::time::sleep;
 
 use crate::{
     net::{
+        find_device,
         flows::update_flow,
         parser::{microseconds_to_timestamp, parse_fluereflow, parse_keys, parse_microseconds},
         types::TcpFlags,
         CaptureDevice,
-        find_device,
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
@@ -83,7 +83,7 @@ pub async fn online_packet_capture(arg: Args) {
         .load_plugins(&config)
         .await
         .expect("Failed to load plugins");
-    
+
     let interface = find_device(interface_name.as_str()).unwrap();
     let cap_device = CaptureDevice::new(interface.clone()).unwrap();
     let mut cap = cap_device.capture;

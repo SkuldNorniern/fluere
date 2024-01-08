@@ -338,7 +338,7 @@ async fn main() {
                 println!("Found {} devices", interfaces.len());
                 for (i, interface) in interfaces.iter().enumerate() {
                     println!("[{}]: {}", i, interface.name);
-                } 
+                }
                 exit(0);
             }
             let use_mac = args.get_flag("useMACaddress");
