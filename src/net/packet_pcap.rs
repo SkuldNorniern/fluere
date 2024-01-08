@@ -1,13 +1,13 @@
 extern crate chrono;
 
-use pcap::Capture;
 use std::fs;
 
 use tokio::time::sleep;
 
-use super::interface::get_interface;
 use crate::types::Args;
 use crate::utils::cur_time_file;
+use crate::net::CaptureDevice;
+use crate::net::find_device;
 
 use std::time::{Duration, Instant};
 
@@ -19,13 +19,9 @@ pub async fn pcap_capture(args: Args) {
     let sleep_windows = args.parameters.sleep_windows.unwrap();
     let verbose = args.verbose.unwrap();
 
-    let interface = get_interface(interface_name.as_str());
-    let mut cap = Capture::from_device(interface)
-        .unwrap()
-        .promisc(true)
-        //.buffer_size(1000000000)
-        .open()
-        .unwrap();
+    let interface = find_device(interface_name.as_str()).unwrap();
+    let cap_device = CaptureDevice::new(interface.clone()).unwrap();
+    let mut cap = cap_device.capture;
 
     let file_dir = "./output";
     let mut packet_count = 0;
