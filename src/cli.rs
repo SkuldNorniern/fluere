@@ -235,5 +235,3 @@ pub fn cli_template() -> Command {
                 ),
         )
 }
-
-

@@ -3,17 +3,64 @@
 // It also supports live capture and conversion of NetFlow data.
 // This file contains the main function which parses the command line arguments and calls the appropriate functions based on the arguments.
 
+pub mod cli;
+pub mod logger;
 pub mod net;
 pub mod plugin;
 pub mod types;
 pub mod utils;
-pub mod cli;
 
 use pnet::datalink;
+// use env_logger::{init, Logger};
+use log::Level;
 
+use crate::logger::Logger;
 use crate::net::list_devices;
 
+use std::fmt::Display;
 use std::process::exit;
+
+enum Mode {
+    Offline,
+    Online,
+    Live,
+    Pcap,
+}
+impl Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mode::Offline => write!(f, "Offline"),
+            Mode::Online => write!(f, "Online"),
+            Mode::Live => write!(f, "Live"),
+            Mode::Pcap => write!(f, "Pcap"),
+        }
+    }
+}
+
+struct Fluere {
+    interface: String,
+    args: types::Args,
+    mode: Mode,
+    logger: Logger,
+    verbose: Level,
+}
+impl Fluere {
+    fn new(
+        interface: String,
+        args: types::Args,
+        mode: Mode,
+        logger: Logger,
+        verbose: Level,
+    ) -> Fluere {
+        Fluere {
+            interface,
+            args,
+            mode,
+            logger,
+            verbose,
+        }
+    }
+}
 
 // This is the main function of the application.
 // It gets the command line arguments, parses them, and calls the appropriate functions based on the arguments.

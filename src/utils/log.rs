@@ -1,44 +1,106 @@
 use std::fs::File;
-use std::io::Write;
-use std::path::Path;
-use chrono::Local; // Import the Local struct from the chrono crate
+use std::io::{stderr, stdout, Write};
+use std::path::PathBuf;
 
-pub struct Log {
-    file: File,
+use chrono::Local; // Import the Local struct from the chrono crate
+use log::{Level, Log, Metadata, Record};
+
+pub enum Logstdout {
+    Stdout,
+    StdErr,
 }
 
-impl Log {
-    #[cfg(target_os = "linux")]
-    pub fn new() -> Self {
-        let path = "/var/log/fluere/fluere.log";
-        let file = File::create(&path).expect("Failed to create log file");
-        Log { file }
+pub struct Logger {
+    write_to_file: bool,
+    write_to_std: Option<Logstdout>,
+    severity: Level,
+    file: Option<File>,
+}
+
+impl Logger {
+    pub fn new(write_to_file: bool, file_path: Option<PathBuf>) -> Self {
+        let mut path = file_path;
+        if path.is_none() {
+            path = Some(PathBuf::from(
+                #[cfg(target_os = "linux")]
+                "/var/log/fluere/fluere.log",
+                #[cfg(target_os = "windows")]
+                "C:\\Program Files\\fluere\\fluere.log",
+                #[cfg(target_os = "macos")]
+                "/Library/Logs/fluere/fluere.log",
+                #[cfg(target_os = "bsd")]
+                "/var/log/fluere/fluere.log",
+                #[cfg(not(any(
+                    target_os = "linux",
+                    target_os = "windows",
+                    target_os = "macos",
+                    target_os = "bsd"
+                )))]
+                "/var/log/fluere/fluere.log",
+            ));
+        }
+        let mut file = None;
+        if write_to_file {
+            file = Some(File::create(path.as_ref().unwrap()).unwrap());
+        }
+        Logger {
+            write_to_file: true,
+            write_to_std: None,
+            severity: Level::Info,
+            file,
+        }
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn new() -> Self {
-        let path = "C:\\Program Files\\fluere\\fluere.log";
-        let file = File::create(&path).expect("Failed to create log file");
-        Log { file }
+    // pub fn log(&mut self, severity: Level, message: &str) {
+    // let timestamp = Local::now(); // Get the current timestamp using Local::now()
+    // let log_message = format!("{:?} {}: {}", timestamp, severity, message); // Format the timestamp and append it to the log message
+    // }
+}
+
+impl Log for Logger {
+    fn enabled(&self, _metadata: &Metadata) -> bool {
+        true
     }
 
-    #[cfg(target_os = "macos")]
-    pub fn new() -> Self {
-        let path = "/Library/Logs/fluere/fluere.log";
-        let file = File::create(&path).expect("Failed to create log file");
-        Log { file }
+    fn log(&self, record: &Record) {
+        let timestamp = Local::now();
+
+        if self.write_to_std.as_ref().is_some() && record.level() <= self.severity {
+            match self.write_to_std.as_ref().unwrap() {
+                Logstdout::Stdout => {
+                    write!(
+                        stdout(),
+                        "[{}]: {} {}",
+                        timestamp,
+                        record.level(),
+                        record.args()
+                    )
+                    .unwrap();
+                }
+                Logstdout::StdErr => {
+                    write!(
+                        stderr(),
+                        "[{}]: {} {}",
+                        timestamp,
+                        record.level(),
+                        record.args()
+                    )
+                    .unwrap();
+                }
+            }
+        }
+
+        if self.write_to_file {
+            writeln!(
+                self.file.as_ref().unwrap(),
+                "[{}]: {} {}",
+                timestamp,
+                record.level(),
+                record.args()
+            )
+            .unwrap();
+        }
     }
 
-    #[cfg(target_os = "bsd")]
-    pub fn new() -> Self {
-        let path = "/var/log/fluere/fluere.log";
-        let file = File::create(&path).expect("Failed to create log file");
-        Log { file }
-    }
-
-    pub fn log(&mut self, severity: Severity, message: &str) {
-        let timestamp = Local::now(); // Get the current timestamp using Local::now()
-        let log_message = format!("{:?} {}: {}", timestamp, severity, message); // Format the timestamp and append it to the log message
-        self.file.write_all(log_message.as_bytes()).expect("Failed to write to log file");
-    }
+    fn flush(&self) {}
 }
