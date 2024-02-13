@@ -1,7 +1,7 @@
 use pcap::{Active, Address, Capture, Device, Error as PcapError};
 
-use std::time::Instant;
 use std::fmt;
+use std::time::Instant;
 
 #[derive(Debug)]
 pub enum DeviceError {
