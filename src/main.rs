@@ -10,15 +10,47 @@ pub mod plugin;
 pub mod types;
 pub mod utils;
 
-use pnet::datalink;
-// use env_logger::{init, Logger};
-use log::Level;
+use std::{fmt::Display, process::exit};
+use std::fs::File;
 
-use crate::logger::Logger;
-use crate::net::list_devices;
+use crate::logger::{Logger, Logstdout};
+use crate::net::capture::DeviceError;
+// use env_logger;::{init, Logger};
 
-use std::fmt::Display;
-use std::process::exit;
+use log::{Level, Log, info, warn, error, debug, trace};
+
+
+// FEAT:MAYBE: seprate `std` as feature flag for fluere and log crate
+static LOGGER: Logger = Logger{write_to_file: false, file: None, write_to_std: Some(Logstdout::Stdout), severity: Level::Info};
+
+#[derive(Debug)]
+enum FluereError {
+    InterfaceNotFound,
+    DeviceError(DeviceError),
+    ArgumentParseError(String),
+    ModeNotSupported(String),
+    NetworkError(String),
+}
+
+impl std::fmt::Display for FluereError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FluereError::InterfaceNotFound => write!(f, "Network interface not found."),
+            FluereError::ArgumentParseError(msg) => write!(f, "Argument parsing error: {}", msg),
+            FluereError::ModeNotSupported(mode) => write!(f, "Mode not supported: {}", mode),
+            FluereError::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            FluereError::DeviceError(err) => err.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for FluereError {}
+
+impl From<DeviceError> for FluereError {
+    fn from(err: DeviceError) -> Self {
+        FluereError::DeviceError(err)
+    }
+}
 
 enum Mode {
     Offline,
@@ -60,185 +92,53 @@ impl Fluere {
             verbose,
         }
     }
+    async fn online_fluereflow(&self, params: types::Args) {
+        net::online_fluereflow::packet_capture(params).await;
+        info!("Online fluereflow mode completed");
+    }
 }
-
 // This is the main function of the application.
 // It gets the command line arguments, parses them, and calls the appropriate functions based on the arguments.
 #[tokio::main]
 async fn main() {
     let args = cli::cli_template().get_matches();
-    let interfaces = datalink::interfaces(); //let _plugins = scan_plugins("plugins");
-                                             //println!("Plugins: {:?}", plugins);
-                                             //match generate_config() {
-                                             //    Ok(_) => println!("Config file generated"),
-                                             //    Err(e) => println!("Error: {e}"),
-                                             //}
-                                             //let mut interface = "None";
-    match args.subcommand() {
-        Some(("online", args)) => {
-            println!("Online mode");
-            utils::get_local_ip();
-            if args.get_flag("list") {
-                let interfaces = list_devices().unwrap();
-                println!("Found {} devices", interfaces.len());
-                for (i, interface) in interfaces.iter().enumerate() {
-                    println!("[{}]: {}", i, interface.name);
+    let log_stdout = Logstdout::Stdout;
+    let log_file :Option<File> = None;
+    let log_level = Level::Info;
+    let logger = Logger::new(None,Some(Level::Trace), Some(Logstdout::Stdout),false);
+    
+    let _ =  log::set_boxed_logger(Box::new(logger))
+        .map(|()| log::set_max_level(log::LevelFilter::Info));
+        // let mode = match args.subcommand() {
+        // Some((mode, _sub_args)) => mode,
+        // None => {
+            // log::error!("No mode selected. Use --help for more information.");
+            // exit(1);
+        // }
+    // };
+
+   info!("Fluere started"); 
+    if let Some((mode, sub_args)) = args.subcommand() {
+        match mode {
+            "online" | "offline" | "live" | "pcap" => {
+                log::debug!("Mode: {}", mode);
+                let parems = cli::handle_mode(mode, sub_args).await;
+
+                match mode {
+                    "online" => net::online_fluereflow::packet_capture(parems).await,
+                    "offline" => net::fluereflow_fileparse(parems).await,
+                    "live" => net::live_fluereflow::packet_capture(parems)
+                        .await
+                        .expect("Error on live mode"),
+                    "pcap" => net::pcap_capture(parems).await,
+                    _ => unreachable!(),
                 }
-                exit(0);
-            }
-            let use_mac = args.get_flag("useMACaddress");
-            let csv = args.get_one::<String>("csv").expect("default");
-            let interface = args
-                .get_one::<String>("interface")
-                .ok_or("Required Interface")
-                .unwrap();
-
-            let timeout = args.get_one::<String>("timeout").unwrap();
-            let timeout: u64 = timeout.parse().unwrap();
-            let duration = args.get_one::<String>("duration").expect("default");
-            let duration: u64 = duration.parse().unwrap();
-            let interval = args.get_one::<String>("interval").expect("default");
-            let interval: u64 = interval.parse().unwrap();
-            let sleep_windows = args.get_one::<String>("sleep_windows").expect("default");
-            let sleep_windows: u64 = sleep_windows.parse().unwrap();
-            let verbose = args.get_one::<String>("verbose").expect("default");
-            let verbose: u8 = verbose.parse().unwrap();
-
-            let args: types::Args = types::Args::new(
-                Some(interface.to_string()),
-                types::Files::new(Some(csv.to_string()), None, None),
-                types::Parameters::new(
-                    Some(use_mac),
-                    Some(timeout),
-                    Some(duration),
-                    Some(interval),
-                    Some(sleep_windows),
-                ),
-                Some(verbose),
-            );
-            if verbose >= 1 {
-                println!("Interface {} selected", interface);
-            } //net::packet_capture(interface);
-            net::online_fluereflow::packet_capture(args).await;
-            //net::netflow(_interface);
-        }
-        Some(("offline", args)) => {
-            println!("Offline mode");
-            let use_mac = args.get_flag("useMACaddress");
-            let file = args.get_one::<String>("file").unwrap();
-            let csv = args.get_one::<String>("csv").expect("default");
-            let timeout = args.get_one::<String>("timeout").unwrap();
-            let timeout: u64 = timeout.parse().unwrap();
-            let verbose = args.get_one::<String>("verbose").expect("default");
-            let verbose: u8 = verbose.parse().unwrap();
-
-            let args: types::Args = types::Args::new(
-                None,
-                types::Files::new(Some(csv.to_string()), Some(file.to_string()), None),
-                types::Parameters::new(Some(use_mac), Some(timeout), None, None, None),
-                Some(verbose),
-            );
-
-            net::fluereflow_fileparse(args).await;
-            //net::netflow(_file, _csv);
-        }
-        Some(("live", args)) => {
-            println!("Live mode");
-            if args.get_flag("list") {
-                let interfaces = list_devices().unwrap();
-                println!("Found {} devices", interfaces.len());
-                for (i, interface) in interfaces.iter().enumerate() {
-                    println!("[{}]: {}", i, interface.name);
-                }
-                exit(0);
-            }
-            let use_mac = args.get_flag("useMACaddress");
-            let csv = args.get_one::<String>("csv").expect("default");
-            let interface = args
-                .get_one::<String>("interface")
-                .ok_or("Required Interface")
-                .unwrap();
-
-            let timeout = args.get_one::<String>("timeout").unwrap();
-            let timeout: u64 = timeout.parse().unwrap();
-            let duration = args.get_one::<String>("duration").expect("default");
-            let duration: u64 = duration.parse().unwrap();
-            let interval = args.get_one::<String>("interval").expect("default");
-            let interval: u64 = interval.parse().unwrap();
-            let sleep_windows = args.get_one::<String>("sleep_windows").expect("default");
-            let sleep_windows: u64 = sleep_windows.parse().unwrap();
-            let verbose = args.get_one::<String>("verbose").expect("default");
-            let verbose: u8 = verbose.parse().unwrap();
-
-            let args: types::Args = types::Args::new(
-                Some(interface.to_string()),
-                types::Files::new(Some(csv.to_string()), None, None),
-                types::Parameters::new(
-                    Some(use_mac),
-                    Some(timeout),
-                    Some(duration),
-                    Some(interval),
-                    Some(sleep_windows),
-                ),
-                Some(verbose),
-            );
-            if verbose >= 1 {
-                println!("Interface {} selected", interface);
-            } //net::packet_capture(interface);
-            net::live_fluereflow::packet_capture(args)
-                .await
-                .expect("Error on live mode");
-            //net::netflow(_interface);
-        }
-        Some(("pcap", args)) => {
-            println!("Pcap mode");
-            if args.get_flag("list") {
-                println!("List of interfaces");
-                for (i, interface) in interfaces.iter().enumerate() {
-                    println!("[{}]: {}", i, interface.name);
-                }
-
-                exit(0);
             }
 
-            let pcap = args
-                .get_one::<String>("pcap")
-                .ok_or("Required output pcap file name")
-                .unwrap();
-            let interface = args
-                .get_one::<String>("interface")
-                .ok_or("Required Interface")
-                .unwrap();
-            let duration = args.get_one::<String>("duration").expect("default");
-            let duration: u64 = duration.parse().unwrap();
-            let interval = args.get_one::<String>("interval").expect("default");
-            let interval: u64 = interval.parse().unwrap();
-            let sleep_windows = args.get_one::<String>("sleep_windows").expect("default");
-            let sleep_windows: u64 = sleep_windows.parse().unwrap();
-            let verbose = args.get_one::<String>("verbose").expect("default");
-            let verbose: u8 = verbose.parse().unwrap();
-
-            let args: types::Args = types::Args::new(
-                Some(interface.to_string()),
-                types::Files::new(None, None, Some(pcap.to_string())),
-                types::Parameters::new(
-                    None,
-                    None,
-                    Some(duration),
-                    Some(interval),
-                    Some(sleep_windows),
-                ),
-                Some(verbose),
-            );
-            if verbose >= 1 {
-                println!("Interface {interface} selected");
-            }
-
-            net::pcap_capture(args).await;
+            // Match occures from the CLI side, which make this unreachable
+            _ => unreachable!()
         }
-        _ => {
-            println!("No mode selected");
-            exit(0);
-        }
+    } else {
+        exit(0);
     }
 }
