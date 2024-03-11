@@ -1,20 +1,35 @@
-use dirs::config_dir;
+use std::{default::Default, env, fs, path::Path, path::PathBuf};
 
 use crate::Config;
 
-use std::{default::Default, env, fs, path::Path, path::PathBuf};
+use dirs::config_dir;
+
+#[cfg(feature = "log")]
+use log::{debug, error, info, warn};
 
 impl Config {
     pub fn new() -> Self {
         let path_base = home_config_path();
 
         let path_file = path_base.join(Path::new("fluere.toml"));
-        println!("path_file: {:?}", path_file);
+
+        #[cfg(feature = "log")]
+        debug!("Using config file from: {:?}", path_file);
+        #[cfg(not(feature = "log"))]
+        println!("Using config file from: {:?}", path_file);
         if !path_base.exists() {
             match fs::create_dir_all(&path_base) {
-                Ok(_) => (),
+                Ok(_) => {
+                    #[cfg(feature = "log")]
+                    debug!("Created directory at {:?}", path_base);
+                    ()
+                }
                 Err(e) => {
+                    #[cfg(feature = "log")]
+                    error!("Failed to create directory at {:?}: {}", path_base, e);
+                    #[cfg(not(feature = "log"))]
                     eprintln!("Failed to create directory at {:?}: {}", path_base, e);
+
                     return Config::default();
                 }
             }
@@ -25,8 +40,16 @@ impl Config {
         }
 
         match Self::load(path_file.to_str().unwrap().to_string()) {
-            Ok(config) => config,
+            Ok(config) => {
+                #[cfg(feature = "log")]
+                debug!("Loaded configuration from: {:?}", path_file);
+
+                config
+            }
             Err(_) => {
+                #[cfg(feature = "log")]
+                warn!("failed to load configuration, using default config");
+                #[cfg(not(feature = "log"))]
                 println!("failed to load configuration, using default config");
                 Config::default()
             }
