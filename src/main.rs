@@ -17,7 +17,7 @@ use crate::logger::{Logger, Logstdout};
 use crate::net::capture::DeviceError;
 // use env_logger;::{init, Logger};
 
-use log::{Level, Log, info, warn, error, debug, trace};
+use log::{Level, LevelFilter, info, debug};
 
 
 // FEAT:MAYBE: seprate `std` as feature flag for fluere and log crate
@@ -82,6 +82,18 @@ impl Display for Mode {
     }
 }
 
+
+    fn from_verbose(level: u8) -> LevelFilter {
+        match level {
+            0 => LevelFilter::Error,
+            1 => LevelFilter::Warn,
+            2 => LevelFilter::Info,
+            3 => LevelFilter::Debug,
+            4 => LevelFilter::Trace,
+            _ => unreachable!(),
+        }
+    }
+
 struct Fluere {
     interface: String,
     args: types::Args,
@@ -116,13 +128,7 @@ impl Fluere {
 #[tokio::main]
 async fn main() {
     let args = cli::cli_template().get_matches();
-    let log_stdout = Logstdout::Stdout;
-    let log_file :Option<File> = None;
-    let log_level = Level::Info;
-    let logger = Logger::new(None,Some(Level::Trace), Some(Logstdout::Stdout),false);
     
-    let _ =  log::set_boxed_logger(Box::new(logger))
-        .map(|()| log::set_max_level(log::LevelFilter::Info));
         // let mode = match args.subcommand() {
         // Some((mode, _sub_args)) => mode,
         // None => {
@@ -131,26 +137,33 @@ async fn main() {
         // }
     // };
 
-   info!("Fluere started"); 
+   
     if let Some((mode, sub_args)) = args.subcommand() {
-        match mode {
-            "online" | "offline" | "live" | "pcap" => {
-                log::debug!("Mode: {}", mode);
-                let parems = cli::handle_mode(mode, sub_args).await;
+        let mode_type: Mode = Mode::from(mode);
+        debug!("Mode: {}", mode_type);
+        let parems = cli::handle_mode(mode, sub_args).await;
 
-                match mode {
-                    "online" => net::online_fluereflow::packet_capture(parems).await,
-                    "offline" => net::fluereflow_fileparse(parems).await,
-                    "live" => net::live_fluereflow::packet_capture(parems)
-                        .await
-                        .expect("Error on live mode"),
-                    "pcap" => net::pcap_capture(parems).await,
-                    _ => unreachable!(),
-                }
-            }
+        let _log_stdout = Logstdout::Stdout;
+        let _log_file :Option<File> = None;
+        let _log_level = Level::Info;
+        let logger = Logger::new(None,Some(Level::Trace), Some(Logstdout::Stdout),false);
 
-            // Match occures from the CLI side, which make this unreachable
-            _ => unreachable!()
+
+        // (Args, u8)
+        let filter = from_verbose(parems.1);
+        let _ =  log::set_boxed_logger(Box::new(logger))
+            .map(|()| log::set_max_level(filter)); 
+        
+        debug!("Fluere started"); 
+        
+        match mode_type {
+            Mode::Online => net::online_fluereflow::packet_capture(parems.0).await,
+            Mode::Offline => net::fluereflow_fileparse(parems.0).await,
+            Mode::Live => net::live_fluereflow::packet_capture(parems.0)
+                .await
+                .expect("Error on live mode"),
+            Mode::Pcap => net::pcap_capture(parems.0).await,
+            _ => unreachable!(),
         }
     } else {
         exit(0);
