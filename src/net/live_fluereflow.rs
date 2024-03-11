@@ -1,29 +1,13 @@
 // This file contains the implementation of the live packet capture functionality.
 // It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
 // The data is then displayed in a terminal user interface using the ratatui library.
-extern crate csv;
-
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+use std::{
+    collections::HashMap,
+    fs, 
+    io,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
 };
-
-use fluere_config::Config;
-use fluere_plugin::PluginManager;
-use fluereflow::FluereRecord;
-
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
-    Frame, Terminal,
-};
-use tokio::sync::Mutex;
-use tokio::task;
-use tokio::time::sleep;
-
 use crate::{
     net::{
         find_device,
@@ -36,12 +20,29 @@ use crate::{
     utils::{cur_time_file, fluere_exporter},
 };
 
-use std::{
-    collections::HashMap,
-    fs, io,
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
+use fluere_config::Config;
+use fluere_plugin::PluginManager;
+use fluereflow::FluereRecord;
+
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
+    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
+    Frame, Terminal,
+};
+use tokio::{
+    sync::Mutex,
+    task,
+    time::sleep,
+};
+use log::{info, debug, trace};
+
 
 const MAX_RECENT_FLOWS: usize = 50;
 
@@ -49,9 +50,10 @@ const MAX_RECENT_FLOWS: usize = 50;
 // It takes the command line arguments as input and calls the online_packet_capture function.
 // It returns a Result indicating whether the operation was successful.
 pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
-    println!("TUI");
+    debug!("Starting Terminal User Interface");
 
     online_packet_capture(arg).await;
+    debug!("Terminal User Interface Stopped");
     Ok(())
 }
 #[derive(Debug, Clone)]
@@ -74,7 +76,6 @@ pub async fn online_packet_capture(arg: Args) {
     let interval = arg.parameters.interval.unwrap();
     let flow_timeout = arg.parameters.timeout.unwrap();
     let sleep_windows = arg.parameters.sleep_windows.unwrap();
-    let verbose = arg.verbose.unwrap();
     let config = Config::new();
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
     let plugin_worker = plugin_manager.start_worker();
@@ -90,11 +91,7 @@ pub async fn online_packet_capture(arg: Args) {
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
+        Ok(_) => debug!("Created directory: {}", file_dir),
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
 
@@ -179,9 +176,7 @@ pub async fn online_packet_capture(arg: Args) {
                 continue;
             }
             Ok(packet) => {
-                if verbose >= 3 {
-                    println!("received packet");
-                }
+                trace!("received packet");
 
                 let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
                     Ok(keys) => keys,
@@ -209,9 +204,7 @@ pub async fn online_packet_capture(arg: Args) {
                             if flowdata.prot == 6 {
                                 if flags.syn > 0 {
                                     active_flow_guard.insert(key_value, flowdata);
-                                    if verbose >= 2 {
-                                        println!("flow established");
-                                    }
+                                    trace!("flow established");
                                     let mut recent_flows_guard = recent_flows.lock().await;
                                     recent_flows_guard.push(FlowSummary {
                                         src: key_value.src_ip.to_string(),
@@ -228,9 +221,7 @@ pub async fn online_packet_capture(arg: Args) {
                                 }
                             } else {
                                 active_flow_guard.insert(key_value, flowdata);
-                                if verbose >= 2 {
-                                    println!("flow established");
-                                }
+                                trace!("flow established");
                                 let mut recent_flows_guard = recent_flows.lock().await;
                                 recent_flows_guard.push(FlowSummary {
                                     src: key_value.src_ip.to_string(),
@@ -270,17 +261,13 @@ pub async fn online_packet_capture(arg: Args) {
                     };
                     update_flow(flow, is_reverse, update_key);
 
-                    if verbose >= 2 {
-                        println!(
+                        trace!(
                             "{} flow updated",
                             if is_reverse { "reverse" } else { "forward" }
                         );
-                    }
 
                     if flags.fin == 1 || flags.rst == 1 {
-                        if verbose >= 2 {
-                            println!("flow finished");
-                        }
+                        trace!("flow finished");
                         plugin_manager.process_flow_data(*flow).await.unwrap();
                         records.push(*flow);
                         active_flow_guard.remove(flow_key);
@@ -289,12 +276,10 @@ pub async fn online_packet_capture(arg: Args) {
 
                 packet_count += 1;
                 // slow down the loop for windows to avoid random shutdown
-                if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
-                    if verbose >= 3 {
-                        println!("Slow down the loop for windows");
-                    }
-                    sleep(Duration::from_millis(0)).await;
-                }
+                // if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
+                //         println!("Slow down the loop for windows");
+                //     sleep(Duration::from_millis(0)).await;
+                // }
 
                 // Export flows if the interval has been reached
                 let mut last_export_guard = last_export.lock().await;
@@ -304,9 +289,7 @@ pub async fn online_packet_capture(arg: Args) {
                     packet_count = 0;
                     for (key, flow) in active_flow_guard.iter() {
                         if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
-                            if verbose >= 2 {
-                                println!("flow expired");
-                            }
+                            trace!("flow expired");
                             plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
@@ -314,7 +297,7 @@ pub async fn online_packet_capture(arg: Args) {
                     }
                     active_flow_guard.retain(|key, _| !expired_flows.contains(key));
                     let cloned_records = records.clone();
-                    println!("{} flows exported", records.len());
+                    debug!("{} flows exported", records.len());
                     records.clear();
                     let tasks = task::spawn(async {
                         fluere_exporter(cloned_records, file);
@@ -338,9 +321,7 @@ pub async fn online_packet_capture(arg: Args) {
                     let mut expired_flows = vec![];
                     for (key, flow) in active_flow_guard.iter() {
                         if flow.last < (time - (flow_timeout * 1000)) {
-                            if verbose >= 2 {
-                                println!("flow expired");
-                            }
+                            trace!("flow expired");
                             plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
@@ -352,9 +333,7 @@ pub async fn online_packet_capture(arg: Args) {
             }
         }
     }
-    if verbose >= 1 {
-        println!("Captured in {:?}", start.elapsed());
-    }
+    debug!("Captured in {:?}", start.elapsed());
     let active_flow_guard = active_flow.lock().await;
 
     for (_key, flow) in active_flow_guard.iter() {
@@ -367,9 +346,7 @@ pub async fn online_packet_capture(arg: Args) {
     });
 
     let result = tasks.await;
-    if verbose >= 1 {
-        println!("Exporting task excutation result: {:?}", result);
-    }
+    debug!("Exporting task excutation result: {:?}", result);
     let _ = draw_task.await;
     disable_raw_mode().expect("failed to disable raw mode");
     let mut terminal_guard = terminal.lock().await;
