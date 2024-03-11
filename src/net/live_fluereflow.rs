@@ -85,8 +85,8 @@ pub async fn online_packet_capture(arg: Args) {
         .expect("Failed to load plugins");
 
     let interface = find_device(interface_name.as_str()).unwrap();
-    let cap_device = CaptureDevice::new(interface.clone()).unwrap();
-    let mut cap = cap_device.capture;
+    let mut cap_device = CaptureDevice::new(interface.clone()).unwrap();
+    let cap = &mut cap_device.capture;
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
