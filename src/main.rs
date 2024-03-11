@@ -58,6 +58,19 @@ enum Mode {
     Live,
     Pcap,
 }
+impl From<&str> for Mode {
+    fn from(s: &str) -> Self {
+        match s {
+            "offline" => Mode::Offline,
+            "online" => Mode::Online,
+            "live" => Mode::Live,
+            "pcap" => Mode::Pcap,
+
+            // Match occures from the CLI side, which make this unreachable
+            _ => unreachable!(),
+        }
+    }
+}
 impl Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -75,6 +88,7 @@ struct Fluere {
     mode: Mode,
     logger: Logger,
     verbose: Level,
+    // interfaces: Vec<Device>,
 }
 impl Fluere {
     fn new(
