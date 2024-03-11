@@ -1,7 +1,7 @@
-extern crate pcap;
+use std::time::Instant;
+
 use pcap::Device;
 use pnet::datalink::{self, NetworkInterface};
-use std::time::Instant;
 
 pub fn get_interface(device_name: &str) -> Device {
     let start = Instant::now();
@@ -62,9 +62,6 @@ pub fn get_default_interface_name(interfaces: &[NetworkInterface]) -> String {
         .clone()
 }*/
 
-pub fn list_interfaces() -> Vec<NetworkInterface> {
-    datalink::interfaces()
-}
 pub fn list_interface_names() {
     let interfaces = Device::list();
     /*let mut interface_names: Vec<String> = Vec::new();
