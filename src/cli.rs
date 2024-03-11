@@ -75,9 +75,9 @@ pub fn cli_template() -> Command {
                 .arg(
                     Arg::new("verbose")
                         .help("Set verbosity level") 
-                        .default_value("1")
+                        .default_value("2")
                         .short('v')
-                        .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
+                        .long("verbose"), // 0: Error, 1: Warning, 2: Info, 3: Debug 4: Trace
                 ),
         )
         .subcommand(
@@ -114,9 +114,9 @@ pub fn cli_template() -> Command {
                 .arg(
                     Arg::new("verbose")
                         .help("Set verbosity level")
-                        .default_value("1")
+                        .default_value("2")
                         .short('v')
-                        .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
+                        .long("verbose"), // 0: Error, 1: Warning, 2: Info, 3: Debug 4: Trace
                 ),
         )
         .subcommand(
@@ -181,9 +181,9 @@ pub fn cli_template() -> Command {
                 .arg(
                     Arg::new("verbose")
                         .help("Set verbosity level") 
-                        .default_value("1")
+                        .default_value("2")
                         .short('v')
-                        .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
+                        .long("verbose"), // 0: Error, 1: Warning, 2: Info, 3: Debug 4: Trace
                 ),
         )
         .subcommand(
@@ -234,15 +234,15 @@ pub fn cli_template() -> Command {
                 .arg(
                     Arg::new("verbose")
                         .help("Set verbosity level")
-                        .default_value("1")
+                        .default_value("2")
                         .short('v')
-                        .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
+                        .long("verbose"), // 0: Error, 1: Warn, 2: Info, 3: Debug, 4: Trace
                 ),
         )
 }
 
-pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Args {
-    let _verbose = args
+pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
+    let verbose = args
         .get_one::<String>("verbose")
         .map_or(0, |v| v.parse::<u8>().unwrap_or(0));
     if args.get_flag("list") {
@@ -254,12 +254,14 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Args {
         exit(0);
     }
 
-    match mode {
+   let arg_data =  match mode {
         "online" | "live" => parse_online_live_args(args, mode),
         "offline" => parse_offline_args(args),
         "pcap" => parse_pcap_args(args),
         _ => unreachable!(),
-    }
+    };
+
+    (arg_data, verbose)
 }
 
 fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
@@ -292,11 +294,11 @@ fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
         .unwrap()
         .parse::<u64>()
         .unwrap();
-    let verbose = args
-        .get_one::<String>("verbose")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+    // let verbose = args
+    //     .get_one::<String>("verbose")
+    //     .unwrap()
+    //     .parse::<u8>()
+    //     .unwrap();
 
     Args::new(
         Some(interface),
@@ -308,7 +310,7 @@ fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
             Some(interval),
             Some(sleep_windows),
         ),
-        Some(verbose),
+        // Some(verbose),
     )
 }
 fn parse_offline_args(args: &clap::ArgMatches) -> Args {
@@ -323,17 +325,17 @@ fn parse_offline_args(args: &clap::ArgMatches) -> Args {
         .unwrap()
         .parse::<u64>()
         .unwrap();
-    let verbose = args
-        .get_one::<String>("verbose")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+    // let verbose = args
+        // .get_one::<String>("verbose")
+        // .unwrap()
+        // .parse::<u8>()
+        // .unwrap();
 
     Args::new(
         None,
         Files::new(Some(csv), Some(file), None),
         Parameters::new(Some(use_mac), Some(timeout), None, None, None),
-        Some(verbose),
+        // Some(verbose),
     )
 }
 fn parse_pcap_args(args: &clap::ArgMatches) -> Args {
@@ -360,11 +362,11 @@ fn parse_pcap_args(args: &clap::ArgMatches) -> Args {
         .unwrap()
         .parse::<u64>()
         .unwrap();
-    let verbose = args
-        .get_one::<String>("verbose")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+    // let verbose = args
+    //     .get_one::<String>("verbose")
+    //     .unwrap()
+    //     .parse::<u8>()
+    //     .unwrap();
 
     Args::new(
         Some(interface),
@@ -376,6 +378,6 @@ fn parse_pcap_args(args: &clap::ArgMatches) -> Args {
             Some(interval),
             Some(sleep_windows),
         ),
-        Some(verbose),
+        // Some(verbose),
     )
 }
