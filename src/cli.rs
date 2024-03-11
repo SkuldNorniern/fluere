@@ -1,4 +1,9 @@
-use clap::{Arg, ArgAction, Command};
+use std::process::exit;
+
+use crate::types::{Args, Files, Parameters};
+
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use pcap::Device;
 
 // This function sets up the command line interface for the application using the clap library.
 // It defines the available commands and their arguments.
@@ -234,4 +239,143 @@ pub fn cli_template() -> Command {
                         .long("verbose"), // 0: quiet, 1: normal,2: extended, 3: verbose
                 ),
         )
+}
+
+pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Args {
+    let _verbose = args
+        .get_one::<String>("verbose")
+        .map_or(0, |v| v.parse::<u8>().unwrap_or(0));
+    if args.get_flag("list") {
+        println!("List of network interfaces");
+        println!("--------------------------");
+        for (i, device) in Device::list().unwrap().iter().enumerate() {
+            println!("[{}] {}", i, device.name);
+        }
+        exit(0);
+    }
+
+    match mode {
+        "online" | "live" => parse_online_live_args(args, mode),
+        "offline" => parse_offline_args(args),
+        "pcap" => parse_pcap_args(args),
+        _ => unreachable!(),
+    }
+}
+
+fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
+    let use_mac = args.get_flag("useMACaddress");
+    let csv = args
+        .get_one::<String>("csv")
+        .expect("CSV file not specified")
+        .to_string();
+    let interface = args
+        .get_one::<String>("interface")
+        .expect("Network interface not specified")
+        .to_string();
+    let timeout = args
+        .get_one::<String>("timeout")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let duration = args
+        .get_one::<String>("duration")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let interval = args
+        .get_one::<String>("interval")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let sleep_windows = args
+        .get_one::<String>("sleep_windows")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let verbose = args
+        .get_one::<String>("verbose")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+
+    Args::new(
+        Some(interface),
+        Files::new(Some(csv), None, None),
+        Parameters::new(
+            Some(use_mac),
+            Some(timeout),
+            Some(duration),
+            Some(interval),
+            Some(sleep_windows),
+        ),
+        Some(verbose),
+    )
+}
+fn parse_offline_args(args: &clap::ArgMatches) -> Args {
+    let use_mac = args.get_flag("useMACaddress");
+    let file = args
+        .get_one::<String>("file")
+        .expect("File not specified")
+        .to_string();
+    let csv = args.get_one::<String>("csv").unwrap().to_string();
+    let timeout = args
+        .get_one::<String>("timeout")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let verbose = args
+        .get_one::<String>("verbose")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+
+    Args::new(
+        None,
+        Files::new(Some(csv), Some(file), None),
+        Parameters::new(Some(use_mac), Some(timeout), None, None, None),
+        Some(verbose),
+    )
+}
+fn parse_pcap_args(args: &clap::ArgMatches) -> Args {
+    let pcap = args
+        .get_one::<String>("pcap")
+        .expect("Output PCAP file name not specified")
+        .to_string();
+    let interface = args
+        .get_one::<String>("interface")
+        .expect("Network interface not specified")
+        .to_string();
+    let duration = args
+        .get_one::<String>("duration")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let interval = args
+        .get_one::<String>("interval")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let sleep_windows = args
+        .get_one::<String>("sleep_windows")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let verbose = args
+        .get_one::<String>("verbose")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+
+    Args::new(
+        Some(interface),
+        Files::new(None, None, Some(pcap)),
+        Parameters::new(
+            None,
+            None,
+            Some(duration),
+            Some(interval),
+            Some(sleep_windows),
+        ),
+        Some(verbose),
+    )
 }
