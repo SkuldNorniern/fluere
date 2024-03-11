@@ -12,6 +12,9 @@ use std::time::Duration;
 
 use crate::util::home_cache_path;
 
+#[cfg(feature = "log")]
+use log::{debug, info, trace, warn, error};
+
 #[derive(Debug)]
 pub enum DownloadError {
     Io(std::io::Error),
@@ -81,7 +84,11 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
             if has_local_changes(&repo)? {
                 println!("{}: You have uncommitted changes. Updating will overwrite these changes. Continue? [y/N] (auto skip in 5 seconds)","Warning".styled(warn_style));
                 if !user_confirms()? {
+                    #[cfg(feature = "log")]
+                    info!("Update skipped for {}", repo_name.styled(highlight_style));
+                    #[cfg(not(feature = "log"))]
                     println!("Update skipped for {}", repo_name.styled(highlight_style));
+                    
                     return Ok(());
                 }
             }
@@ -96,14 +103,26 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
             repo.checkout_tree(fetch_commit_obj.as_object(), Some(&mut checkout_builder))?;
             repo.set_head_detached(fetch_commit)?;
 
+            #[cfg(feature = "log")]
+            info!(
+                "Successfully updated to the latest version for {}",
+                repo_name.styled(highlight_style)
+            );
+            #[cfg(not(feature = "log"))]
             println!(
                 "Successfully updated to the latest version for {}",
                 repo_name.styled(highlight_style)
             );
         } else {
+            #[cfg(feature = "log")]
+             info!("Update skipped for {}", repo_name.styled(highlight_style));
+            #[cfg(not(feature = "log"))]
             println!("Update skipped for {}", repo_name.styled(highlight_style));
         }
     } else {
+        #[cfg(feature = "log")]
+        info!("{} is up to date.", repo_name.styled(highlight_style));
+        #[cfg(not(feature = "log"))]
         println!("{} is up to date.", repo_name.styled(highlight_style));
     }
 
@@ -129,7 +148,9 @@ fn user_confirms() -> Result<bool, DownloadError> {
     match receiver.recv_timeout(Duration::from_secs(5)) {
         Ok(result) => Ok(result),
         Err(_) => {
-            print!("Timeout. ");
+            #[cfg(feature = "log")]
+            debug!("Timeout. ");
+
             Ok(false)
         }
     }
