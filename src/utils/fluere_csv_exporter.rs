@@ -1,5 +1,5 @@
 use fluereflow::FluereRecord;
-use log::{ debug, trace};
+use log::{debug, trace};
 use std::fs::File;
 
 pub fn fluere_exporter(records: Vec<FluereRecord>, file: File) {

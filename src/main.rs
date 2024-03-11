@@ -10,18 +10,22 @@ pub mod plugin;
 pub mod types;
 pub mod utils;
 
-use std::{fmt::Display, process::exit};
 use std::fs::File;
+use std::{fmt::Display, process::exit};
 
 use crate::logger::{Logger, Logstdout};
 use crate::net::capture::DeviceError;
 // use env_logger;::{init, Logger};
 
-use log::{Level, LevelFilter, info, debug};
-
+use log::{debug, info, Level, LevelFilter};
 
 // FEAT:MAYBE: seprate `std` as feature flag for fluere and log crate
-static LOGGER: Logger = Logger{write_to_file: false, file: None, write_to_std: Some(Logstdout::Stdout), severity: Level::Info};
+static LOGGER: Logger = Logger {
+    write_to_file: false,
+    file: None,
+    write_to_std: Some(Logstdout::Stdout),
+    severity: Level::Info,
+};
 
 #[derive(Debug)]
 enum FluereError {
@@ -82,17 +86,16 @@ impl Display for Mode {
     }
 }
 
-
-    fn from_verbose(level: u8) -> LevelFilter {
-        match level {
-            0 => LevelFilter::Error,
-            1 => LevelFilter::Warn,
-            2 => LevelFilter::Info,
-            3 => LevelFilter::Debug,
-            4 => LevelFilter::Trace,
-            _ => unreachable!(),
-        }
+fn from_verbose(level: u8) -> LevelFilter {
+    match level {
+        0 => LevelFilter::Error,
+        1 => LevelFilter::Warn,
+        2 => LevelFilter::Info,
+        3 => LevelFilter::Debug,
+        4 => LevelFilter::Trace,
+        _ => unreachable!(),
     }
+}
 
 struct Fluere {
     interface: String,
@@ -128,34 +131,31 @@ impl Fluere {
 #[tokio::main]
 async fn main() {
     let args = cli::cli_template().get_matches();
-    
-        // let mode = match args.subcommand() {
-        // Some((mode, _sub_args)) => mode,
-        // None => {
-            // log::error!("No mode selected. Use --help for more information.");
-            // exit(1);
-        // }
+
+    // let mode = match args.subcommand() {
+    // Some((mode, _sub_args)) => mode,
+    // None => {
+    // log::error!("No mode selected. Use --help for more information.");
+    // exit(1);
+    // }
     // };
 
-   
     if let Some((mode, sub_args)) = args.subcommand() {
         let mode_type: Mode = Mode::from(mode);
         debug!("Mode: {}", mode_type);
         let parems = cli::handle_mode(mode, sub_args).await;
 
         let _log_stdout = Logstdout::Stdout;
-        let _log_file :Option<File> = None;
+        let _log_file: Option<File> = None;
         let _log_level = Level::Info;
-        let logger = Logger::new(None,Some(Level::Trace), Some(Logstdout::Stdout),false);
-
+        let logger = Logger::new(None, Some(Level::Trace), Some(Logstdout::Stdout), false);
 
         // (Args, u8)
         let filter = from_verbose(parems.1);
-        let _ =  log::set_boxed_logger(Box::new(logger))
-            .map(|()| log::set_max_level(filter)); 
-        
-        debug!("Fluere started"); 
-        
+        let _ = log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(filter));
+
+        debug!("Fluere started");
+
         match mode_type {
             Mode::Online => net::online_fluereflow::packet_capture(parems.0).await,
             Mode::Offline => net::fluereflow_fileparse(parems.0).await,

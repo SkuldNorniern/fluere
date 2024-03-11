@@ -11,9 +11,9 @@ use crate::{
 };
 
 use fluereflow::FluereRecord;
+use log::{debug, info, trace};
 use pcap::Capture;
 use tokio::task;
-use log::{info, debug, trace};
 
 pub async fn fluereflow_fileparse(arg: Args) {
     let csv_file = arg.files.csv.unwrap();
@@ -63,15 +63,14 @@ pub async fn fluereflow_fileparse(arg: Args) {
                         if flags.syn > 0 {
                             active_flow.insert(key_value, flowdata);
 
-                                trace!("flow established");
-
+                            trace!("flow established");
                         } else {
                             continue;
                         }
                     } else {
                         active_flow.insert(key_value, flowdata);
 
-                            trace!("flow established");
+                        trace!("flow established");
                     }
 
                     false
@@ -115,10 +114,10 @@ pub async fn fluereflow_fileparse(arg: Args) {
             };
             update_flow(flow, is_reverse, update_key);
 
-                trace!(
-                    "{} flow updated",
-                    if is_reverse { "reverse" } else { "forward" }
-                );
+            trace!(
+                "{} flow updated",
+                if is_reverse { "reverse" } else { "forward" }
+            );
 
             if flags.fin == 1 || flags.rst == 1 {
                 trace!("flow finished");
@@ -130,7 +129,7 @@ pub async fn fluereflow_fileparse(arg: Args) {
     info!("Captured in {:?}", start.elapsed());
     let ac_flow_cnt = active_flow.len();
     let ended_flow_cnt = records.len();
-    
+
     for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }
@@ -142,5 +141,5 @@ pub async fn fluereflow_fileparse(arg: Args) {
     info!("Export {} result: {:?}", file_path, result);
 
     println!("Active flow {:?}", ac_flow_cnt);
-    println!("Ended flow {:?}", ended_flow_cnt); 
+    println!("Ended flow {:?}", ended_flow_cnt);
 }
