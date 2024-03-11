@@ -1,13 +1,6 @@
 // This file contains the implementation of the live packet capture functionality.
 // It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
 // The data is then displayed in a terminal user interface using the ratatui library.
-use std::{
-    collections::HashMap,
-    fs, 
-    io,
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
 use crate::{
     net::{
         find_device,
@@ -19,6 +12,12 @@ use crate::{
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
 };
+use std::{
+    collections::HashMap,
+    fs, io,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
 
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
@@ -29,6 +28,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use log::{debug, trace};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -36,13 +36,7 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
     Frame, Terminal,
 };
-use tokio::{
-    sync::Mutex,
-    task,
-    time::sleep,
-};
-use log::{info, debug, trace};
-
+use tokio::{sync::Mutex, task};
 
 const MAX_RECENT_FLOWS: usize = 50;
 
@@ -75,7 +69,7 @@ pub async fn online_packet_capture(arg: Args) {
     let duration = arg.parameters.duration.unwrap();
     let interval = arg.parameters.interval.unwrap();
     let flow_timeout = arg.parameters.timeout.unwrap();
-    let sleep_windows = arg.parameters.sleep_windows.unwrap();
+    let _sleep_windows = arg.parameters.sleep_windows.unwrap();
     let config = Config::new();
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
     let plugin_worker = plugin_manager.start_worker();
@@ -261,10 +255,10 @@ pub async fn online_packet_capture(arg: Args) {
                     };
                     update_flow(flow, is_reverse, update_key);
 
-                        trace!(
-                            "{} flow updated",
-                            if is_reverse { "reverse" } else { "forward" }
-                        );
+                    trace!(
+                        "{} flow updated",
+                        if is_reverse { "reverse" } else { "forward" }
+                    );
 
                     if flags.fin == 1 || flags.rst == 1 {
                         trace!("flow finished");

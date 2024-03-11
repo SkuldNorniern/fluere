@@ -254,7 +254,7 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
         exit(0);
     }
 
-   let arg_data =  match mode {
+    let arg_data = match mode {
         "online" | "live" => parse_online_live_args(args, mode),
         "offline" => parse_offline_args(args),
         "pcap" => parse_pcap_args(args),
@@ -326,10 +326,10 @@ fn parse_offline_args(args: &clap::ArgMatches) -> Args {
         .parse::<u64>()
         .unwrap();
     // let verbose = args
-        // .get_one::<String>("verbose")
-        // .unwrap()
-        // .parse::<u8>()
-        // .unwrap();
+    // .get_one::<String>("verbose")
+    // .unwrap()
+    // .parse::<u8>()
+    // .unwrap();
 
     Args::new(
         None,

@@ -1,9 +1,9 @@
-use std::{fmt, time::Instant, borrow::Cow};
+use std::{borrow::Cow, fmt, time::Instant};
 
 use crate::net::NetError;
 
+use log::{debug, info};
 use pcap::{Active, Address, Capture, Device, Error as PcapError};
-use log::{info, debug};
 
 #[derive(Debug)]
 pub enum DeviceError {
@@ -30,7 +30,7 @@ pub struct CaptureDevice {
 impl CaptureDevice {
     pub fn new(device: Device) -> Result<CaptureDevice, PcapError> {
         let capture = initialize_capture(device.clone())?;
-        let name: Cow<'static, str> =  Cow::Owned(device.name);
+        let name: Cow<'static, str> = Cow::Owned(device.name);
         let desc: Cow<'static, str> = Cow::Owned(device.desc.unwrap_or("".to_string()));
 
         Ok(CaptureDevice {
@@ -82,10 +82,10 @@ pub fn find_device(identifier: &str) -> Result<Device, NetError> {
 
 fn initialize_capture(device: Device) -> Result<Capture<Active>, PcapError> {
     info!("Opening capture session for device {}", device.name);
-    Ok(Capture::from_device(device)?
+    Capture::from_device(device)?
         .promisc(true)
         .snaplen(1024)
         .timeout(60000)
         .immediate_mode(true)
-        .open()?)
+        .open()
 }
