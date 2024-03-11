@@ -1,8 +1,3 @@
-use fluere_config::Config;
-use fluereflow::FluereRecord;
-use mlua::{Lua, Result};
-use tokio::sync::{mpsc, Mutex};
-
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -11,6 +6,14 @@ mod util;
 
 use downloader::download_plugin_from_github;
 use util::home_cache_path;
+
+use fluere_config::Config;
+use fluereflow::FluereRecord;
+use mlua::{Lua, Result};
+use tokio::sync::{mpsc, Mutex};
+
+#[cfg(feature = "log")]
+use log::{debug, info, trace, warn, error};
 
 pub struct PluginManager {
     lua: Arc<Mutex<Lua>>,
@@ -34,6 +37,9 @@ impl PluginManager {
     }
 
     pub async fn load_plugins(&self, config: &Config) -> Result<()> {
+        #[cfg(feature = "log")]
+        debug!("Loading plugins");
+
         let plugins_clone = self.plugins.clone();
         let mut plugins_guard = plugins_clone.lock().await;
         for (name, plugin_config) in &config.plugins {
@@ -50,7 +56,10 @@ impl PluginManager {
                                 let lua_clone = self.lua.clone();
                                 let lua_guard = lua_clone.lock().await;
                                 let lua = &*lua_guard;
-                                // println!("lua path: {}", path);
+
+                                #[cfg(feature = "log")]
+                                debug!("Lua path: {}", path);
+
                                 let lua_plugin_path =
                                     format!("package.path = package.path .. \";{}/?.lua\"", path);
                                 let _ = lua.load(lua_plugin_path).exec();
@@ -61,7 +70,9 @@ impl PluginManager {
 
                                 let argument_table = lua.create_table()?;
 
-                                // println!("extra argument details{:?}", plugin_config.extra_arguments);
+                                #[cfg(feature = "log")]
+                                debug!("extra argument details{:?}", plugin_config.extra_arguments);
+
                                 for (key, value) in
                                     plugin_config.extra_arguments.clone().unwrap().iter()
                                 {
@@ -89,11 +100,22 @@ impl PluginManager {
                                 //lua_guard.load(&code).exec().expect(format!("Error on plugin: {}", name).as_str());
 
                                 plugins_guard.insert(name.clone());
+                                #[cfg(feature = "log")]
+                                info!("Loaded plugin {}", name);
+                                #[cfg(not(feature = "log"))]
                                 println!("Loaded plugin {}", name);
                             }
                             Err(err) => {
-                                println!("Failed to read plugin: {}", name);
-                                println!("Error: {}", err);
+                                #[cfg(feature = "log")]
+                                {
+                                warn!("Failed to read plugin: {}", name);
+                                error!("Error: {}", err);
+                                }
+                                #[cfg(not(feature = "log"))]
+                                {
+                                    println!("Failed to read plugin: {}", name);
+                                    println!("Error: {}", err);
+                                }
                                 continue;
                             }
                         };
@@ -147,18 +169,37 @@ impl PluginManager {
                                         Ok(())
                                         }).expect(format!("Error on plugin: {}", name).as_str());*/
                                         plugins_guard.insert(name.clone());
+                                        #[cfg(feature = "log")]
+                                        info!("Loaded plugin {}", name);
+                                        #[cfg(not(feature = "log"))]
                                         println!("Loaded plugin {}", name);
                                     }
                                     Err(eri) => {
-                                        println!("Failed to read plugin: {}", name);
-                                        println!("Error: {}", eri);
+                                        #[cfg(feature = "log")]
+                                        {
+                                            warn!("Failed to read plugin: {}", name);
+                                            error!("Error: {}", eri);
+                                        }
+                                        #[cfg(not(feature = "log"))]
+                                        {
+                                            println!("Failed to read plugin: {}", name);
+                                            println!("Error: {}", eri);
+                                        }
                                         continue;
                                     }
                                 }
                             }
                             Err(eri) => {
-                                println!("Unable to download plugin: {}", name);
-                                println!("Error: {}", eri);
+                                #[cfg(feature = "log")]
+                                {
+                                    warn!("Unable to download plugin: {}", name);
+                                    error!("Error: {}", eri);
+                                }
+                                #[cfg(not(feature = "log"))]
+                                {
+                                    println!("Unable to download plugin: {}", name);
+                                    println!("Error: {}", eri);
+                                }
                             }
                         }
                     }
@@ -233,10 +274,14 @@ impl PluginManager {
                             func.call::<mlua::Table<'_>, ()>(lua_table.clone())
                                 .unwrap_or_else(|_| panic!("Error on plugin: {}", plugin_name));
                         } else {
-                            println!(
+                            #[cfg(feature = "log")]
+                            error!(
                                 "'process_data' function not found in plugin: {}",
                                 plugin_name
                             );
+
+                            #[cfg(not(feature = "log"))]
+                            println!("'process_data' function not found in plugin: {}", plugin_name);
                         }
                     }
                 })
@@ -272,6 +317,9 @@ impl PluginManager {
                 func.call::<(), ()>(())
                     .unwrap_or_else(|_| panic!("Error on plugin: {}", plugin_name));
             } else {
+                #[cfg(feature = "log")]
+                warn!("cleanup function not found in plugin: {}", plugin_name);
+                #[cfg(not(feature = "log"))]
                 println!("cleanup function not found in plugin: {}", plugin_name);
             }
         }
