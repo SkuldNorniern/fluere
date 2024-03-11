@@ -13,7 +13,7 @@ use std::time::Duration;
 use crate::util::home_cache_path;
 
 #[cfg(feature = "log")]
-use log::{debug, info, trace, warn, error};
+use log::{debug, info};
 
 #[derive(Debug)]
 pub enum DownloadError {
@@ -88,7 +88,7 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
                     info!("Update skipped for {}", repo_name.styled(highlight_style));
                     #[cfg(not(feature = "log"))]
                     println!("Update skipped for {}", repo_name.styled(highlight_style));
-                    
+
                     return Ok(());
                 }
             }
@@ -115,7 +115,7 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
             );
         } else {
             #[cfg(feature = "log")]
-             info!("Update skipped for {}", repo_name.styled(highlight_style));
+            info!("Update skipped for {}", repo_name.styled(highlight_style));
             #[cfg(not(feature = "log"))]
             println!("Update skipped for {}", repo_name.styled(highlight_style));
         }
