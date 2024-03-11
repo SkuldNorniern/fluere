@@ -1,8 +1,4 @@
-extern crate csv;
-
-use fluereflow::FluereRecord;
-use pcap::Capture;
-use tokio::task;
+use std::{collections::HashMap, fs, time::Instant};
 
 use crate::{
     net::{
@@ -14,23 +10,23 @@ use crate::{
     utils::{cur_time_file, fluere_exporter},
 };
 
-use std::{collections::HashMap, fs, time::Instant};
+use fluereflow::FluereRecord;
+use pcap::Capture;
+use tokio::task;
+use log::{info, debug, trace};
 
 pub async fn fluereflow_fileparse(arg: Args) {
     let csv_file = arg.files.csv.unwrap();
     let file_name = arg.files.file.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
     let _flow_timeout = arg.parameters.timeout.unwrap();
-    let verbose = arg.verbose.unwrap();
 
     let mut cap = Capture::from_file(file_name).unwrap();
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
         Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
+            debug!("Created directory: {}", file_dir)
         }
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
@@ -66,17 +62,16 @@ pub async fn fluereflow_fileparse(arg: Args) {
                     if flowdata.prot == 6 {
                         if flags.syn > 0 {
                             active_flow.insert(key_value, flowdata);
-                            if verbose >= 2 {
-                                println!("flow established");
-                            }
+
+                                trace!("flow established");
+
                         } else {
                             continue;
                         }
                     } else {
                         active_flow.insert(key_value, flowdata);
-                        if verbose >= 2 {
-                            println!("flow established");
-                        }
+
+                            trace!("flow established");
                     }
 
                     false
@@ -120,27 +115,22 @@ pub async fn fluereflow_fileparse(arg: Args) {
             };
             update_flow(flow, is_reverse, update_key);
 
-            if verbose >= 2 {
-                println!(
+                trace!(
                     "{} flow updated",
                     if is_reverse { "reverse" } else { "forward" }
                 );
-            }
 
             if flags.fin == 1 || flags.rst == 1 {
-                if verbose >= 2 {
-                    println!("flow finished");
-                }
+                trace!("flow finished");
                 records.push(*flow);
                 active_flow.remove(flow_key);
             }
         }
     }
-    if verbose >= 1 {
-        println!("Captured in {:?}", start.elapsed());
-    }
-    println!("Active flow {:?}", active_flow.len());
-    println!("Ended flow {:?}", records.len());
+    info!("Captured in {:?}", start.elapsed());
+    let ac_flow_cnt = active_flow.len();
+    let ended_flow_cnt = records.len();
+    
     for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }
@@ -149,8 +139,8 @@ pub async fn fluereflow_fileparse(arg: Args) {
     });
 
     let result = tasks.await;
-    if verbose >= 1 {
-        println!("Export {} result: {:?}", file_path, result);
-    }
-    //println!("records {:?}", records);
+    info!("Export {} result: {:?}", file_path, result);
+
+    println!("Active flow {:?}", ac_flow_cnt);
+    println!("Ended flow {:?}", ended_flow_cnt); 
 }
