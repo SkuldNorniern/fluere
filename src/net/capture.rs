@@ -1,27 +1,19 @@
-use pcap::{Active, Address, Capture, Device, Error as PcapError};
+use std::{fmt, time::Instant};
 
-use std::fmt;
-use std::time::Instant;
+use crate::net::NetError;
+
+use pcap::{Active, Address, Capture, Device, Error as PcapError};
 
 #[derive(Debug)]
 pub enum DeviceError {
-    Cap(PcapError),
     DeviceNotFound(String),
-    InitializationError(),
     InvalidDeviceIndex(usize),
 }
 
-impl From<PcapError> for DeviceError {
-    fn from(err: PcapError) -> Self {
-        DeviceError::Cap(err)
-    }
-}
 impl fmt::Display for DeviceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DeviceError::Cap(err) => err.fmt(f),
             DeviceError::DeviceNotFound(err) => write!(f, "Device not found: {}", err),
-            DeviceError::InitializationError() => write!(f, "Initialization error"),
             DeviceError::InvalidDeviceIndex(err) => write!(f, "Invalid device index: {}", err),
         }
     }
@@ -35,7 +27,7 @@ pub struct CaptureDevice {
 }
 
 impl CaptureDevice {
-    pub fn new(device: Device) -> Result<CaptureDevice, DeviceError> {
+    pub fn new(device: Device) -> Result<CaptureDevice, PcapError> {
         let capture = initialize_capture(device.clone())?;
 
         Ok(CaptureDevice {
@@ -47,15 +39,17 @@ impl CaptureDevice {
     }
 }
 
-pub fn list_devices() -> Result<Vec<Device>, DeviceError> {
-    Device::list().map_err(DeviceError::Cap)
+impl Drop for CaptureDevice {
+    fn drop(&mut self) {
+        println!("Closing capture session for device {}", self.name);
+        // self.capture.;
+    }
 }
-
-pub fn find_device(identifier: &str) -> Result<Device, DeviceError> {
+pub fn find_device(identifier: &str) -> Result<Device, NetError> {
     let start = Instant::now();
     println!("Requested Device: {}", identifier);
 
-    let devices = list_devices()?;
+    let devices = Device::list()?;
 
     if let Ok(index) = identifier.parse::<usize>() {
         if let Some(device) = devices.get(index) {
@@ -63,7 +57,9 @@ pub fn find_device(identifier: &str) -> Result<Device, DeviceError> {
             println!("Device {} captured in {:?}", device.name, duration);
             return Ok(device.clone());
         } else {
-            return Err(DeviceError::InvalidDeviceIndex(index));
+            return Err(NetError::DeviceError(DeviceError::InvalidDeviceIndex(
+                index,
+            )));
         }
     }
 
@@ -75,12 +71,13 @@ pub fn find_device(identifier: &str) -> Result<Device, DeviceError> {
         }
     }
 
-    Err(DeviceError::DeviceNotFound(identifier.to_string()))
+    Err(NetError::DeviceError(DeviceError::DeviceNotFound(
+        identifier.to_string(),
+    )))
 }
 
-fn initialize_capture(device: Device) -> Result<Capture<Active>, DeviceError> {
-    Ok(Capture::from_device(device)
-        .map_err(DeviceError::Cap)?
+fn initialize_capture(device: Device) -> Result<Capture<Active>, PcapError> {
+    Ok(Capture::from_device(device)?
         .promisc(true)
         .snaplen(1024)
         .timeout(60000)
