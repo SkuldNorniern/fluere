@@ -1,11 +1,12 @@
 use fluereflow::FluereRecord;
+use log::{ debug, trace};
 use std::fs::File;
 
 pub fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
     let mut wtr = csv::Writer::from_writer(file);
 
-    // println!("Writing {} records", records.len());
-    // println!(" record: {:?}", records);
+    debug!("Writing {} records", records.len());
+    trace!(" record: {:?}", records);
     wtr.write_record([
         "source",
         "destination",
@@ -68,4 +69,5 @@ pub fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
         ])
         .unwrap();
     }
+    debug!("Wrote {} records", records.len());
 }
