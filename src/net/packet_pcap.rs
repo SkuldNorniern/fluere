@@ -1,15 +1,14 @@
-extern crate chrono;
-
 use std::fs;
-
-use tokio::time::sleep;
+use std::time::{Duration, Instant};
 
 use crate::net::find_device;
 use crate::net::CaptureDevice;
 use crate::types::Args;
 use crate::utils::cur_time_file;
 
-use std::time::{Duration, Instant};
+use tokio::time::sleep;
+use log::{info, debug, trace};
+
 
 pub async fn pcap_capture(args: Args) {
     let pcap_file = args.files.pcap.unwrap();
@@ -17,7 +16,6 @@ pub async fn pcap_capture(args: Args) {
     let duration = args.parameters.duration.unwrap();
     let _interval = args.parameters.interval.unwrap();
     let sleep_windows = args.parameters.sleep_windows.unwrap();
-    let verbose = args.verbose.unwrap();
 
     let interface = find_device(interface_name.as_str()).unwrap();
     let mut cap_device = CaptureDevice::new(interface.clone()).unwrap();
@@ -26,11 +24,7 @@ pub async fn pcap_capture(args: Args) {
     let file_dir = "./output";
     let mut packet_count = 0;
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            if verbose >= 1 {
-                println!("Created directory: {}", file_dir)
-            }
-        }
+        Ok(_) => debug!("Created directory: {}", file_dir),
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
 
@@ -42,27 +36,21 @@ pub async fn pcap_capture(args: Args) {
 
     let start = Instant::now();
     while let Ok(packet) = cap.next_packet() {
-        if verbose >= 3 {
-            println!("received packet");
-        }
+        trace!("received packet");
         //println!("packet: {:?}", packet);
         file.write(&packet);
 
         packet_count += 1;
         // slow down the loop for windows to avoid random shutdown
-        if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
-            if verbose >= 3 {
-                println!("Slow down the loop for windows");
-            }
-            sleep(Duration::from_millis(0)).await;
-        }
+        // if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
+        //         println!("Slow down the loop for windows");
+        //     sleep(Duration::from_millis(0)).await;
+        // }
 
         // Check if the duration has been reached
         if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
             break;
         }
     }
-    if verbose >= 1 {
-        println!("Captured in {:?}", start.elapsed());
-    }
+    debug!("Captured in {:?}", start.elapsed());
 }
