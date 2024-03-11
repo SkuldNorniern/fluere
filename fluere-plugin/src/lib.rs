@@ -13,7 +13,7 @@ use mlua::{Lua, Result};
 use tokio::sync::{mpsc, Mutex};
 
 #[cfg(feature = "log")]
-use log::{debug, info, trace, warn, error};
+use log::{debug, error, info, warn};
 
 pub struct PluginManager {
     lua: Arc<Mutex<Lua>>,
@@ -108,8 +108,8 @@ impl PluginManager {
                             Err(err) => {
                                 #[cfg(feature = "log")]
                                 {
-                                warn!("Failed to read plugin: {}", name);
-                                error!("Error: {}", err);
+                                    warn!("Failed to read plugin: {}", name);
+                                    error!("Error: {}", err);
                                 }
                                 #[cfg(not(feature = "log"))]
                                 {
@@ -281,7 +281,10 @@ impl PluginManager {
                             );
 
                             #[cfg(not(feature = "log"))]
-                            println!("'process_data' function not found in plugin: {}", plugin_name);
+                            println!(
+                                "'process_data' function not found in plugin: {}",
+                                plugin_name
+                            );
                         }
                     }
                 })
