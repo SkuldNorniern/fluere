@@ -6,16 +6,14 @@ use crate::net::CaptureDevice;
 use crate::types::Args;
 use crate::utils::cur_time_file;
 
-use tokio::time::sleep;
-use log::{info, debug, trace};
-
+use log::{debug, trace};
 
 pub async fn pcap_capture(args: Args) {
     let pcap_file = args.files.pcap.unwrap();
     let interface_name = args.interface.expect("interface not found");
     let duration = args.parameters.duration.unwrap();
     let _interval = args.parameters.interval.unwrap();
-    let sleep_windows = args.parameters.sleep_windows.unwrap();
+    let _sleep_windows = args.parameters.sleep_windows.unwrap();
 
     let interface = find_device(interface_name.as_str()).unwrap();
     let mut cap_device = CaptureDevice::new(interface.clone()).unwrap();

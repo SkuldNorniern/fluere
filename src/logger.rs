@@ -18,7 +18,12 @@ pub struct Logger {
 }
 
 impl Logger {
-    pub fn new(file_path: Option<PathBuf>, severity: Option<Level>, write_to_std: Option<Logstdout>, write_to_file: bool) -> Self {
+    pub fn new(
+        file_path: Option<PathBuf>,
+        severity: Option<Level>,
+        write_to_std: Option<Logstdout>,
+        write_to_file: bool,
+    ) -> Self {
         let mut path = file_path;
         if path.is_none() {
             path = Some(PathBuf::from(
@@ -45,7 +50,6 @@ impl Logger {
         if path.as_ref().unwrap().parent().is_some() {
             std::fs::create_dir_all(path.as_ref().unwrap().parent().unwrap()).unwrap();
         }
-            
 
         if write_to_file {
             file = Some(File::create(path.as_ref().unwrap()).unwrap());
@@ -73,7 +77,7 @@ impl Log for Logger {
         // Y M S, H:M:S Timezone
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S %z").to_string();
         let formatted_message = format!("[{}] [{}]: {}", timestamp, record.level(), record.args());
-        
+
         if self.write_to_std.as_ref().is_some() && record.level() <= self.severity {
             match self.write_to_std.as_ref().unwrap() {
                 Logstdout::Stdout => {

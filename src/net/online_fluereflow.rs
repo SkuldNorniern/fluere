@@ -1,15 +1,12 @@
 // This file contains the implementation of the online packet capture functionality.online
 // It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
 // The data is then exported to a CSV file.
-extern crate csv;
 
-use fluere_config::Config;
-use fluere_plugin::PluginManager;
-use fluereflow::FluereRecord;
-
-use tokio::task;
-
-use log::{info, debug, trace};
+use std::{
+    collections::HashMap,
+    fs,
+    time::{Duration, Instant},
+};
 
 use crate::{
     net::{
@@ -23,11 +20,13 @@ use crate::{
     utils::{cur_time_file, fluere_exporter},
 };
 
-use std::{
-    collections::HashMap,
-    fs,
-    time::{Duration, Instant},
-};
+use fluere_config::Config;
+use fluere_plugin::PluginManager;
+use fluereflow::FluereRecord;
+
+use tokio::task;
+
+use log::{debug, info, trace};
 
 // This function captures packets from a network interface and converts them into NetFlow data.
 // It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
@@ -156,7 +155,6 @@ pub async fn packet_capture(arg: Args) {
                         "{} flow updated",
                         if is_reverse { "reverse" } else { "forward" }
                     );
-                    
 
                     if flags.fin == 1 || flags.rst == 1 {
                         trace!("flow finished");
@@ -172,11 +170,11 @@ pub async fn packet_capture(arg: Args) {
                 packet_count += 1;
                 // slow down the loop for windows to avoid random shutdown
                 // if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
-                    // if verbose >= 3 {
-                        // println!("Slow down the loop for windows");
-                    // }
-                    // sleep(Duration::from_millis(0)).await;
-               // }
+                // if verbose >= 3 {
+                // println!("Slow down the loop for windows");
+                // }
+                // sleep(Duration::from_millis(0)).await;
+                // }
 
                 // Export flows if the interval has been reached
                 if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0 {
