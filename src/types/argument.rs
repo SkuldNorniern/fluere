@@ -3,7 +3,7 @@ pub struct Args {
     pub interface: Option<String>,
     pub files: Files,
     pub parameters: Parameters,
-    pub verbose: Option<u8>,
+    // pub verbose: Option<u8>,
 }
 
 impl Args {
@@ -11,13 +11,13 @@ impl Args {
         interface: Option<String>,
         files: Files,
         parameters: Parameters,
-        verbose: Option<u8>,
+        // verbose: Option<u8>,
     ) -> Self {
         Self {
             interface,
             files,
             parameters,
-            verbose,
+            // verbose,
         }
     }
 }
