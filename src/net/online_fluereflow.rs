@@ -21,6 +21,10 @@ use crate::{
 };
 
 use fluere_config::Config;
+
+// FEAT:TASK: set plugin as feature
+// | Since the plugin manager uses Lua, for edge cases that require minimal feature, 
+// | setting the plugin as a feature would be beneficial.
 use fluere_plugin::PluginManager;
 use fluereflow::FluereRecord;
 
@@ -139,7 +143,10 @@ pub async fn packet_capture(arg: Args) {
                 //println!("time: {:?}", time);
                 let pkt = flowdata.min_pkt;
                 let ttl = flowdata.min_ttl;
-                //println!("current inputed flow{:?}", active_flow.get(&key_value).unwrap());
+                trace!(
+                    "current inputed flow{:?}",
+                    active_flow.get(&key_value).unwrap()
+                );
                 let flow_key = if is_reverse { &reverse_key } else { &key_value };
                 if let Some(flow) = active_flow.get_mut(flow_key) {
                     let update_key = UDFlowKey {
@@ -233,6 +240,7 @@ pub async fn packet_capture(arg: Args) {
     });
 
     plugin_manager.await_completion(plugin_worker).await;
+    drop(plugin_manager);
     let result = tasks.await;
     info!("Exporting task excutation result: {:?}", result);
 }
