@@ -58,7 +58,7 @@ pub fn find_device(identifier: &str) -> Result<Device, NetError> {
     if let Ok(index) = identifier.parse::<usize>() {
         if let Some(device) = devices.get(index) {
             let duration = start.elapsed();
-            info!("Device {} captured in {:?}", device.name, duration);
+            debug!("Device {} captured in {:?}", device.name, duration);
             return Ok(device.clone());
         } else {
             return Err(NetError::DeviceError(DeviceError::InvalidDeviceIndex(
@@ -70,7 +70,7 @@ pub fn find_device(identifier: &str) -> Result<Device, NetError> {
     for device in devices {
         if device.name == identifier {
             let duration = start.elapsed();
-            info!("Device {} captured in {:?}", device.name, duration);
+            debug!("Device {} captured in {:?}", device.name, duration);
             return Ok(device);
         }
     }
