@@ -4,6 +4,8 @@ use std::sync::Arc;
 mod downloader;
 mod util;
 
+use std::borrow::Cow;
+
 use downloader::download_plugin_from_github;
 use util::home_cache_path;
 
@@ -19,7 +21,7 @@ pub struct PluginManager {
     lua: Arc<Mutex<Lua>>,
     sender: mpsc::Sender<FluereRecord>,
     receiver: Arc<Mutex<mpsc::Receiver<FluereRecord>>>,
-    plugins: Arc<Mutex<HashSet<String>>>,
+    plugins: Arc<Mutex<HashSet<Cow<'static, str>>>>,
 }
 
 impl PluginManager {
@@ -98,8 +100,7 @@ impl PluginManager {
                                 Ok(())
                                 }).expect(format!("Error on plugin: {}", name).as_str(()));*/
                                 //lua_guard.load(&code).exec().expect(format!("Error on plugin: {}", name).as_str());
-
-                                plugins_guard.insert(name.clone());
+                                let _ = plugins_guard.insert(std::borrow::Cow::Owned(name.clone()));
                                 #[cfg(feature = "log")]
                                 info!("Loaded plugin {}", name);
                                 #[cfg(not(feature = "log"))]
@@ -168,7 +169,7 @@ impl PluginManager {
 
                                         Ok(())
                                         }).expect(format!("Error on plugin: {}", name).as_str());*/
-                                        plugins_guard.insert(name.clone());
+                                        let _ = plugins_guard.insert(std::borrow::Cow::Owned(name.clone()));
                                         #[cfg(feature = "log")]
                                         info!("Loaded plugin {}", name);
                                         #[cfg(not(feature = "log"))]
@@ -267,7 +268,7 @@ impl PluginManager {
                     for plugin_name in plugins.iter() {
                         let plugin_table: mlua::Table = lua
                             .globals()
-                            .get(plugin_name.as_str())
+                            .get(plugin_name.as_ref())
                             .expect("Plugin table not found");
 
                         if let Ok(func) = plugin_table.get::<_, mlua::Function>("process_data") {
@@ -313,7 +314,7 @@ impl PluginManager {
         for plugin_name in plugins.iter() {
             let plugin_table: mlua::Table = lua
                 .globals()
-                .get(plugin_name.as_str())
+                .get(plugin_name.as_ref())
                 .expect("Plugin table not found");
 
             if let Ok(func) = plugin_table.get::<_, mlua::Function>("cleanup") {
@@ -330,5 +331,12 @@ impl PluginManager {
         drop(lua);
         drop(plugins);
         drop(worker);
+    }
+}
+
+impl Drop for PluginManager {
+    fn drop(&mut self) {
+        drop(self.plugins.lock());
+        drop(self.lua.lock());
     }
 }
