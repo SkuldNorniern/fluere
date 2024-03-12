@@ -5,7 +5,7 @@ use crate::Config;
 use dirs::config_dir;
 
 #[cfg(feature = "log")]
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 
 impl Config {
     pub fn new() -> Self {
