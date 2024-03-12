@@ -69,7 +69,7 @@ pub async fn packet_capture(arg: Args) {
 
     let mut records: Vec<FluereRecord> = Vec::new();
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
-    let mut packet_count = 0;
+    // let mut packet_count = 0;
 
     loop {
         match cap.next_packet() {
@@ -167,7 +167,7 @@ pub async fn packet_capture(arg: Args) {
                     }
                 }
 
-                packet_count += 1;
+                // packet_count += 1;
                 // slow down the loop for windows to avoid random shutdown
                 // if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
                 // if verbose >= 3 {
@@ -179,7 +179,7 @@ pub async fn packet_capture(arg: Args) {
                 // Export flows if the interval has been reached
                 if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0 {
                     let mut expired_flows = vec![];
-                    packet_count = 0;
+                    // packet_count = 0;
                     for (key, flow) in active_flow.iter() {
                         if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
                             trace!("flow expired");

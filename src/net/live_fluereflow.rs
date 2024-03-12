@@ -106,7 +106,7 @@ pub async fn online_packet_capture(arg: Args) {
     let recent_flows: Arc<Mutex<Vec<FlowSummary>>> = Arc::new(Mutex::new(Vec::new()));
     let active_flow = Arc::new(Mutex::new(HashMap::new()));
 
-    let mut packet_count = 0;
+    // let mut packet_count = 0;
 
     enable_raw_mode().expect("Unable to enable raw mode");
     let mut stdout = io::stdout();
@@ -268,7 +268,7 @@ pub async fn online_packet_capture(arg: Args) {
                     }
                 }
 
-                packet_count += 1;
+                // packet_count += 1;
                 // slow down the loop for windows to avoid random shutdown
                 // if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
                 //         println!("Slow down the loop for windows");
@@ -280,7 +280,7 @@ pub async fn online_packet_capture(arg: Args) {
                 let mut last_export_unix_time_guard = last_export_unix_time.lock().await;
                 if last_export_guard.elapsed() >= Duration::from_millis(interval) && interval != 0 {
                     let mut expired_flows = vec![];
-                    packet_count = 0;
+                    // packet_count = 0;
                     for (key, flow) in active_flow_guard.iter() {
                         if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
                             trace!("flow expired");
