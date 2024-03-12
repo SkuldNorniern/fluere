@@ -85,8 +85,7 @@ fn initialize_capture(device: Device) -> Result<Capture<Active>, PcapError> {
     info!("Opening capture session for device {}", device.name);
     Capture::from_device(device)?
         .promisc(true)
-
-        // FEAT:TASK: set snaplen as a Flag from the CLI 
+        // FEAT:TASK: set snaplen as a Flag from the CLI
         .snaplen(1024)
         .timeout(60000)
         .immediate_mode(true)

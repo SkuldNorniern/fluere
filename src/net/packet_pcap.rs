@@ -33,7 +33,7 @@ pub async fn pcap_capture(args: Args) {
     };
 
     let start = Instant::now();
-    
+
     loop {
         match cap.next_packet() {
             Err(_) => {
