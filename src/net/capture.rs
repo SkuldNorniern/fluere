@@ -32,7 +32,9 @@ impl CaptureDevice {
         let capture = initialize_capture(device.clone())?;
         let name: Cow<'static, str> = Cow::Owned(device.name);
         let desc: Cow<'static, str> = Cow::Owned(device.desc.unwrap_or("".to_string()));
-
+        debug!("Using device: {}", name);
+        debug!("Device description: {}", desc);
+        debug!("Addresses: {:?}", device.addresses);
         Ok(CaptureDevice {
             name,
             desc,
@@ -46,7 +48,6 @@ impl Drop for CaptureDevice {
     fn drop(&mut self) {
         info!("Closing capture session for device {}", self.name);
         // println!("Closing capture session for device {}", self.name);
-        // self.capture.;
     }
 }
 pub fn find_device(identifier: &str) -> Result<Device, NetError> {
@@ -84,6 +85,8 @@ fn initialize_capture(device: Device) -> Result<Capture<Active>, PcapError> {
     info!("Opening capture session for device {}", device.name);
     Capture::from_device(device)?
         .promisc(true)
+
+        // FEAT:TASK: set snaplen as a Flag from the CLI 
         .snaplen(1024)
         .timeout(60000)
         .immediate_mode(true)
