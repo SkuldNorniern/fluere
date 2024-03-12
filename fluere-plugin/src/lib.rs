@@ -301,7 +301,7 @@ impl PluginManager {
 
     pub async fn await_completion(&self, target_worker: Arc<Mutex<tokio::task::JoinHandle<()>>>) {
         let worker_clone = target_worker.clone();
-        let _ = worker_clone.lock().await;
+        let worker = worker_clone.lock().await;
 
         // Cleanup each plugin before exiting
         let lua_clone = self.lua.clone();
@@ -326,5 +326,9 @@ impl PluginManager {
                 println!("cleanup function not found in plugin: {}", plugin_name);
             }
         }
+
+        drop(lua);
+        drop(plugins);
+        drop(worker);
     }
 }
