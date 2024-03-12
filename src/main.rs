@@ -6,7 +6,7 @@
 pub mod cli;
 pub mod logger;
 pub mod net;
-pub mod plugin;
+// pub mod plugin;
 pub mod types;
 pub mod utils;
 
@@ -17,15 +17,15 @@ use crate::logger::{Logger, Logstdout};
 use crate::net::capture::DeviceError;
 // use env_logger;::{init, Logger};
 
-use log::{debug, info, Level, LevelFilter};
+use log::{debug, Level, LevelFilter};
 
 // FEAT:MAYBE: seprate `std` as feature flag for fluere and log crate
-static LOGGER: Logger = Logger {
-    write_to_file: false,
-    file: None,
-    write_to_std: Some(Logstdout::Stdout),
-    severity: Level::Info,
-};
+// static LOGGER: Logger = Logger {
+//     write_to_file: false,
+//     file: None,
+//     write_to_std: Some(Logstdout::Stdout),
+//     severity: Level::Info,
+// };
 
 #[derive(Debug)]
 enum FluereError {
@@ -97,52 +97,14 @@ fn from_verbose(level: u8) -> LevelFilter {
     }
 }
 
-struct Fluere {
-    interface: String,
-    args: types::Args,
-    mode: Mode,
-    logger: Logger,
-    verbose: Level,
-    // interfaces: Vec<Device>,
-}
-impl Fluere {
-    fn new(
-        interface: String,
-        args: types::Args,
-        mode: Mode,
-        logger: Logger,
-        verbose: Level,
-    ) -> Fluere {
-        Fluere {
-            interface,
-            args,
-            mode,
-            logger,
-            verbose,
-        }
-    }
-    async fn online_fluereflow(&self, params: types::Args) {
-        net::online_fluereflow::packet_capture(params).await;
-        info!("Online fluereflow mode completed");
-    }
-}
 // This is the main function of the application.
 // It gets the command line arguments, parses them, and calls the appropriate functions based on the arguments.
 #[tokio::main]
 async fn main() {
     let args = cli::cli_template().get_matches();
 
-    // let mode = match args.subcommand() {
-    // Some((mode, _sub_args)) => mode,
-    // None => {
-    // log::error!("No mode selected. Use --help for more information.");
-    // exit(1);
-    // }
-    // };
-
     if let Some((mode, sub_args)) = args.subcommand() {
         let mode_type: Mode = Mode::from(mode);
-        debug!("Mode: {}", mode_type);
         let parems = cli::handle_mode(mode, sub_args).await;
 
         let _log_stdout = Logstdout::Stdout;
@@ -163,7 +125,6 @@ async fn main() {
                 .await
                 .expect("Error on live mode"),
             Mode::Pcap => net::pcap_capture(parems.0).await,
-            _ => unreachable!(),
         }
     } else {
         exit(0);
