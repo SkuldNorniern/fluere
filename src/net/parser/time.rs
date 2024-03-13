@@ -16,7 +16,7 @@ pub fn microseconds_to_timestamp(usec: u64) -> String {
     let datetime = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
 
     #[cfg(target_os = "windows")]
-    let datetime = DateTime::<Utc>::from_utc(naive.unwrap(), Utc);
+    let datetime = DateTime::<Utc>::from_utc(naive, Utc);
 
     datetime.format("%Y-%m-%d_%H-%M-%S UTC").to_string()
 }
