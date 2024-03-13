@@ -1,4 +1,4 @@
-use crate::net::errors::NetError;
+use crate::net::NetError;
 
 use log::debug;
 use pnet::packet::{tcp::TcpPacket, udp::UdpPacket};
@@ -7,27 +7,23 @@ pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError>
     match protocol {
         58 => Ok((0, 0)),
         17 => {
-            let udp = UdpPacket::new(payload).unwrap();
-
-            Ok((udp.get_source(), udp.get_destination()))
+            match UdpPacket::new(payload) {
+                Some(udp) => Ok((udp.get_source(), udp.get_destination())),
+                None => Err(NetError::InvalidPacket),
+            }
         }
         6 => {
-            let tcp = TcpPacket::new(payload).unwrap();
-
-            Ok((tcp.get_source(), tcp.get_destination()))
+            match TcpPacket::new(payload){
+                Some(tcp) => Ok((tcp.get_source(), tcp.get_destination())),
+                None => Err(NetError::InvalidPacket),
+            }
         }
         2 => Ok((0, 0)),
         1 => Ok((0, 0)),
         0 => Ok((0, 0)),
         _ => {
             debug!("Unknown protocol: {}", protocol);
-            Err(NetError::UnknownProtocol {
-                protocol: protocol.to_string(),
-            })
+            Err(NetError::UnknownProtocol(protocol))
         }
     }
-
-    //Err(NetError::UnknownProtocol {
-    //    protocol: protocol.to_string(),
-    //})
 }

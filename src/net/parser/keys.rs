@@ -8,7 +8,7 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
 
-use crate::net::errors::NetError;
+use crate::net::NetError;
 use crate::net::parser::{parse_ports, protocol_to_number};
 use crate::net::types::{Key, MacAddress};
 
@@ -146,9 +146,9 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         }
 
         _ => {
-            return Err(NetError::UnknownProtocol {
-                protocol: ethernet_packet.get_ethertype().to_string(),
-            })
+            return Err(NetError::UnknownEtherType (
+                ethernet_packet.get_ethertype().to_string()
+            ))
         }
     };
 
