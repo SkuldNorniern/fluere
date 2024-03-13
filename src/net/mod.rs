@@ -1,6 +1,6 @@
 //mod fluereflow
-pub mod capture;
-pub mod errors;
+mod capture;
+// pub mod errors;
 mod flows;
 // mod interface;
 pub mod live_fluereflow;
@@ -28,6 +28,11 @@ use pcap::Error;
 pub enum NetError {
     DeviceError(DeviceError),
     PcapError(Error),
+    UnknownProtocol(u8),
+    UnknownEtherType(String),
+    UnknownDSCP(u8),
+    InvalidPacket,
+    EmptyPacket,
 }
 
 impl From<DeviceError> for NetError {
@@ -47,6 +52,15 @@ impl Display for NetError {
         match self {
             NetError::DeviceError(err) => err.fmt(f),
             NetError::PcapError(err) => err.fmt(f),
+            NetError::UnknownProtocol(protocol) => {
+                write!(f, "Unknown protocol: {}", protocol)
+            },
+            NetError::UnknownEtherType(ether_type) => {
+                write!(f, "Unknown ether type: {}", ether_type)
+            },
+            NetError::UnknownDSCP(dscp) => write!(f, "Unknown dscp: {}", dscp),
+            NetError::InvalidPacket => write!(f, "Invalid packet"),
+            NetError::EmptyPacket => write!(f, "Empty packet"),
         }
     }
 }

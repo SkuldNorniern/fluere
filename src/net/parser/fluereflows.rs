@@ -1,6 +1,6 @@
 use pcap;
 
-use crate::net::errors::NetError;
+use crate::net::NetError;
 use crate::net::parser::{
     dscp_to_tos, parse_flags, parse_microseconds, parse_ports, protocol_to_number,
 };
@@ -130,9 +130,9 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
             arp_packet(time, i)
         }
         _ => {
-            return Err(NetError::UnknownProtocol {
-                protocol: ethernet_packet.get_ethertype().to_string(),
-            })
+            return Err(NetError::UnknownEtherType (
+                ethernet_packet.get_ethertype().to_string(),
+            ))
         }
     };
 
@@ -197,15 +197,8 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
     let dst_ip = packet.get_destination();
 
     // ports parsing
-    let parsed_ports = parse_ports(protocol, packet.payload());
-    match parsed_ports {
-        Ok(_) => {}
-        Err(e) => {
-            println!("Unknown protocol {}\n Report to the developer", e);
-            return Err(e);
-        }
-    }
-    let (src_port, dst_port) = parsed_ports.unwrap();
+    let (src_port, dst_port) = parse_ports(protocol, packet.payload())?;
+    
     // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
     let flags = parse_flags(protocol, packet.payload());
 
@@ -255,12 +248,7 @@ fn ipv6_packet(time: u64, packet: Ipv6Packet) -> Result<(usize, [u8; 9], FluereR
     let dst_ip = packet.get_destination();
 
     // ports parsing
-    let parsed_ports = parse_ports(protocol, packet.payload());
-    match parsed_ports {
-        Ok(_) => {}
-        Err(e) => return Err(e),
-    }
-    let (src_port, dst_port) = parsed_ports.unwrap();
+    let (src_port, dst_port) = parse_ports(protocol, packet.payload())?;
     // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
     let flags = parse_flags(protocol, packet.payload());
 
