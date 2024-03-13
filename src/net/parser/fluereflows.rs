@@ -1,9 +1,9 @@
 use pcap;
 
-use crate::net::NetError;
 use crate::net::parser::{
     dscp_to_tos, parse_flags, parse_microseconds, parse_ports, protocol_to_number,
 };
+use crate::net::NetError;
 use fluereflow::FluereRecord;
 use pnet::packet::{
     arp::ArpPacket,
@@ -130,7 +130,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
             arp_packet(time, i)
         }
         _ => {
-            return Err(NetError::UnknownEtherType (
+            return Err(NetError::UnknownEtherType(
                 ethernet_packet.get_ethertype().to_string(),
             ))
         }
@@ -198,7 +198,7 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
 
     // ports parsing
     let (src_port, dst_port) = parse_ports(protocol, packet.payload())?;
-    
+
     // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
     let flags = parse_flags(protocol, packet.payload());
 

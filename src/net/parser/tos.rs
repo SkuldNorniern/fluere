@@ -23,7 +23,7 @@ pub fn dscp_to_tos(dscp: u8) -> Result<u8, NetError> {
         46 => 184,
         48 => 192,
         56 => 224,
-        _ => return Err(NetError::UnknownDSCP ( dscp )),
+        _ => return Err(NetError::UnknownDSCP(dscp)),
     };
 
     Ok(tos)
