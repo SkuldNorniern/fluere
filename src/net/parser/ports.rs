@@ -1,7 +1,10 @@
-use pnet::packet::tcp::TcpPacket;
-use pnet::packet::udp::UdpPacket;
-
 use crate::net::errors::NetError;
+
+use log::debug;
+use pnet::packet::{
+    tcp::TcpPacket,
+    udp::UdpPacket,
+};
 
 pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError> {
     match protocol {
@@ -20,7 +23,7 @@ pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError>
         1 => Ok((0, 0)),
         0 => Ok((0, 0)),
         _ => {
-            println!("Unknown protocol: {}", protocol);
+            debug!("Unknown protocol: {}", protocol);
             Err(NetError::UnknownProtocol {
                 protocol: protocol.to_string(),
             })
