@@ -54,10 +54,10 @@ impl Display for NetError {
             NetError::PcapError(err) => err.fmt(f),
             NetError::UnknownProtocol(protocol) => {
                 write!(f, "Unknown protocol: {}", protocol)
-            },
+            }
             NetError::UnknownEtherType(ether_type) => {
                 write!(f, "Unknown ether type: {}", ether_type)
-            },
+            }
             NetError::UnknownDSCP(dscp) => write!(f, "Unknown dscp: {}", dscp),
             NetError::InvalidPacket => write!(f, "Invalid packet"),
             NetError::EmptyPacket => write!(f, "Empty packet"),
