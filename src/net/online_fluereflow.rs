@@ -94,7 +94,10 @@ pub async fn packet_capture(arg: Args) {
 
                 let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
                     Ok(result) => result,
-                    Err(_) => continue,
+                    Err(e) => {
+                        debug!("{}", e);
+                        continue;
+                    }
                 };
 
                 let flags = TcpFlags::new(raw_flags);

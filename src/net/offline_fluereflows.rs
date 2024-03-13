@@ -51,7 +51,10 @@ pub async fn fluereflow_fileparse(arg: Args) {
         }
         let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
             Ok(result) => result,
-            Err(_) => continue,
+            Err(e) => {
+                        debug!("{}", e);
+                        continue;
+                    }
         };
         let flags = TcpFlags::new(raw_flags);
         //pushing packet in to active_flows if it is not present
