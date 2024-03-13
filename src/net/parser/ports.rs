@@ -1,10 +1,7 @@
 use crate::net::errors::NetError;
 
 use log::debug;
-use pnet::packet::{
-    tcp::TcpPacket,
-    udp::UdpPacket,
-};
+use pnet::packet::{tcp::TcpPacket, udp::UdpPacket};
 
 pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError> {
     match protocol {
