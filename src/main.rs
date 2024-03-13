@@ -14,7 +14,7 @@ use std::fs::File;
 use std::{fmt::Display, process::exit};
 
 use crate::logger::{Logger, Logstdout};
-use crate::net::capture::DeviceError;
+use crate::net::DeviceError;
 // use env_logger;::{init, Logger};
 
 use log::{debug, Level, LevelFilter};
