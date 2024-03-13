@@ -140,6 +140,6 @@ pub async fn fluereflow_fileparse(arg: Args) {
     let result = tasks.await;
     info!("Export {} result: {:?}", file_path, result);
 
-    println!("Active flow {:?}", ac_flow_cnt);
-    println!("Ended flow {:?}", ended_flow_cnt);
+    info!("Active flow {:?}", ac_flow_cnt);
+    info!("Ended flow {:?}", ended_flow_cnt);
 }
