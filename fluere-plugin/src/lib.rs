@@ -169,7 +169,8 @@ impl PluginManager {
 
                                         Ok(())
                                         }).expect(format!("Error on plugin: {}", name).as_str());*/
-                                        let _ = plugins_guard.insert(std::borrow::Cow::Owned(name.clone()));
+                                        let _ = plugins_guard
+                                            .insert(std::borrow::Cow::Owned(name.clone()));
                                         #[cfg(feature = "log")]
                                         info!("Loaded plugin {}", name);
                                         #[cfg(not(feature = "log"))]

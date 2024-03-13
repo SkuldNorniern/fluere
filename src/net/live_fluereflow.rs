@@ -86,7 +86,7 @@ pub async fn online_packet_capture(arg: Args) {
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
         Ok(_) => debug!("Created directory: {}", file_dir),
-        
+
         // FIX:ASAP: Remove Panic, return io error instead
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
