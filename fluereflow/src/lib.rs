@@ -11,3 +11,6 @@ pub use types::FluereHeader;
 // The FluereRecord data structure represents a single record in a NetFlow flow.
 // It includes fields for the source and destination IP addresses, the source and destination ports, the protocol, and other information about the record.
 pub use types::FluereRecord;
+mod netflow_v5;
+mod netflow_v9;
+mod cisco_export;
