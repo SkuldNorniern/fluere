@@ -124,6 +124,7 @@ pub async fn fluereflow_fileparse(arg: Args) {
 
             if flags.fin == 1 || flags.rst == 1 {
                 trace!("flow finished");
+                trace!("flow data: {:?}", flow);
                 records.push(*flow);
                 active_flow.remove(flow_key);
             }
