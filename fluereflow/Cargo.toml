@@ -12,7 +12,4 @@ repository = "https://github.com/SkuldNorniern/fluere"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-[dependencies]
-byteorder = "1.4.3"
-tokio = { version = "1.0", features = ["full"] }
 
