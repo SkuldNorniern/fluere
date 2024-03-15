@@ -82,6 +82,7 @@ pub async fn packet_capture(arg: Args) {
             }
             Ok(packet) => {
                 trace!("received packet");
+                // trace!("packet: {:?}", );
 
                 let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
                     Ok(keys) => keys,
@@ -146,10 +147,10 @@ pub async fn packet_capture(arg: Args) {
                 //println!("time: {:?}", time);
                 let pkt = flowdata.min_pkt;
                 let ttl = flowdata.min_ttl;
-                trace!(
-                    "current inputed flow{:?}",
-                    active_flow.get(&key_value).unwrap()
-                );
+                // trace!(
+                    // "current inputed flow{:?}",
+                    // active_flow.get(&key_value).unwrap()
+                // );
                 let flow_key = if is_reverse { &reverse_key } else { &key_value };
                 if let Some(flow) = active_flow.get_mut(flow_key) {
                     let update_key = UDFlowKey {
@@ -165,10 +166,16 @@ pub async fn packet_capture(arg: Args) {
                         "{} flow updated",
                         if is_reverse { "reverse" } else { "forward" }
                     );
+                    trace!(
+                        "flow key detail: {:?}",
+                        flow_key
+                    );
 
+                    // Check if the flow has finished
                     if flags.fin == 1 || flags.rst == 1 {
                         trace!("flow finished");
-                        // plugin_manager.process_flow_data(flow).expect("Failed to process flow data");
+                        trace!("flow data: {:?}", flow);
+
                         plugin_manager.process_flow_data(*flow).await.unwrap();
 
                         records.push(*flow);
@@ -193,6 +200,8 @@ pub async fn packet_capture(arg: Args) {
                     for (key, flow) in active_flow.iter() {
                         if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
                             trace!("flow expired");
+                            trace!("flow data: {:?}", flow);
+                            
                             plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
