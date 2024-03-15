@@ -148,8 +148,8 @@ pub async fn packet_capture(arg: Args) {
                 let pkt = flowdata.min_pkt;
                 let ttl = flowdata.min_ttl;
                 // trace!(
-                    // "current inputed flow{:?}",
-                    // active_flow.get(&key_value).unwrap()
+                // "current inputed flow{:?}",
+                // active_flow.get(&key_value).unwrap()
                 // );
                 let flow_key = if is_reverse { &reverse_key } else { &key_value };
                 if let Some(flow) = active_flow.get_mut(flow_key) {
@@ -166,10 +166,7 @@ pub async fn packet_capture(arg: Args) {
                         "{} flow updated",
                         if is_reverse { "reverse" } else { "forward" }
                     );
-                    trace!(
-                        "flow key detail: {:?}",
-                        flow_key
-                    );
+                    trace!("flow key detail: {:?}", flow_key);
 
                     // Check if the flow has finished
                     if flags.fin == 1 || flags.rst == 1 {
@@ -201,7 +198,7 @@ pub async fn packet_capture(arg: Args) {
                         if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
                             trace!("flow expired");
                             trace!("flow data: {:?}", flow);
-                            
+
                             plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
