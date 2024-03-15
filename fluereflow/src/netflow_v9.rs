@@ -14,7 +14,10 @@ impl NetFlowV9Header {
     pub fn from_bytes(buf: &[u8]) -> io::Result<Self> {
         let mut cursor = Cursor::new(buf);
         if buf.len() < 20 {
-            return Err(Error::new(ErrorKind::UnexpectedEof, "Buffer too short for NetFlowV9Header"));
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "Buffer too short for NetFlowV9Header",
+            ));
         }
         Ok(Self {
             version: cursor.read_u16::<BigEndian>()?,

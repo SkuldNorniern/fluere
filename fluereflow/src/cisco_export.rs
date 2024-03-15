@@ -1,18 +1,23 @@
+use crate::netflow_v5::{NetFlowV5Header, NetFlowV5Record};
+use crate::netflow_v9::{NetFlowV9FlowSet, NetFlowV9Header};
 use std::io;
 use std::net::UdpSocket;
-use crate::netflow_v5::{NetFlowV5Header, NetFlowV5Record};
-use crate::netflow_v9::{NetFlowV9Header, NetFlowV9FlowSet};
 
 pub fn export_netflow_data(version: u8, data: Vec<u8>, collector_address: &str) -> io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     match version {
         5 => {
             socket.send_to(&data, collector_address)?;
-        },
+        }
         9 => {
             socket.send_to(&data, collector_address)?;
-        },
-        _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Unsupported NetFlow version")),
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unsupported NetFlow version",
+            ))
+        }
     }
     Ok(())
 }
