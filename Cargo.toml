@@ -12,7 +12,7 @@ repository = "https://github.com/SkuldNorniern/fluere"
 
 [dependencies]
 clap = { version = "4.0.32", features = ["cargo"] }
-tokio = { version = "1.32", features = ["full", "macros", "rt-multi-thread"] }
+tokio = { version = "1.36", features = ["full", "macros", "rt-multi-thread"] }
 pnet = { version = "0.34.0", features = ["std"] }
 pnet_macros_support = "0.34.0"
 pnet_macros = "0.34.0"
