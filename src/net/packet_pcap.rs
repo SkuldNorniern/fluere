@@ -1,8 +1,7 @@
 use std::fs;
 use std::time::{Duration, Instant};
 
-use crate::net::find_device;
-use crate::net::CaptureDevice;
+use crate::net::{find_device, CaptureDevice};
 use crate::types::Args;
 use crate::utils::cur_time_file;
 
