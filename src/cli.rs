@@ -247,7 +247,6 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
         .map_or(0, |v| v.parse::<u8>().unwrap_or(0));
 
     if mode != "offline" {
-        println!("Enter mode: {}", mode);
         if args.get_flag("list") {
             println!("List of network interfaces");
             println!("--------------------------");
