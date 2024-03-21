@@ -11,10 +11,10 @@ pub mod types;
 pub mod utils;
 
 use std::fs::File;
-use std::{fmt::Display, process::exit};
+use std::{fmt::Display, io, process::exit};
 
 use crate::logger::{Logger, Logstdout};
-use crate::net::DeviceError;
+use crate::net::NetError;
 // use env_logger;::{init, Logger};
 
 use log::{debug, Level, LevelFilter};
@@ -28,12 +28,12 @@ use log::{debug, Level, LevelFilter};
 // };
 
 #[derive(Debug)]
-enum FluereError {
+pub enum FluereError {
     InterfaceNotFound,
-    DeviceError(DeviceError),
     ArgumentParseError(String),
     ModeNotSupported(String),
-    NetworkError(String),
+    NetworkError(NetError),
+    IoError(io::Error),
 }
 
 impl std::fmt::Display for FluereError {
@@ -42,17 +42,23 @@ impl std::fmt::Display for FluereError {
             FluereError::InterfaceNotFound => write!(f, "Network interface not found."),
             FluereError::ArgumentParseError(msg) => write!(f, "Argument parsing error: {}", msg),
             FluereError::ModeNotSupported(mode) => write!(f, "Mode not supported: {}", mode),
-            FluereError::NetworkError(msg) => write!(f, "Network error: {}", msg),
-            FluereError::DeviceError(err) => err.fmt(f),
+            FluereError::NetworkError(err) => err.fmt(f),
+            FluereError::IoError(err) => err.fmt(f),
         }
     }
 }
 
 impl std::error::Error for FluereError {}
 
-impl From<DeviceError> for FluereError {
-    fn from(err: DeviceError) -> Self {
-        FluereError::DeviceError(err)
+impl From<NetError> for FluereError {
+    fn from(err: NetError) -> Self {
+        FluereError::NetworkError(err)
+    }
+}
+
+impl From<io::Error> for FluereError {
+    fn from(err: io::Error) -> Self {
+        FluereError::IoError(err)
     }
 }
 
@@ -119,11 +125,15 @@ async fn main() {
         debug!("Fluere started");
 
         match mode_type {
-            Mode::Online => net::online_fluereflow::packet_capture(parems.0).await,
-            Mode::Offline => net::fluereflow_fileparse(parems.0).await,
+            Mode::Online => net::online_fluereflow::packet_capture(parems.0)
+                .await
+                .expect("Online mode failed"),
+            Mode::Offline => net::fluereflow_fileparse(parems.0)
+                .await
+                .expect("Offline mode failed"),
             Mode::Live => net::live_fluereflow::packet_capture(parems.0)
                 .await
-                .expect("Error on live mode"),
+                .expect("Live mode failed"),
             Mode::Pcap => net::pcap_capture(parems.0).await,
         }
     } else {

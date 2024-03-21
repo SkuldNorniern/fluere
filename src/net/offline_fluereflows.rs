@@ -8,6 +8,7 @@ use crate::{
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
+    FluereError, NetError,
 };
 
 use fluereflow::FluereRecord;
@@ -15,13 +16,13 @@ use log::{debug, info, trace};
 use pcap::Capture;
 use tokio::task;
 
-pub async fn fluereflow_fileparse(arg: Args) {
+pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let csv_file = arg.files.csv.unwrap();
     let file_name = arg.files.file.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
-    let _flow_timeout = arg.parameters.timeout.unwrap();
+    let flow_timeout = arg.parameters.timeout.unwrap();
 
-    let mut cap = Capture::from_file(file_name).unwrap();
+    let mut cap = Capture::from_file(file_name).map_err(NetError::from)?;
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
@@ -82,21 +83,6 @@ pub async fn fluereflow_fileparse(arg: Args) {
             },
             Some(_) => false,
         };
-        /*let is_reverse = if active_flow.contains_key(&key_value) {
-            false
-        } else if active_flow.contains_key(&reverse_key) {
-            true
-        } else {
-            if flowdata.get_prot() != 6  && flags.syn > 0  {
-                active_flow.insert(key_value, flowdata);
-                if verbose >= 2 {
-                    println!("flow established");
-                }
-            } else {
-                continue;
-            }
-            false
-        };*/
 
         let time = parse_microseconds(
             packet.header.ts.tv_sec as u64,
@@ -129,8 +115,26 @@ pub async fn fluereflow_fileparse(arg: Args) {
                 active_flow.remove(flow_key);
             }
         }
+
+        // Before processing a new packet, check for and handle expired flows
+        let mut expired_flows = Vec::new();
+        for (key, flow) in active_flow.iter() {
+            if flow_timeout > 0 && time > (flow.last + (flow_timeout * 1000)) {
+                // Assuming flow.last is in microseconds
+                trace!("flow expired");
+                trace!("flow data: {:?}", flow);
+                records.push(*flow);
+                expired_flows.push(*key);
+            }
+        }
+
+        // Remove expired flows from the active flows map
+        // active_flow.retain(|key, _| !expired_flows.contains(key));
+        for key in expired_flows {
+            active_flow.remove(&key);
+        }
     }
-    info!("Captured in {:?}", start.elapsed());
+    info!("Converted in {:?}", start.elapsed());
     let ac_flow_cnt = active_flow.len();
     let ended_flow_cnt = records.len();
 
@@ -146,4 +150,5 @@ pub async fn fluereflow_fileparse(arg: Args) {
 
     info!("Active flow {:?}", ac_flow_cnt);
     info!("Ended flow {:?}", ended_flow_cnt);
+    Ok(())
 }
