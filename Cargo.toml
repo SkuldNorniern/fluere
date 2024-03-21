@@ -20,21 +20,21 @@ pnet_macros = "0.34.0"
 # using custom forked version of pcap-rs for fixing audits
 # pcap = { version = "1.1.0", git = "https://github.com/SkuldNorniern/pcap", rev = "40f1163" }
 
-pcap = "1.2.0"
+pcap = "1.3.0"
 
 chrono = { version = "0.4.29", default-features = false, features = ["clock"] }
 libc = "0.2"
-csv = "1.1"
+csv = "1.3"
 nom = "7.1.2"
 snafu = "0.8.0"
 serde = { version = "1.0.193", features = ["derive"] }
-toml = "0.8.8"
+toml = "0.8.12"
 
 fluere_plugin = { version = "0.2.0", path = "./fluere-plugin", features = ["log"] }
 fluere-config = { version = "0.2.0", path = "./fluere-config", features = ["log"] }
 fluereflow = { version = "0.3.2", path = "./fluereflow" }
 
-ratatui = { version = "0.25.0", features = ["all-widgets"] }
+ratatui = { version = "0.26.1", features = ["all-widgets"] }
 crossterm = "0.27"
 dirs = "5.0.1"
 log = { version = "0.4.21", features = ["std"]}
