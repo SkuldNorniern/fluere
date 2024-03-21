@@ -35,7 +35,7 @@ pub fn cli_template() -> Command {
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        //.required(true),
+                        .required_unless_present("list")
                 )
                 .arg(
                     Arg::new("duration")
@@ -141,7 +141,7 @@ pub fn cli_template() -> Command {
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        //.required(true),
+                        .required_unless_present("list")
                 )
                 .arg(
                     Arg::new("duration")
@@ -194,14 +194,14 @@ pub fn cli_template() -> Command {
                         .help("Name of the output pcap files title [Required]")
                         .short('p')
                         .long("pcap")
-                        //.required(true),
+                        .required_unless_present("list")
                 )
                 .arg(
                     Arg::new("interface")
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        //.required(true),
+                        .required_unless_present("list")
                 )
                 .arg(
                     Arg::new("duration")
@@ -245,13 +245,17 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
     let verbose = args
         .get_one::<String>("verbose")
         .map_or(0, |v| v.parse::<u8>().unwrap_or(0));
-    if args.get_flag("list") {
-        println!("List of network interfaces");
-        println!("--------------------------");
-        for (i, device) in Device::list().unwrap().iter().enumerate() {
-            println!("[{}] {}", i, device.name);
+
+    if mode != "offline" {
+        println!("Enter mode: {}", mode);
+        if args.get_flag("list") {
+            println!("List of network interfaces");
+            println!("--------------------------");
+            for (i, device) in Device::list().unwrap().iter().enumerate() {
+                println!("[{}] {}", i, device.name);
+            }
+            exit(0);
         }
-        exit(0);
     }
 
     let arg_data = match mode {
