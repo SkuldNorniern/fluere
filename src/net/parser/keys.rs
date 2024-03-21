@@ -6,7 +6,10 @@ use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::udp::UdpPacket;
+
 use pnet::packet::Packet;
+
+use log::trace;
 
 use crate::net::parser::{parse_ports, protocol_to_number};
 use crate::net::types::{Key, MacAddress};
@@ -108,13 +111,9 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                 return Err(NetError::EmptyPacket);
             }
 
-            let ipv6 = ipv6_keys(i);
-            match ipv6 {
-                Ok(_) => {}
-                Err(e) => return Err(e),
-            }
+            trace!("IPv6 packet detected");
 
-            ipv6.unwrap()
+            ipv6_keys(i)?
         }
         EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
@@ -122,29 +121,20 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                 return Err(NetError::EmptyPacket);
             }
 
-            let ipv4 = ipv4_keys(i);
-            match ipv4 {
-                Ok(_) => {}
-                Err(e) => return Err(e),
-            }
+            trace!("IPv4 packet detected");
 
-            ipv4.unwrap()
+            ipv4_keys(i)?
         }
         EtherTypes::Arp => {
             let i = ArpPacket::new(ethernet_packet.payload()).unwrap();
             //if i.payload().is_empty() {
             //    return Err(NetError::EmptyPacket);
             //}
-            //println!("AHHHHHH");
-            let arp = arp_keys(i);
-            match arp {
-                Ok(_) => {}
-                Err(e) => return Err(e),
-            }
 
-            arp.unwrap()
+            trace!("ARP packet detected");
+
+            arp_keys(i)?
         }
-
         _ => {
             return Err(NetError::UnknownEtherType(
                 ethernet_packet.get_ethertype().to_string(),
