@@ -25,8 +25,8 @@ pub async fn pcap_capture(args: Args) {
         Err(error) => panic!("Problem creating directory: {:?}", error),
     };
 
-    let file_path = cur_time_file(pcap_file.as_str(), file_dir, ".pcap").await;
-    let mut file: pcap::Savefile = match cap.savefile(file_path) {
+    let file_path = cur_time_file(pcap_file.as_str(), file_dir, ".pcap");
+    let mut file: pcap::Savefile = match cap.savefile(file_path.as_ref()) {
         Ok(f) => f,
         Err(_) => std::process::exit(1),
     };
