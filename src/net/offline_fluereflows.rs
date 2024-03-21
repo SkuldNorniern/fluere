@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, time::Instant};
+use std::{collections::HashMap, fs, time::Instant, path::Path};
 
 use crate::{
     net::{
@@ -7,7 +7,7 @@ use crate::{
         types::{Key, TcpFlags},
     },
     types::{Args, UDFlowKey},
-    utils::{cur_time_file, fluere_exporter},
+    utils::fluere_exporter,
     FluereError, NetError,
 };
 
@@ -22,7 +22,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let use_mac = arg.parameters.use_mac.unwrap();
     let flow_timeout = arg.parameters.timeout.unwrap();
 
-    let mut cap = Capture::from_file(file_name).map_err(NetError::from)?;
+    let mut cap = Capture::from_file(file_name.clone()).map_err(NetError::from)?;
 
     let file_dir = "./output";
     match fs::create_dir_all(<&str>::clone(&file_dir)) {
@@ -33,8 +33,16 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     };
 
     let start = Instant::now();
-    let file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
-    let file = fs::File::create(file_path.as_ref()).unwrap();
+    // let file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
+    let file_noext = format!(
+        "{}_converted.csv",
+        Path::new(&file_name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("output")
+    );
+    let output_file_path = format!("{}/{}", file_dir, file_noext);
+    let file = fs::File::create(output_file_path.clone()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -146,7 +154,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     });
 
     let result = tasks.await;
-    info!("Export {} result: {:?}", file_path, result);
+    info!("Export {} result: {:?}", output_file_path, result);
 
     info!("Active flow {:?}", ac_flow_cnt);
     info!("Ended flow {:?}", ended_flow_cnt);
