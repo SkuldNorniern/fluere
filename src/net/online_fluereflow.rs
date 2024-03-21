@@ -18,6 +18,7 @@ use crate::{
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
+    FluereError, NetError,
 };
 
 use fluere_config::Config;
@@ -35,7 +36,7 @@ use log::{debug, info, trace};
 // This function captures packets from a network interface and converts them into NetFlow data.
 // It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
 // The function runs indefinitely, capturing packets and exporting the captured data to a CSV file.
-pub async fn packet_capture(arg: Args) {
+pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let csv_file = arg.files.csv.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
     let interface_name = arg.interface.expect("interface not found");
@@ -52,8 +53,8 @@ pub async fn packet_capture(arg: Args) {
         .await
         .expect("Failed to load plugins");
 
-    let interface = find_device(interface_name.as_str()).unwrap();
-    let mut cap_device = CaptureDevice::new(interface.clone()).unwrap();
+    let interface = find_device(interface_name.as_str())?;
+    let mut cap_device = CaptureDevice::new(interface.clone()).map_err(NetError::from)?;
     let cap = &mut cap_device.capture;
 
     let file_dir = "./output";
@@ -252,4 +253,6 @@ pub async fn packet_capture(arg: Args) {
     drop(plugin_manager);
     let result = tasks.await;
     info!("Exporting task excutation result: {:?}", result);
+
+    Ok(())
 }

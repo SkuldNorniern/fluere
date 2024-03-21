@@ -11,6 +11,7 @@ use crate::{
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
+    FluereError,
 };
 use std::{
     collections::HashMap,
@@ -43,7 +44,7 @@ const MAX_RECENT_FLOWS: usize = 50;
 // This function is the entry point for the live packet capture functionality.
 // It takes the command line arguments as input and calls the online_packet_capture function.
 // It returns a Result indicating whether the operation was successful.
-pub async fn packet_capture(arg: Args) -> Result<(), io::Error> {
+pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     debug!("Starting Terminal User Interface");
 
     online_packet_capture(arg).await;
