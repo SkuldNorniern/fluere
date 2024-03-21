@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, time::Instant, path::Path};
+use std::{collections::HashMap, fs, path::Path, time::Instant};
 
 use crate::{
     net::{
@@ -17,7 +17,7 @@ use pcap::Capture;
 use tokio::task;
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
-    let csv_file = arg.files.csv.unwrap();
+    let _csv_file = arg.files.csv.unwrap();
     let file_name = arg.files.file.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
     let flow_timeout = arg.parameters.timeout.unwrap();
