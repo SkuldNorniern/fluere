@@ -67,8 +67,8 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
 
     let start = Instant::now();
     let mut last_export = Instant::now();
-    let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-    let mut file = fs::File::create(file_path.clone()).unwrap();
+    let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
+    let mut file = fs::File::create(file_path.as_ref()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -217,8 +217,8 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
 
                     let result = tasks.await;
                     info!("Export {} result: {:?}", file_path, result);
-                    file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-                    file = fs::File::create(file_path.clone()).unwrap();
+                    file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
+                    file = fs::File::create(file_path.as_ref()).unwrap();
                     last_export = Instant::now();
                 }
 

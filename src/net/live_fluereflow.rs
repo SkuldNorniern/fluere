@@ -100,8 +100,8 @@ pub async fn online_packet_capture(arg: Args) {
             .as_secs(),
     ));
     let last_export = Arc::new(Mutex::new(Instant::now()));
-    let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-    let mut file = fs::File::create(file_path.clone()).unwrap();
+    let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
+    let mut file = fs::File::create(file_path.as_ref()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -304,8 +304,8 @@ pub async fn online_packet_capture(arg: Args) {
                     /*if verbose >= 1 {
                     println!("Export {} result: {:?}", file_path, result);
                     }*/
-                    file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv").await;
-                    file = fs::File::create(file_path.clone()).unwrap();
+                    file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
+                    file = fs::File::create(file_path.as_ref()).unwrap();
                     *last_export_guard = Instant::now();
                     *last_export_unix_time_guard = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
