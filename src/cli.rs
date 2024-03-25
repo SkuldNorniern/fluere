@@ -251,7 +251,12 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
             println!("List of network interfaces");
             println!("--------------------------");
             for (i, device) in Device::list().unwrap().iter().enumerate() {
-                println!("[{}] {}", i, device.name);
+                print!("[{}] {:25}", i, device.name);
+                let description = &device.desc;
+                if let Some(desc) = description {
+                    print!(" - {}", desc);
+                }
+                println!();
             }
             exit(0);
         }
