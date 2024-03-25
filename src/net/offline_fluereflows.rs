@@ -15,6 +15,7 @@ use fluereflow::FluereRecord;
 use log::{debug, info, trace};
 use pcap::Capture;
 use tokio::task;
+use indicatif::ProgressBar;
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let _csv_file = arg.files.csv.unwrap();
@@ -48,6 +49,10 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
 
     let mut records: Vec<FluereRecord> = Vec::new();
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
+    
+    info!("Converting file: {}", file_name);
+
+    let bar = ProgressBar::new_spinner();
 
     while let Ok(packet) = cap.next_packet() {
         let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
@@ -109,6 +114,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
                 flags,
                 time,
             };
+
             update_flow(flow, is_reverse, update_key);
 
             trace!(
@@ -135,13 +141,11 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
                 expired_flows.push(*key);
             }
         }
-
+        
         // Remove expired flows from the active flows map
-        // active_flow.retain(|key, _| !expired_flows.contains(key));
-        for key in expired_flows {
-            active_flow.remove(&key);
-        }
+        active_flow.retain(|key, _| !expired_flows.contains(key));
     }
+    bar.finish();
     info!("Converted in {:?}", start.elapsed());
     let ac_flow_cnt = active_flow.len();
     let ended_flow_cnt = records.len();
