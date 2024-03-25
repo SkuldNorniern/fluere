@@ -14,6 +14,7 @@ use crate::{
     FluereError,
 };
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fs, io,
     sync::Arc,
@@ -29,7 +30,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use log::{debug, trace};
+use log::{debug, error, trace};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -47,23 +48,23 @@ const MAX_RECENT_FLOWS: usize = 50;
 pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     debug!("Starting Terminal User Interface");
 
-    online_packet_capture(arg).await;
+    online_packet_capture(arg).await?;
     debug!("Terminal User Interface Stopped");
     Ok(())
 }
 #[derive(Debug, Clone)]
 struct FlowSummary {
-    src: String,
-    dst: String,
-    src_port: String,
-    dst_port: String,
-    protocol: String, //flow_data: String, // or any other relevant data you want to display
+    src: Cow<'static, str>,
+    dst: Cow<'static, str>,
+    src_port: Cow<'static, str>,
+    dst_port: Cow<'static, str>,
+    protocol: Cow<'static, str>, //flow_data: String, // or any other relevant data you want to display
 }
 
 // This function captures packets from a network interface and converts them into NetFlow data.
 // It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
 // The function runs indefinitely, capturing packets and updating the terminal user interface with the captured data.
-pub async fn online_packet_capture(arg: Args) {
+pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
     let csv_file = arg.files.csv.unwrap();
     let use_mac = arg.parameters.use_mac.unwrap();
     let interface_name = arg.interface.expect("interface not found");
@@ -85,12 +86,7 @@ pub async fn online_packet_capture(arg: Args) {
     let cap = &mut cap_device.capture;
 
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => debug!("Created directory: {}", file_dir),
-
-        // FIX:ASAP: Remove Panic, return io error instead
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
     let last_export_unix_time = Arc::new(Mutex::new(
@@ -101,28 +97,36 @@ pub async fn online_packet_capture(arg: Args) {
     ));
     let last_export = Arc::new(Mutex::new(Instant::now()));
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
-    let mut file = fs::File::create(file_path.as_ref()).unwrap();
-
-    //let mut wtr = csv::Writer::from_writer(file);
+    let mut file = fs::File::create(file_path.as_ref())?;
 
     let mut records: Vec<FluereRecord> = Vec::new();
     let recent_flows: Arc<Mutex<Vec<FlowSummary>>> = Arc::new(Mutex::new(Vec::new()));
     let active_flow = Arc::new(Mutex::new(HashMap::new()));
 
-    // let mut packet_count = 0;
-
-    enable_raw_mode().expect("Unable to enable raw mode");
+    match enable_raw_mode() {
+        Ok(_) => debug!("Raw mode enabled"),
+        Err(e) => {
+            error!("Failed to enable raw mode: {:?}", e);
+            return Err(FluereError::from(e));
+        }
+    };
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).expect("Unable to enter alt screen");
+    match execute!(stdout, EnterAlternateScreen, EnableMouseCapture) {
+        Ok(_) => debug!("Terminal entered alt screen"),
+        Err(e) => {
+            error!("Failed to enter alt screen: {:?}", e);
+            return Err(FluereError::from(e));
+        }
+    };
     let backend = CrosstermBackend::new(io::stdout());
-    let terminal = Arc::new(Mutex::new(
-        Terminal::new(backend).expect("Failed to initialize terminal"),
-    ));
-    terminal
-        .lock()
-        .await
-        .clear()
-        .expect("Failed to clear terminal");
+    let terminal = Arc::new(Mutex::new(Terminal::new(backend)?));
+    match terminal.lock().await.clear() {
+        Ok(_) => debug!("Terminal cleared"),
+        Err(e) => {
+            error!("Failed to clear terminal: {:?}", e);
+            return Err(FluereError::from(e));
+        }
+    };
 
     let draw_task = tokio::task::spawn({
         let terminal_clone = Arc::clone(&terminal);
@@ -140,7 +144,8 @@ pub async fn online_packet_capture(arg: Args) {
                 let (progress, recent_exported_time): (f64, u64) = {
                     let last_export_unix_time_guard = last_export_unix_time_clone.lock().await;
                     let last_export_guard = last_export_clone.lock().await;
-                    let progress = (last_export_guard.elapsed().as_millis() as f64 / interval as f64)
+                    let progress = (last_export_guard.elapsed().as_millis() as f64
+                        / interval as f64)
                         .min(1.0)
                         .max(0.0);
                     (progress, *last_export_unix_time_guard)
@@ -204,11 +209,11 @@ pub async fn online_packet_capture(arg: Args) {
                                     trace!("flow established");
                                     let mut recent_flows_guard = recent_flows.lock().await;
                                     recent_flows_guard.push(FlowSummary {
-                                        src: key_value.src_ip.to_string(),
-                                        dst: key_value.dst_ip.to_string(),
-                                        src_port: key_value.src_port.to_string(),
-                                        dst_port: key_value.dst_port.to_string(),
-                                        protocol: key_value.protocol.to_string(), //flow_data: format!("{:?}", flowdata),
+                                        src: Cow::from(key_value.src_ip.to_string()),
+                                        dst: Cow::from(key_value.dst_ip.to_string()),
+                                        src_port: Cow::from(key_value.src_port.to_string()),
+                                        dst_port: Cow::from(key_value.dst_port.to_string()),
+                                        protocol: Cow::from(key_value.protocol.to_string()), //flow_data: format!("{:?}", flowdata),
                                     });
                                     if recent_flows_guard.len() > MAX_RECENT_FLOWS {
                                         recent_flows_guard.remove(0);
@@ -221,11 +226,11 @@ pub async fn online_packet_capture(arg: Args) {
                                 trace!("flow established");
                                 let mut recent_flows_guard = recent_flows.lock().await;
                                 recent_flows_guard.push(FlowSummary {
-                                    src: key_value.src_ip.to_string(),
-                                    dst: key_value.dst_ip.to_string(),
-                                    src_port: key_value.src_port.to_string(),
-                                    dst_port: key_value.dst_port.to_string(),
-                                    protocol: key_value.protocol.to_string(), //flow_data: format!("{:?}", flowdata),
+                                    src: Cow::from(key_value.src_ip.to_string()),
+                                    dst: Cow::from(key_value.dst_ip.to_string()),
+                                    src_port: Cow::from(key_value.src_port.to_string()),
+                                    dst_port: Cow::from(key_value.dst_port.to_string()),
+                                    protocol: Cow::from(key_value.protocol.to_string()), //flow_data: format!("{:?}", flowdata),
                                 });
                                 if recent_flows_guard.len() > MAX_RECENT_FLOWS {
                                     recent_flows_guard.remove(0);
@@ -338,27 +343,42 @@ pub async fn online_packet_capture(arg: Args) {
     let result = tasks.await;
     debug!("Exporting task excutation result: {:?}", result);
     let _ = draw_task.await;
-    disable_raw_mode().expect("failed to disable raw mode");
+    match disable_raw_mode() {
+        Ok(_) => debug!("Raw mode disabled"),
+        Err(e) => {
+            error!("Failed to disable raw mode: {:?}", e);
+            return Err(FluereError::from(e));
+        }
+    };
     let mut terminal_guard = terminal.lock().await;
-    execute!(
+    match execute!(
         terminal_guard.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
-    )
-    .expect("failed to restore terminal");
+    ) {
+        Ok(_) => debug!("Terminal restored"),
+        Err(e) => {
+            error!("Failed to restore terminal: {:?}", e);
+            return Err(FluereError::from(e));
+        }
+    };
 
-    terminal
-        .lock()
-        .await
-        .show_cursor()
-        .expect("failed to show the cursor");
-    terminal
-        .lock()
-        .await
-        .clear()
-        .expect("failed to clear terminal");
+    match terminal.lock().await.show_cursor() {
+        Ok(_) => debug!("Cursor shown"),
+        Err(e) => {
+            error!("Failed to show the cursor: {:?}", e);
+            return Err(FluereError::from(e));
+        }
+    };
+    match terminal.lock().await.clear() {
+        Ok(_) => debug!("Terminal cleared"),
+        Err(e) => {
+            error!("Failed to clear terminal: {:?}", e);
+            return Err(FluereError::from(e));
+        }
+    };
 
-    //println!("records {:?}", records);
+    Ok(())
 }
 fn draw_ui(
     f: &mut Frame,
@@ -393,7 +413,7 @@ fn draw_ui(
     f.render_widget(progress_bar, chunks[0]);
 
     // Summary box
-    let summary_text = vec![
+    let summary_text = [
         format!("Active Flow Count: {}", active_flow_count),
         format!(
             "Recent Exported Time: {}",
@@ -480,11 +500,11 @@ async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
             {
                 match code {
                     KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
-                        //println!("Ctrl+C pressed. Exiting...");
+                        debug!("Exiting due to control-c");
                         std::process::exit(0);
                     }
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        //println!("'q' or 'Q' pressed. Exiting...");
+                        debug!("Exiting due to q/Q");
                         std::process::exit(0);
                     }
                     _ => {}
