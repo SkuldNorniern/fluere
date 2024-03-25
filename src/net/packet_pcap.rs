@@ -43,13 +43,6 @@ pub async fn pcap_capture(args: Args) {
                 //println!("packet: {:?}", packet);
                 file.write(&packet);
 
-                // packet_count += 1;
-                // slow down the loop for windows to avoid random shutdown
-                // if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
-                //         println!("Slow down the loop for windows");
-                //     sleep(Duration::from_millis(0)).await;
-                // }
-
                 // Check if the duration has been reached
                 if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
                     break;

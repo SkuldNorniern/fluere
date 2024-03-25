@@ -182,15 +182,6 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                     }
                 }
 
-                // packet_count += 1;
-                // slow down the loop for windows to avoid random shutdown
-                // if packet_count % sleep_windows == 0 && cfg!(target_os = "windows") {
-                // if verbose >= 3 {
-                // println!("Slow down the loop for windows");
-                // }
-                // sleep(Duration::from_millis(0)).await;
-                // }
-
                 // Export flows if the interval has been reached
                 if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0 {
                     let mut expired_flows = vec![];
