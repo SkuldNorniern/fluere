@@ -124,44 +124,44 @@ pub async fn online_packet_capture(arg: Args) {
         .clear()
         .expect("Failed to clear terminal");
 
-    let terminal_clone = Arc::clone(&terminal);
-    let recent_flows_clone = Arc::clone(&recent_flows);
-    let active_flow_clone = active_flow.clone();
-    let last_export_clone = Arc::clone(&last_export);
-    let last_export_unix_time_clone = Arc::clone(&last_export_unix_time);
-
-    let draw_task = tokio::task::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-
-            let flow_summaries: Vec<FlowSummary> = {
-                let recent_flows_guard = recent_flows_clone.lock().await;
-                recent_flows_guard.clone().into_iter().collect()
-            };
-            let mut terminal = terminal_clone.lock().await;
-            let last_export_unix_time_guard = last_export_unix_time_clone.lock().await;
-            let last_export_guard = last_export_clone.lock().await;
-            let active_flow_guard = active_flow_clone.lock().await;
-
-            terminal
-                .draw(|f| {
-                    let progress = (last_export_guard.elapsed().as_millis() as f64
-                        / interval as f64)
+    let draw_task = tokio::task::spawn({
+        let terminal_clone = Arc::clone(&terminal);
+        let recent_flows_clone = Arc::clone(&recent_flows);
+        let last_export_clone = Arc::clone(&last_export);
+        let last_export_unix_time_clone = Arc::clone(&last_export_unix_time);
+        let active_flow_clone = active_flow.clone();
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let flow_summaries: Vec<FlowSummary> = {
+                    let recent_flows_guard = recent_flows_clone.lock().await;
+                    recent_flows_guard.clone()
+                };
+                let (progress, recent_exported_time): (f64, u64) = {
+                    let last_export_unix_time_guard = last_export_unix_time_clone.lock().await;
+                    let last_export_guard = last_export_clone.lock().await;
+                    let progress = (last_export_guard.elapsed().as_millis() as f64 / interval as f64)
                         .min(1.0)
                         .max(0.0);
-
-                    let active_flow_count = active_flow_guard.len();
-
-                    let recent_exported_time = *last_export_unix_time_guard; // or however you format the time
-                    draw_ui(
-                        f,
-                        &flow_summaries,
-                        progress,
-                        active_flow_count,
-                        recent_exported_time,
-                    );
-                })
-                .unwrap();
+                    (progress, *last_export_unix_time_guard)
+                };
+                let active_flow_count: usize = {
+                    let active_flow_guard = active_flow_clone.lock().await;
+                    active_flow_guard.len()
+                };
+                let mut terminal = terminal_clone.lock().await;
+                terminal
+                    .draw(|f| {
+                        draw_ui(
+                            f,
+                            &flow_summaries,
+                            progress,
+                            active_flow_count,
+                            recent_exported_time,
+                        );
+                    })
+                    .unwrap();
+            }
         }
     });
 
