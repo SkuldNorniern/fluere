@@ -246,20 +246,18 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
         .get_one::<String>("verbose")
         .map_or(0, |v| v.parse::<u8>().unwrap_or(0));
 
-    if mode != "offline" {
-        if args.get_flag("list") {
-            println!("List of network interfaces");
-            println!("--------------------------");
-            for (i, device) in Device::list().unwrap().iter().enumerate() {
-                print!("[{}] {:25}", i, device.name);
-                let description = &device.desc;
-                if let Some(desc) = description {
-                    print!(" - {}", desc);
-                }
-                println!();
+    if mode != "offline" && args.get_flag("list") {
+        println!("List of network interfaces");
+        println!("--------------------------");
+        for (i, device) in Device::list().unwrap().iter().enumerate() {
+            print!("[{}] {:25}", i, device.name);
+            let description = &device.desc;
+            if let Some(desc) = description {
+                print!(" - {}", desc);
             }
-            exit(0);
+            println!();
         }
+        exit(0);
     }
 
     let arg_data = match mode {
