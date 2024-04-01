@@ -6,7 +6,11 @@
 
 ## Your Comprehensive Network Monitoring and Analysis Tool
 
-Fluere is a robust tool designed for comprehensive network monitoring and analysis. It facilitates the capture of network packets in pcap format and their conversion into NetFlow data, offering a detailed view of network traffic dynamics. With support for both live and offline data capture, Fluere stands as a versatile solution suitable for a myriad of use cases.
+Fluere is a robust tool designed for comprehensive network monitoring and analysis. It facilitates the capture of network packets in pcap format and their conversion into NetFlow data, offering a detailed view of network traffic dynamics. With support for both live and offline data capture, Fluere stands as a versatile solution suitable for a myriad of use cases. 
+
+- AWS flow logging using AWS Traffic Mirroring
+- Local Server's Active firewall implementation using a plugin
+- Logging your Server's Flows 
 
 ### Key Features:
 - Cross-platform support (Windows, macOS, Linux)
