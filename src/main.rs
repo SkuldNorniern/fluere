@@ -10,7 +10,6 @@ pub mod net;
 pub mod types;
 pub mod utils;
 
-use std::fs::File;
 use std::{fmt::Display, io, process::exit};
 
 use crate::logger::{Logger, Logstdout};
@@ -113,12 +112,8 @@ async fn main() {
         let mode_type: Mode = Mode::from(mode);
         let parems = cli::handle_mode(mode, sub_args).await;
 
-        let _log_stdout = Logstdout::Stdout;
-        let _log_file: Option<File> = None;
-        let _log_level = Level::Info;
-        let logger = Logger::new(None, Some(Level::Trace), Some(Logstdout::Stdout), false);
 
-        // (Args, u8)
+        let logger = Logger::new(None, Some(Level::Trace), Some(Logstdout::Stdout), false);
         let filter = from_verbose(parems.1);
         let _ = log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(filter));
 
