@@ -9,7 +9,7 @@ use pcap::Device;
 // It defines the available commands and their arguments.
 pub fn cli_template() -> Command {
     Command::new("fluere")
-        .version("0.6.2")
+        .version("0.7.0")
         .author("Skuld Norniern. <skuldnorniern@gmail.com>")
         .about("Netflow Capture Tool")
         .subcommand_required(true)
