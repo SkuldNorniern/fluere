@@ -112,7 +112,6 @@ async fn main() {
         let mode_type: Mode = Mode::from(mode);
         let parems = cli::handle_mode(mode, sub_args).await;
 
-
         let logger = Logger::new(None, Some(Level::Trace), Some(Logstdout::Stdout), false);
         let filter = from_verbose(parems.1);
         let _ = log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(filter));
