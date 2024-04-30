@@ -68,6 +68,8 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let start = Instant::now();
     let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
+    // FIX:TASK: there is a possibility of a permission error
+    // | need to check, if it is a permission error and handle it
     let mut file = fs::File::create(file_path.as_ref()).unwrap();
 
     //let mut wtr = csv::Writer::from_writer(file);
