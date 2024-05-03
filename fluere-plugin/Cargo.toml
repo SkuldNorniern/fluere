@@ -14,7 +14,7 @@ repository = "https://github.com/SkuldNorniern/fluere"
 
 
 [dependencies]
-git2 = "0.18.3"
+git2 = { version = "0.18.3", default-features = false, features = ["https", "vendored-libgit2", "vendored-openssl"] }
 tokio = { version = "1.36", features = ["full","macros", "rt-multi-thread"] }
 fluere-config = { version = "0.2.0", path = "../fluere-config" }
 #fluere-plugin-trait = { path = "../fluere-plugin-trait" }
