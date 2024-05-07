@@ -154,7 +154,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
         records.push(*flow);
     }
     let tasks = task::spawn(async {
-        fluere_exporter(records, file);
+        fluere_exporter(records, file).await;
     });
 
     let result = tasks.await;
