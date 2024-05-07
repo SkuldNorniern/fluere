@@ -2,7 +2,7 @@ use fluereflow::FluereRecord;
 use log::{debug, trace};
 use std::fs::File;
 
-pub fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
+pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
     let mut wtr = csv::Writer::from_writer(file);
 
     debug!("Writing {} records", records.len());
