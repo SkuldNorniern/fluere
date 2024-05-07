@@ -17,6 +17,7 @@ use tokio::sync::{mpsc, Mutex};
 #[cfg(feature = "log")]
 use log::{debug, error, info, warn};
 
+#[derive(Debug, Clone)]
 pub struct PluginManager {
     lua: Arc<Mutex<Lua>>,
     sender: mpsc::Sender<FluereRecord>,
