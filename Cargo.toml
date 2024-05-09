@@ -59,6 +59,7 @@ fluere = { path = "/usr/bin/fluere" }
 
 [package.metadata.generate-rpm.requires]
 libpcap = "*"
+openssl = "*"
 
 [package.metadata.generate-rpm]
 assets = [
