@@ -172,6 +172,9 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
 
     tokio::spawn(listen_for_exit_keys());
 
+    let mut tasks = vec![];
+    let mut export_tasks = vec![];
+
     loop {
         match cap.next_packet() {
             Err(_) => {
@@ -191,7 +194,10 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
 
                 let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
                     Ok(result) => result,
-                    Err(_) => continue,
+                    Err(e) => {
+                        debug!("{}", e);
+                        continue;
+                    }
                 };
 
                 let flags = TcpFlags::new(raw_flags);
@@ -281,24 +287,49 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                 let mut last_export_unix_time_guard = last_export_unix_time.lock().await;
                 if last_export_guard.elapsed() >= Duration::from_millis(interval) && interval != 0 {
                     let mut expired_flows = vec![];
-                    // packet_count = 0;
+                    let mut expired_flow_data: Vec<FluereRecord> = vec![];
+
+                    debug!("Calculating timeout start");
                     for (key, flow) in active_flow_guard.iter() {
                         if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
                             trace!("flow expired");
-                            plugin_manager.process_flow_data(*flow).await.unwrap();
+                            
+                            //plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
+                            expired_flow_data.push(*flow);
                         }
                     }
+
+                    let cloned_plugin_manager = plugin_manager.clone();
+                    tasks.push(task::spawn(async move {
+                        for flow in &expired_flow_data {
+                            cloned_plugin_manager
+                                .process_flow_data(*flow)
+                                .await
+                                .unwrap();
+                        }
+                        debug!(
+                            "Sending {} expired flows to plugins done",
+                            expired_flow_data.len()
+                        );
+                    }));
+
                     active_flow_guard.retain(|key, _| !expired_flows.contains(key));
                     let cloned_records = records.clone();
-                    debug!("{} flows exported", records.len());
                     records.clear();
-                    let tasks = task::spawn(async {
-                        fluere_exporter(cloned_records, file);
-                    });
+                    //let tasks = task::spawn(async {
+                        //fluere_exporter(cloned_records, file).await;
+                    //});
+                    let file_path_clone = file_path.clone();
+                    export_tasks.push(task::spawn(async move {
+                        fluere_exporter(cloned_records, file).await;
+                        debug!("Export {} Finished", file_path_clone);
+                    }));
 
-                    let _result = tasks.await;
+
+
+
                     /*if verbose >= 1 {
                     println!("Export {} result: {:?}", file_path, result);
                     }*/
@@ -335,13 +366,21 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         plugin_manager.process_flow_data(*flow).await.unwrap();
         records.push(*flow);
     }
-    plugin_manager.await_completion(plugin_worker).await;
-    let tasks = task::spawn(async {
-        fluere_exporter(records, file);
-    });
 
-    let result = tasks.await;
-    debug!("Exporting task excutation result: {:?}", result);
+    for task in tasks {
+        let _ = task.await;
+    }
+
+    let cloned_records = records.clone();
+    export_tasks.push(task::spawn(async {
+        fluere_exporter(cloned_records, file).await;
+    }));
+    plugin_manager.await_completion(plugin_worker).await;
+    drop(plugin_manager);
+    for task in export_tasks {
+        let _ = task.await;
+    }
+
     let _ = draw_task.await;
     match disable_raw_mode() {
         Ok(_) => debug!("Raw mode disabled"),
