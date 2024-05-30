@@ -213,9 +213,15 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                     let cloned_plugin_manager = plugin_manager.clone();
                     tasks.push(task::spawn(async move {
                         for flow in &expired_flow_data {
-                            cloned_plugin_manager.process_flow_data(*flow).await.unwrap();
+                            cloned_plugin_manager
+                                .process_flow_data(*flow)
+                                .await
+                                .unwrap();
                         }
-                        debug!("Sending {} expired flows to plugins done", expired_flow_data.len());
+                        debug!(
+                            "Sending {} expired flows to plugins done",
+                            expired_flow_data.len()
+                        );
                     }));
 
                     active_flow.retain(|key, _| !expired_flows.contains(key));
