@@ -293,7 +293,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     for (key, flow) in active_flow_guard.iter() {
                         if flow_timeout > 0 && flow.last < (time - (flow_timeout * 1000)) {
                             trace!("flow expired");
-                            
+
                             //plugin_manager.process_flow_data(*flow).await.unwrap();
                             records.push(*flow);
                             expired_flows.push(*key);
@@ -319,16 +319,13 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     let cloned_records = records.clone();
                     records.clear();
                     //let tasks = task::spawn(async {
-                        //fluere_exporter(cloned_records, file).await;
+                    //fluere_exporter(cloned_records, file).await;
                     //});
                     let file_path_clone = file_path.clone();
                     export_tasks.push(task::spawn(async move {
                         fluere_exporter(cloned_records, file).await;
                         debug!("Export {} Finished", file_path_clone);
                     }));
-
-
-
 
                     /*if verbose >= 1 {
                     println!("Export {} result: {:?}", file_path, result);
