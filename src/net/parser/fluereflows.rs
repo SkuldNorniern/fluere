@@ -1,7 +1,7 @@
 use pcap;
 
 use crate::net::parser::{
-    dscp_to_tos, parse_flags, parse_microseconds, parse_ports, protocol_to_number,
+    dscp_to_tos, parse_flags, parse_microseconds, parse_ports,
 };
 use crate::net::NetError;
 use fluereflow::FluereRecord;
@@ -192,7 +192,7 @@ fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRec
 }
 
 fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
-    let protocol = protocol_to_number(packet.get_next_level_protocol());
+    let protocol = packet.get_next_level_protocol().0;
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
 
@@ -243,7 +243,7 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
 }
 
 fn ipv6_packet(time: u64, packet: Ipv6Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
-    let protocol = protocol_to_number(packet.get_next_header());
+    let protocol = packet.get_next_header().0;
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
 
