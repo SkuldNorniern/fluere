@@ -11,7 +11,7 @@ use pnet::packet::Packet;
 
 use log::trace;
 
-use crate::net::parser::{parse_ports, protocol_to_number};
+use crate::net::parser::parse_ports;
 use crate::net::types::{Key, MacAddress};
 use crate::net::NetError;
 
@@ -183,7 +183,7 @@ fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetErro
 fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
-    let protocol = protocol_to_number(packet.get_next_level_protocol());
+    let protocol = packet.get_next_level_protocol().0;
     let parsed_ports = parse_ports(protocol, packet.payload());
     match parsed_ports {
         Ok(_) => {}
@@ -203,7 +203,7 @@ fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
 fn ipv6_keys(packet: Ipv6Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
-    let protocol = protocol_to_number(packet.get_next_header());
+    let protocol = packet.get_next_header().0;
     let parsed_ports = parse_ports(protocol, packet.payload());
     match parsed_ports {
         Ok(_) => {}
