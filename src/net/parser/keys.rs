@@ -9,12 +9,16 @@ use pcap;
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::gre::GrePacket;
+use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
+use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
+use pnet::packet::dns::DnsPacket;
 use pnet::packet::vlan::VlanPacket;
 use pnet::packet::Packet;
+
 use log::trace;
 
 
@@ -174,17 +178,35 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             vlan_keys(i.unwrap())?
         }
         EtherTypes::Rarp => {
-            let i = RarpPacket::new(ethernet_packet.payload());
+            let i = ArpPacket::new(ethernet_packet.payload());
             if i.is_none() {
                 return Err(NetError::EmptyPacket);
             }
             trace!("RARP packet detected");
-            rarp_keys(i.unwrap())?
+            arp_keys(i.unwrap())?
         }
         _ => {
+            //Check Every possible key parsing method
+            let parse_test_ipv4 = ipv4_keys(Ipv4Packet::new(ethernet_packet.payload()).unwrap());
+            let parse_test_ipv6 = ipv6_keys(Ipv6Packet::new(ethernet_packet.payload()).unwrap());
+            let parse_test_arp = arp_keys(ArpPacket::new(ethernet_packet.payload()).unwrap());
+            let parse_test_vlan = vlan_keys(VlanPacket::new(ethernet_packet.payload()).unwrap());
+            // let parse_test_gre = gre_keys(GrePacket::new(ethernet_packet.payload()).unwrap());
+            // let parse_test_icmpv6 = icmpv6_keys(Icmpv6Packet::new(ethernet_packet.payload()).unwrap());
+            //let parse_test_tcp = tcp_keys(TcpPacket::new(ethernet_packet.payload()).unwrap());
+            //let parse_test_udp = udp_keys(UdpPacket::new(ethernet_packet.payload()).unwrap());
+            // let parse_test_dns = dns_keys(DnsPacket::new(ethernet_packet.payload()).unwrap());
+
+            trace!("parse_test_ipv4: {:?}", parse_test_ipv4);
+            trace!("parse_test_ipv6: {:?}", parse_test_ipv6);
+            trace!("parse_test_arp: {:?}", parse_test_arp);
+            trace!("parse_test_vlan: {:?}", parse_test_vlan);
+
+
             return Err(NetError::UnknownEtherType(
                 ethernet_packet.get_ethertype().to_string(),
             ))
+
         }
     };
     trace!("Parsed keys");
@@ -217,9 +239,6 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     Ok((key_value, key_reverse_value))
 }
 
-fn key_parser_caller(packet: EthernetPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
-    todo!()
-}
 
 fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
     let src_ip = packet.get_sender_proto_addr();
@@ -251,7 +270,7 @@ fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
             return Ok((
                 std::net::IpAddr::V4(src_ip),
                 std::net::IpAddr::V4(dst_ip),
-                inner_protocol as u16, // Use inner protocol as "port"
+                inner_protocol, // Use inner protocol as "port"
                 0,
                 protocol,
             ));
