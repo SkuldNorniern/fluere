@@ -1,10 +1,9 @@
 use pcap;
 
-use crate::net::parser::{
-    dscp_to_tos, parse_flags, parse_microseconds, parse_ports,
-};
+use crate::net::parser::{dscp_to_tos, parse_flags, parse_microseconds, parse_ports};
 use crate::net::NetError;
 use fluereflow::FluereRecord;
+use log::trace;
 use pnet::packet::{
     arp::ArpPacket,
     ethernet::{EtherTypes, EthernetPacket},
@@ -26,6 +25,7 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
 }
 
 pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+    trace!("Parsing packet");
     if packet.is_empty() {
         return Err(NetError::EmptyPacket);
     }
@@ -107,6 +107,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
     let record_result = match ethernet_packet.get_ethertype() {
         EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload()).unwrap();
+
             if i.payload().is_empty() {
                 return Err(NetError::EmptyPacket);
             }
@@ -129,6 +130,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
 
             arp_packet(time, i)
         }
+
         _ => {
             return Err(NetError::UnknownEtherType(
                 ethernet_packet.get_ethertype().to_string(),
@@ -195,6 +197,8 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
     let protocol = packet.get_next_level_protocol().0;
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
+    trace!("src_ip: {:?}", src_ip);
+    trace!("dst_ip: {:?}", dst_ip);
 
     // ports parsing
     let (src_port, dst_port) = parse_ports(protocol, packet.payload())?;
