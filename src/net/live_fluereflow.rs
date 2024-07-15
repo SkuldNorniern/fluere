@@ -146,8 +146,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     let last_export_guard = last_export_clone.lock().await;
                     let progress = (last_export_guard.elapsed().as_millis() as f64
                         / interval as f64)
-                        .min(1.0)
-                        .max(0.0);
+                        .clamp(0.0, 1.0);
                     (progress, *last_export_unix_time_guard)
                 };
                 let active_flow_count: usize = {
