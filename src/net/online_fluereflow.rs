@@ -83,7 +83,10 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
 
                 let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
                     Ok(keys) => keys,
-                    Err(_) => continue,
+                    Err(e) => {
+                        debug!("Error on parse_keys: {}", e);
+                        continue;
+                    }
                 };
                 if !use_mac {
                     key_value.mac_defaultate();
@@ -93,7 +96,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                 let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
                     Ok(result) => result,
                     Err(e) => {
-                        debug!("{}", e);
+                        debug!("Error on parse_fluereflow: {}", e);
                         continue;
                     }
                 };
