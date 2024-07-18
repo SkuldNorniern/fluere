@@ -55,14 +55,17 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let bar = ProgressBar::new_spinner();
 
     while let Ok(packet) = cap.next_packet() {
+        trace!("Parsing packet");
         let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
             Ok(keys) => keys,
             Err(_) => continue,
         };
+        trace!("Parsed keys");
         if !use_mac {
             key_value.mac_defaultate();
             reverse_key.mac_defaultate();
         }
+
         let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
             Ok(result) => result,
             Err(e) => {
