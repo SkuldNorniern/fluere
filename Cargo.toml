@@ -65,3 +65,7 @@ openssl = "*"
 assets = [
   { source = "target/release/fluere", dest = "/usr/bin/fluere", mode = "755" },
 ]
+
+[profile.release]
+lto = 'fat'
+opt-level = 3
