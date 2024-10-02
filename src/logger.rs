@@ -33,13 +33,13 @@ impl Logger {
                 "C:\\Program Files\\fluere\\fluere.log",
                 #[cfg(target_os = "macos")]
                 "/Library/Logs/fluere/fluere.log",
-                #[cfg(target_os = "bsd")]
+                #[cfg(target_os = "freebsd")]
                 "/var/log/fluere/fluere.log",
                 #[cfg(not(any(
                     target_os = "linux",
                     target_os = "windows",
                     target_os = "macos",
-                    target_os = "bsd"
+                    target_os = "freebsd"
                 )))]
                 "/var/log/fluere/fluere.log",
             ));
