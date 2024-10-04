@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use crate::net::types::MacAddress;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Key {
     pub src_ip: IpAddr,
     pub src_port: u16,
