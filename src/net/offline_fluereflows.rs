@@ -1,4 +1,9 @@
-use std::{collections::{HashMap, BTreeMap}, fs, path::Path, time::Instant};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    path::Path,
+    time::Instant,
+};
 
 use crate::{
     net::{
@@ -169,7 +174,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     for (_key, flow) in active_flow.clone().iter() {
         records.push(*flow);
     }
-    
+
     let tasks = task::spawn(async {
         fluere_exporter(records, file).await;
     });

@@ -3,7 +3,7 @@
 // The data is then exported to a CSV file.
 
 use std::{
-    collections::{HashMap, BTreeMap},
+    collections::{BTreeMap, HashMap},
     fs,
     mem::take,
     time::{Duration, Instant},
