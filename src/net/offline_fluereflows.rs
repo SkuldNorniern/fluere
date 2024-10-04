@@ -90,8 +90,8 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
                             let expiration_time = packet_time + (flow_timeout * 1_000); // Convert milliseconds to microseconds
                             flow_expirations
                                 .entry(expiration_time)
-                                .or_insert_with(Vec::new)
-                                .push(key_value.clone());
+                                .or_default()
+                                .push(key_value);
                             active_flow.insert(key_value, flowdata);
 
                             trace!("Flow established");
@@ -102,8 +102,8 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
                         let expiration_time = packet_time + (flow_timeout * 1_000); // Convert milliseconds to microseconds
                         flow_expirations
                             .entry(expiration_time)
-                            .or_insert_with(Vec::new)
-                            .push(key_value.clone());
+                            .or_default()
+                            .push(key_value);
                         active_flow.insert(key_value, flowdata);
 
                         trace!("Flow established");
