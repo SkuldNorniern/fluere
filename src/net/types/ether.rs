@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct MacAddress(pub [u8; 6]);
 
 impl MacAddress {
@@ -14,7 +14,7 @@ impl From<&[u8]> for MacAddress {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum EtherProtocol {
     Ipv4,
     Ipv6,
