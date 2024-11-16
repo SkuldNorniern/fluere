@@ -7,14 +7,11 @@ use crate::net::NetError;
 use pcap;
 
 use pnet::packet::arp::ArpPacket;
-use pnet::packet::dns::DnsPacket;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::gre::GrePacket;
-use pnet::packet::icmp::IcmpPacket;
 use pnet::packet::icmpv6::Icmpv6Packet;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::vlan::VlanPacket;
 use pnet::packet::Packet;
@@ -38,16 +35,15 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         return Err(NetError::EmptyPacket);
     }
     trace!("Parsing ethernet packet");
-    let ethernet_packet_raw = EthernetPacket::new(packet.data);
-    let ethernet_packet_unpack = match ethernet_packet_raw {
+    let ethernet_packet = match EthernetPacket::new(packet.data) {
+        Some(p) => p,
         None => return Err(NetError::EmptyPacket),
-        Some(e) => e,
     };
     trace!("Parsed ethernet packet");
 
-    let is_udp: bool = match ethernet_packet_unpack.get_ethertype() {
+    let is_udp: bool = match ethernet_packet.get_ethertype() {
         EtherTypes::Ipv6 => {
-            let i = Ipv6Packet::new(ethernet_packet_unpack.payload());
+            let i = Ipv6Packet::new(ethernet_packet.payload());
             if i.is_none() {
                 return Err(NetError::EmptyPacket);
             }
@@ -56,7 +52,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             is_udp
         }
         EtherTypes::Ipv4 => {
-            let i = Ipv4Packet::new(ethernet_packet_unpack.payload());
+            let i = Ipv4Packet::new(ethernet_packet.payload());
             if i.is_none() {
                 return Err(NetError::EmptyPacket);
             }
@@ -66,7 +62,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             is_udp
         }
         EtherTypes::Arp => {
-            let i = ArpPacket::new(ethernet_packet_unpack.payload());
+            let i = ArpPacket::new(ethernet_packet.payload());
             if i.is_none() {
                 return Err(NetError::EmptyPacket);
             }
@@ -83,9 +79,9 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     let mut decapsulated_data: Option<Vec<u8>> = None;
 
     if is_udp {
-        let udp_payload = match ethernet_packet_unpack.get_ethertype() {
+        let udp_payload = match ethernet_packet.get_ethertype() {
             EtherTypes::Ipv6 => {
-                let i = Ipv6Packet::new(ethernet_packet_unpack.payload());
+                let i = Ipv6Packet::new(ethernet_packet.payload());
                 if i.is_none() {
                     return Err(NetError::EmptyPacket);
                 }
@@ -96,7 +92,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                     .to_vec()
             }
             EtherTypes::Ipv4 => {
-                let i = Ipv4Packet::new(ethernet_packet_unpack.payload());
+                let i = Ipv4Packet::new(ethernet_packet.payload());
                 if i.is_none() {
                     return Err(NetError::EmptyPacket);
                 }
@@ -107,7 +103,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                     .to_vec()
             }
             EtherTypes::Arp => {
-                let i = ArpPacket::new(ethernet_packet_unpack.payload());
+                let i = ArpPacket::new(ethernet_packet.payload());
                 if i.is_none() {
                     return Err(NetError::EmptyPacket);
                 }
@@ -135,7 +131,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             Some(e) => e,
         }
     } else {
-        ethernet_packet_unpack
+        ethernet_packet
     };
 
     let ethernet_packet = ethernet_packet_decapsulated;
@@ -191,25 +187,44 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             arp_keys(i.unwrap())?
         }
         _ => {
-            //Check Every possible key parsing method
-            let parse_test_ipv4 = ipv4_keys(Ipv4Packet::new(ethernet_packet.payload()).unwrap());
-            let parse_test_ipv6 = ipv6_keys(Ipv6Packet::new(ethernet_packet.payload()).unwrap());
-            let parse_test_arp = arp_keys(ArpPacket::new(ethernet_packet.payload()).unwrap());
-            let parse_test_vlan = vlan_keys(VlanPacket::new(ethernet_packet.payload()).unwrap());
-            // let parse_test_gre = gre_keys(GrePacket::new(ethernet_packet.payload()).unwrap());
-            // let parse_test_icmpv6 = icmpv6_keys(Icmpv6Packet::new(ethernet_packet.payload()).unwrap());
-            //let parse_test_tcp = tcp_keys(TcpPacket::new(ethernet_packet.payload()).unwrap());
-            //let parse_test_udp = udp_keys(UdpPacket::new(ethernet_packet.payload()).unwrap());
-            // let parse_test_dns = dns_keys(DnsPacket::new(ethernet_packet.payload()).unwrap());
+            // Try each parsing method without unwrapping
+            let parse_test_ipv4 = if let Some(packet) = Ipv4Packet::new(ethernet_packet.payload()) {
+                ipv4_keys(packet)
+            } else {
+                Err(NetError::InvalidPacket)
+            };
+
+            let parse_test_ipv6 = if let Some(packet) = Ipv6Packet::new(ethernet_packet.payload()) {
+                ipv6_keys(packet)
+            } else {
+                Err(NetError::InvalidPacket)
+            };
+
+            let parse_test_arp = if let Some(packet) = ArpPacket::new(ethernet_packet.payload()) {
+                arp_keys(packet)
+            } else {
+                Err(NetError::InvalidPacket)
+            };
+
+            let parse_test_vlan = if let Some(packet) = VlanPacket::new(ethernet_packet.payload()) {
+                vlan_keys(packet)
+            } else {
+                Err(NetError::InvalidPacket)
+            };
 
             trace!("parse_test_ipv4: {:?}", parse_test_ipv4);
             trace!("parse_test_ipv6: {:?}", parse_test_ipv6);
             trace!("parse_test_arp: {:?}", parse_test_arp);
             trace!("parse_test_vlan: {:?}", parse_test_vlan);
 
-            return Err(NetError::UnknownEtherType(
-                ethernet_packet.get_ethertype().to_string(),
-            ));
+            // Try to use the first successful parse result
+            parse_test_ipv4
+                .or(parse_test_ipv6)
+                .or(parse_test_arp)
+                .or(parse_test_vlan)
+                .or(Err(NetError::UnknownEtherType(
+                    ethernet_packet.get_ethertype().to_string(),
+                )))?
         }
     };
     trace!("Parsed keys");
