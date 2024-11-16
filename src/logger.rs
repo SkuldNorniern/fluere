@@ -74,9 +74,15 @@ impl Log for Logger {
     }
 
     fn log(&self, record: &Record) {
-        // Y M S, H:M:S Timezone
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S %z").to_string();
-        let formatted_message = format!("[{}] [{}]: {}", timestamp, record.level(), record.args());
+        let formatted_message = format!(
+            "[{}] [{}] [{}:{}]: {}",
+            timestamp,
+            record.level(),
+            record.file().unwrap_or("unknown"),
+            record.line().unwrap_or(0),
+            record.args()
+        );
 
         if self.write_to_std.as_ref().is_some() && record.level() <= self.severity {
             match self.write_to_std.as_ref().unwrap() {
