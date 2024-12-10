@@ -34,8 +34,8 @@ fluere_plugin = { version = "0.2.0", path = "./fluere-plugin", features = ["log"
 fluere-config = { version = "0.2.0", path = "./fluere-config", features = ["log"] }
 fluereflow = { version = "0.3.2", path = "./fluereflow" }
 
-ratatui = { version = "0.26", features = ["all-widgets"] }
-crossterm = "0.27"
+ratatui = { version = "0.29", features = ["all-widgets"] }
+crossterm = "0.28"
 dirs = "5.0"
 log = { version = "0.4", features = ["std"]}
 indicatif = "0.17"
