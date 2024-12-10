@@ -40,6 +40,10 @@ dirs = "5.0"
 log = { version = "0.4", features = ["std"]}
 indicatif = "0.17"
 
+[lints.clippy]
+unwrap_used = "deny"
+cognitive_complexity = "deny"
+
 [workspace]
 members = [
   "fluere-plugin",
