@@ -10,10 +10,11 @@ use crate::{
         flows::update_flow,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
+        NetError,
     },
     types::{Args, UDFlowKey},
     utils::fluere_exporter,
-    FluereError, NetError,
+    FluereError,
 };
 
 use fluereflow::FluereRecord;
@@ -176,7 +177,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     }
 
     let tasks = task::spawn(async {
-        fluere_exporter(records, file).await;
+        let _ = fluere_exporter(records, file).await;
     });
 
     let result = tasks.await;
