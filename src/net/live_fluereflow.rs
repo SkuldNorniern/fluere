@@ -65,7 +65,10 @@ struct FlowSummary {
 // It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
 // The function runs indefinitely, capturing packets and updating the terminal user interface with the captured data.
 pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
-    let csv_file = arg.files.csv.unwrap();
+    let csv_file = arg
+        .files
+        .csv
+        .ok_or_else(|| FluereError::ConfigError("CSV file not specified".to_string()))?;
     let use_mac = arg.parameters.use_mac.unwrap();
     let interface_name = arg.interface.expect("interface not found");
     let duration = arg.parameters.duration.unwrap();
@@ -330,7 +333,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     println!("Export {} result: {:?}", file_path, result);
                     }*/
                     file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
-                    file = fs::File::create(file_path.as_ref()).unwrap();
+                    file = fs::File::create(file_path.as_ref()).map_err(FluereError::IoError)?;
                     *last_export_guard = Instant::now();
                     *last_export_unix_time_guard = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
