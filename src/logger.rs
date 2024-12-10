@@ -47,12 +47,17 @@ impl Logger {
         let mut file = None;
 
         // check if there is a file at the path and create it if it doesn't exist
-        if path.as_ref().unwrap().parent().is_some() {
-            std::fs::create_dir_all(path.as_ref().unwrap().parent().unwrap()).unwrap();
+        if let Some(path_ref) = path.as_ref() {
+            if let Some(parent) = path_ref.parent() {
+                std::fs::create_dir_all(parent)
+                    .expect("Failed to create log directory");
+            }
         }
 
         if write_to_file {
-            file = Some(File::create(path.as_ref().unwrap()).unwrap());
+            file = Some(File::create(path.as_ref()
+                .expect("Log path not set"))
+                .expect("Failed to create log file"));
         }
         Logger {
             write_to_file: false,
@@ -84,19 +89,24 @@ impl Log for Logger {
             record.args()
         );
 
-        if self.write_to_std.as_ref().is_some() && record.level() <= self.severity {
-            match self.write_to_std.as_ref().unwrap() {
-                Logstdout::Stdout => {
-                    println!("{}", formatted_message);
-                }
-                Logstdout::StdErr => {
-                    eprintln!("{}", formatted_message);
+        if let Some(write_to_std) = self.write_to_std.as_ref() {
+            if record.level() <= self.severity {
+                match write_to_std {
+                    Logstdout::Stdout => {
+                        println!("{}", formatted_message);
+                    }
+                    Logstdout::StdErr => {
+                        eprintln!("{}", formatted_message);
+                    }
                 }
             }
         }
 
         if self.write_to_file {
-            writeln!(self.file.as_ref().unwrap(), "{}", formatted_message).unwrap();
+            if let Some(mut file_ref) = self.file.as_ref() {
+                writeln!(file_ref, "{}", formatted_message)
+                    .expect("Failed to write to log file");
+            }
         }
     }
 
