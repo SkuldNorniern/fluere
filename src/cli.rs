@@ -1,6 +1,10 @@
 use std::process::exit;
 
-use crate::types::{Args, Files, Parameters};
+use crate::{
+    error::OptionExt,
+    types::{Args, Files, Parameters},
+    FluereError,
+};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pcap::Device;
@@ -59,6 +63,13 @@ pub fn cli_template() -> Command {
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
+                    Arg::new("use_ipv6")
+                        .help("support ipv6 [default: false]")
+                        .short('6')
+                        .long("ipv6")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("interval")
                         .help("Set export interval, in milliseconds")
                         .default_value("1800000")
@@ -112,6 +123,13 @@ pub fn cli_template() -> Command {
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
+                    Arg::new("use_ipv6")
+                        .help("support ipv6 [default: false]")
+                        .short('6')
+                        .long("ipv6")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("verbose")
                         .help("Set verbosity level")
                         .default_value("2")
@@ -162,6 +180,13 @@ pub fn cli_template() -> Command {
                         .help("Set use MAC address on Key value [default: false]")
                         .short('M')
                         .long("useMAC")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("use_ipv6")
+                        .help("support ipv6 [default: false]")
+                        .short('6')
+                        .long("ipv6")
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
@@ -241,7 +266,7 @@ pub fn cli_template() -> Command {
         )
 }
 
-pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
+pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Result<(Args, u8), FluereError> {
     let verbose = args
         .get_one::<String>("verbose")
         .map_or(0, |v| v.parse::<u8>().unwrap_or(0));
@@ -249,7 +274,8 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
     if mode != "offline" && args.get_flag("list") {
         println!("List of network interfaces");
         println!("--------------------------");
-        for (i, device) in Device::list().unwrap().iter().enumerate() {
+        let devices = Device::list().expect("Failed to list network devices");
+        for (i, device) in devices.iter().enumerate() {
             print!("[{}] {:25}", i, device.name);
             let description = &device.desc;
             if let Some(desc) = description {
@@ -267,7 +293,7 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> (Args, u8) {
         _ => unreachable!(),
     };
 
-    (arg_data, verbose)
+    Ok((arg_data, verbose))
 }
 
 fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
@@ -282,24 +308,24 @@ fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
         .to_string();
     let timeout = args
         .get_one::<String>("timeout")
-        .unwrap()
+        .expect("Timeout argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse timeout value");
     let duration = args
         .get_one::<String>("duration")
-        .unwrap()
+        .expect("Duration argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse duration value");
     let interval = args
         .get_one::<String>("interval")
-        .unwrap()
+        .expect("Interval argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse interval value");
     let sleep_windows = args
         .get_one::<String>("sleep_windows")
-        .unwrap()
+        .expect("Sleep windows argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse sleep windows value");
     // let verbose = args
     //     .get_one::<String>("verbose")
     //     .unwrap()
@@ -321,6 +347,7 @@ fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
 }
 fn parse_offline_args(args: &clap::ArgMatches) -> Args {
     let use_mac = args.get_flag("useMACaddress");
+    let _use_ipv6 = args.get_flag("use_ipv6");
     let file = args
         .get_one::<String>("file")
         .expect("File not specified")
@@ -328,9 +355,9 @@ fn parse_offline_args(args: &clap::ArgMatches) -> Args {
     let csv = args.get_one::<String>("csv").unwrap().to_string();
     let timeout = args
         .get_one::<String>("timeout")
-        .unwrap()
+        .expect("Timeout argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse timeout value");
     // let verbose = args
     // .get_one::<String>("verbose")
     // .unwrap()
@@ -355,19 +382,19 @@ fn parse_pcap_args(args: &clap::ArgMatches) -> Args {
         .to_string();
     let duration = args
         .get_one::<String>("duration")
-        .unwrap()
+        .expect("Duration argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse duration value");
     let interval = args
         .get_one::<String>("interval")
-        .unwrap()
+        .expect("Interval argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse interval value");
     let sleep_windows = args
         .get_one::<String>("sleep_windows")
-        .unwrap()
+        .expect("Sleep windows argument missing")
         .parse::<u64>()
-        .unwrap();
+        .expect("Failed to parse sleep windows value");
     // let verbose = args
     //     .get_one::<String>("verbose")
     //     .unwrap()
