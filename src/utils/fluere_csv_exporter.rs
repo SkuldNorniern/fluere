@@ -1,8 +1,8 @@
 use fluereflow::FluereRecord;
-use log::{debug, trace};
+use log::{debug, trace, error};
 use std::fs::File;
 
-pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
+pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(), csv::Error> {
     let mut wtr = csv::Writer::from_writer(file);
 
     debug!("Writing {} records", records.len());
@@ -36,7 +36,11 @@ pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
         "ns_cnt",
         "tos",
     ])
-    .unwrap();
+    .map_err(|e| {
+        error!("Failed to write CSV header: {}", e);
+        e
+    })?;
+
     for flow in records.iter() {
         wtr.write_record([
             &flow.source.to_string(),
@@ -67,7 +71,11 @@ pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) {
             &flow.ns_cnt.to_string(),
             &flow.tos.to_string(),
         ])
-        .unwrap();
+        .map_err(|e| {
+            error!("Failed to write CSV record: {}", e);
+            e
+        })?;
     }
     debug!("Wrote {} records", records.len());
+    Ok(())
 }
