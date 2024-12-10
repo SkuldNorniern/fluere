@@ -14,13 +14,7 @@ pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError>
             None => Err(NetError::InvalidPacket),
         },
         17 => match UdpPacket::new(payload) {
-            Some(udp) => {
-                if udp.get_source() == 53 || udp.get_destination() == 53 {
-                    Ok((udp.get_source(), udp.get_destination()))
-                } else {
-                    Ok((udp.get_source(), udp.get_destination()))
-                }
-            }
+            Some(udp) => Ok((udp.get_source(), udp.get_destination())),
             None => Err(NetError::InvalidPacket),
         },
         47 => Ok((0, 0)), // GRE

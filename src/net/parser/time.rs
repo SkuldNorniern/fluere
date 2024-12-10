@@ -9,7 +9,7 @@ pub fn parse_microseconds(sec: u64, usec: u64) -> u64 {
 #[inline]
 pub fn microseconds_to_timestamp(usec: u64) -> String {
     let naive = DateTime::from_timestamp(usec as i64, 0)
-        .unwrap()
+        .expect("Clock may have gone backwards")
         .naive_utc();
 
     #[cfg(not(target_os = "windows"))]
