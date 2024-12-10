@@ -15,8 +15,7 @@ use crate::{
         flows::update_flow,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
-        CaptureDevice,
-        NetError,
+        CaptureDevice, NetError,
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
@@ -31,7 +30,7 @@ use fluere_config::Config;
 use fluere_plugin::PluginManager;
 use fluereflow::FluereRecord;
 
-use log::{debug, info, trace, error};
+use log::{debug, error, info, trace};
 use tokio::{task, task::JoinHandle};
 
 // This function captures packets from a network interface and converts them into NetFlow data.

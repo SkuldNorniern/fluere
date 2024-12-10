@@ -1,5 +1,5 @@
-mod error;
 pub mod cli;
+mod error;
 pub mod logger;
 pub mod net;
 pub mod types;
@@ -74,7 +74,7 @@ pub fn setup_logging(verbose: u8) -> Result<(), FluereError> {
         false,
     );
     let filter = get_log_level(verbose);
-    
+
     log::set_boxed_logger(Box::new(logger))
         .map(|()| log::set_max_level(filter))
         .map_err(|e| FluereError::ConfigError(format!("Failed to setup logger: {}", e)))

@@ -1,37 +1,36 @@
-use std::io;
-use pcap;
 use crate::net::NetError;
+use std::{io, path::PathBuf};
 
 #[derive(Debug)]
 pub enum FluereError {
-    // IO related errors
     IoError(io::Error),
-    // Network related errors
     NetworkError(NetError),
-    // PCAP related errors
     PcapError(pcap::Error),
-    // Parsing related errors
     ParseError(String),
-    // Configuration related errors
     ConfigError(String),
-    // Interface related errors
     InterfaceError(String),
-    // Argument related errors
     ArgumentError(String),
+    // Add new variants
+    FileNotFound(PathBuf),
+    ParameterMissing(String),
+    InvalidValue { field: String, value: String },
 }
-
-impl std::error::Error for FluereError {}
 
 impl std::fmt::Display for FluereError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FluereError::IoError(e) => write!(f, "IO error: {}", e),
-            FluereError::NetworkError(e) => write!(f, "Network error: {}", e),
-            FluereError::PcapError(e) => write!(f, "PCAP error: {}", e),
-            FluereError::ParseError(e) => write!(f, "Parse error: {}", e),
-            FluereError::ConfigError(e) => write!(f, "Configuration error: {}", e),
-            FluereError::InterfaceError(e) => write!(f, "Interface error: {}", e),
-            FluereError::ArgumentError(e) => write!(f, "Argument error: {}", e),
+            Self::IoError(e) => write!(f, "IO error: {}", e),
+            Self::NetworkError(e) => write!(f, "Network error: {}", e),
+            Self::PcapError(e) => write!(f, "PCAP error: {}", e),
+            Self::ParseError(e) => write!(f, "Parse error: {}", e),
+            Self::ConfigError(e) => write!(f, "Configuration error: {}", e),
+            Self::InterfaceError(e) => write!(f, "Interface error: {}", e),
+            Self::ArgumentError(e) => write!(f, "Argument error: {}", e),
+            Self::FileNotFound(path) => write!(f, "File not found: {}", path.display()),
+            Self::ParameterMissing(name) => write!(f, "Required parameter missing: {}", name),
+            Self::InvalidValue { field, value } => {
+                write!(f, "Invalid value '{}' for field '{}'", value, field)
+            }
         }
     }
 }
@@ -55,21 +54,19 @@ impl From<NetError> for FluereError {
     }
 }
 
-// Helper methods for creating errors
-impl FluereError {
-    pub fn interface_not_found() -> Self {
-        FluereError::InterfaceError("Network interface not found".to_string())
+impl From<std::num::ParseIntError> for FluereError {
+    fn from(error: std::num::ParseIntError) -> Self {
+        FluereError::ParseError(error.to_string())
     }
+}
 
-    pub fn argument_error<T: std::fmt::Display>(msg: T) -> Self {
-        FluereError::ArgumentError(msg.to_string())
-    }
+// Add conversion for Option to Result
+pub trait OptionExt<T> {
+    fn required(self, name: &str) -> Result<T, FluereError>;
+}
 
-    pub fn config_error<T: std::fmt::Display>(msg: T) -> Self {
-        FluereError::ConfigError(msg.to_string())
+impl<T> OptionExt<T> for Option<T> {
+    fn required(self, name: &str) -> Result<T, FluereError> {
+        self.ok_or_else(|| FluereError::ParameterMissing(name.to_string()))
     }
-
-    pub fn parse_error<T: std::fmt::Display>(msg: T) -> Self {
-        FluereError::ParseError(msg.to_string())
-    }
-} 
+}

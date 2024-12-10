@@ -1,5 +1,5 @@
 use fluereflow::FluereRecord;
-use log::{debug, trace, error};
+use log::{debug, error, trace};
 use std::fs::File;
 
 pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(), csv::Error> {

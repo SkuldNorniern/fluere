@@ -6,11 +6,11 @@ use std::{
 };
 
 use crate::{
+    error::OptionExt,
     net::{
         flows::update_flow,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
-        NetError,
     },
     types::{Args, UDFlowKey},
     utils::fluere_exporter,
@@ -24,20 +24,15 @@ use pcap::Capture;
 use tokio::task;
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
-    let _csv_file = arg.files.csv.unwrap();
-    let file_name = arg.files.file.unwrap();
-    let use_mac = arg.parameters.use_mac.unwrap();
-    let flow_timeout = arg.parameters.timeout.unwrap();
+    let _csv_file = arg.files.csv.required("csv file")?;
+    let file_name = arg.files.file.required("input file")?;
+    let use_mac = arg.parameters.use_mac.required("use_mac parameter")?;
+    let flow_timeout = arg.parameters.timeout.required("timeout parameter")?;
 
-    let mut cap = Capture::from_file(file_name.clone()).map_err(NetError::from)?;
+    let mut cap = Capture::from_file(file_name.clone())?;
 
     let file_dir = "./output";
-    match fs::create_dir_all(<&str>::clone(&file_dir)) {
-        Ok(_) => {
-            debug!("Created directory: {}", file_dir)
-        }
-        Err(error) => panic!("Problem creating directory: {:?}", error),
-    };
+    fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
     let file_noext = format!(
@@ -48,7 +43,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
             .unwrap_or("output")
     );
     let output_file_path = format!("{}/{}", file_dir, file_noext);
-    let file = fs::File::create(output_file_path.clone()).unwrap();
+    let file = fs::File::create(&output_file_path)?;
 
     let mut records: Vec<FluereRecord> = Vec::new();
     let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
