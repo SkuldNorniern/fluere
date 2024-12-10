@@ -16,10 +16,11 @@ use crate::{
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
         CaptureDevice,
+        NetError,
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
-    FluereError, NetError,
+    FluereError,
 };
 
 use fluere_config::Config;
@@ -30,7 +31,7 @@ use fluere_config::Config;
 use fluere_plugin::PluginManager;
 use fluereflow::FluereRecord;
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, error};
 use tokio::{task, task::JoinHandle};
 
 // This function captures packets from a network interface and converts them into NetFlow data.
@@ -219,7 +220,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                     let file_path_clone = file_path.clone();
                     info!("Export {} Started", file_path_clone);
                     export_tasks.push(task::spawn(async move {
-                        fluere_exporter(records_to_export, file).await;
+                        let _ = fluere_exporter(records_to_export, file).await;
                         info!("Export {} Finished", file_path_clone);
                     }));
 
@@ -259,7 +260,10 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
 
     let records_to_export = take(&mut records);
     export_tasks.push(task::spawn(async {
-        fluere_exporter(records_to_export, file).await;
+        let exporter = fluere_exporter(records_to_export, file).await;
+        if exporter.is_err() {
+            error!("Export error: {}", exporter.unwrap_err());
+        }
     }));
     plugin_manager.await_completion(plugin_worker).await;
     drop(plugin_manager);

@@ -322,7 +322,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     //});
                     let file_path_clone = file_path.clone();
                     export_tasks.push(task::spawn(async move {
-                        fluere_exporter(cloned_records, file).await;
+                        let _ = fluere_exporter(cloned_records, file).await;
                         debug!("Export {} Finished", file_path_clone);
                     }));
 
@@ -369,7 +369,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
 
     let cloned_records = records.clone();
     export_tasks.push(task::spawn(async {
-        fluere_exporter(cloned_records, file).await;
+        let _ = fluere_exporter(cloned_records, file).await;
     }));
     plugin_manager.await_completion(plugin_worker).await;
     drop(plugin_manager);
