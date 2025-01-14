@@ -437,7 +437,7 @@ fn draw_ui(
             ]
             .as_ref(),
         )
-        .split(f.size());
+        .split(f.area());
 
     // Progress bar
     let progress_bar = Gauge::default()

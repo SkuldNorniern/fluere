@@ -20,7 +20,7 @@ async fn main() -> Result<(), FluereError> {
                 "Failed to handle mode".to_string(),
             ));
         };
-
+        
         // Setup logging using library function
         fluere::setup_logging(verbosity)?;
         debug!("Fluere started");
