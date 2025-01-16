@@ -10,4 +10,5 @@ pub use ether::MacAddress;
 pub use flags::TcpFlags;
 pub use key::Key;
 pub use protocols::Ports;
+pub use protocols::Protocol;
 pub use protocols::Udp;
