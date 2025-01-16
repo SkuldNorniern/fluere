@@ -1,7 +1,6 @@
 use std::process::exit;
 
 use crate::{
-    error::OptionExt,
     types::{Args, Files, Parameters},
     FluereError,
 };
