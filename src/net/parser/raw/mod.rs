@@ -1,47 +1,10 @@
-mod gre;
-mod esp;
-mod ah;
-mod pim;
-mod igmp;
-mod arp;
+mod ethertypes;
+mod protocols;
 mod utils;
-mod vxlan;
-mod mpls;
-mod isis;
-mod bgp;
-mod icmp;
-mod sctp;
-mod ospf;
-mod vrrp;
-mod l2tp;
 
-pub use self::{
-    gre::parse_gre,
-    esp::parse_esp,
-    ah::parse_ah,
-    pim::parse_pim,
-    igmp::parse_igmp,
-    arp::parse_arp,
-    vxlan::parse_vxlan,
-    mpls::parse_mpls,
-    isis::parse_isis,
-    bgp::parse_bgp,
-    icmp::parse_icmp,
-    sctp::parse_sctp,
-    ospf::parse_ospf,
-    vrrp::parse_vrrp,
-    l2tp::parse_l2tp,
-};
-
-use pnet::packet::{
-    tcp::TcpPacket,
-    udp::UdpPacket,
-    ethernet::EtherTypes,
-    Packet,
-};
-
-use log::trace;
 use std::net::IpAddr;
+
+use log::{debug, trace, warn};
 
 #[derive(Debug)]
 pub struct RawProtocolHeader {
@@ -51,7 +14,26 @@ pub struct RawProtocolHeader {
     pub dst_port: u16,
     pub protocol: u8,
     pub length: u16,
-    pub inner_payload: Option<Vec<u8>>,
+    pub payload: Option<Vec<u8>>,
+    pub raw_packet: Option<Vec<u8>>,
+    pub ethertype: Option<u16>,
+    pub flags: Option<u8>,
+    pub version: Option<u8>,
+    pub next_header: Option<u8>,
+    pub sequence: Option<u32>,
+    pub spi: Option<u32>,
+
+    // IGMP specific fields
+    pub qrv: Option<u8>,  // Querier's Robustness Variable
+    pub qqic: Option<u8>, // Querier's Query Interval Code
+
+    pub ttl: Option<u8>, // Time To Live
+
+    // Add IPX specific fields
+    pub src_network: Option<u32>,
+    pub dst_network: Option<u32>,
+
+    pub checksum: Option<u16>, // IP checksum
 }
 
 impl RawProtocolHeader {
@@ -62,7 +44,7 @@ impl RawProtocolHeader {
         dst_port: u16,
         protocol: u8,
         length: u16,
-        inner_payload: Option<Vec<u8>>,
+        payload: Option<Vec<u8>>,
     ) -> Self {
         Self {
             src_ip,
@@ -71,84 +53,177 @@ impl RawProtocolHeader {
             dst_port,
             protocol,
             length,
-            inner_payload,
+            payload,
+            raw_packet: None,
+            ethertype: None,
+            flags: None,
+            version: None,
+            next_header: None,
+            sequence: None,
+            spi: None,
+            ttl: None,
+            qrv: None,
+            qqic: None,
+            src_network: None,
+            dst_network: None,
+            checksum: None,
         }
     }
 
-    pub fn from_tcp(packet: &TcpPacket) -> Self {
-        Self {
-            src_ip: None,
-            dst_ip: None,
-            src_port: packet.get_source(),
-            dst_port: packet.get_destination(),
-            protocol: 6, // TCP
-            length: packet.packet().len() as u16,
-            inner_payload: Some(packet.payload().to_vec()),
-        }
+    pub fn with_raw_packet(mut self, packet: Vec<u8>) -> Self {
+        self.raw_packet = Some(packet);
+        self
     }
 
-    pub fn from_udp(packet: &UdpPacket) -> Self {
-        Self {
-            src_ip: None,
-            dst_ip: None,
-            src_port: packet.get_source(),
-            dst_port: packet.get_destination(),
-            protocol: 17, // UDP
-            length: packet.packet().len() as u16,
-            inner_payload: Some(packet.payload().to_vec()),
-        }
+    pub fn with_next_header(mut self, next_header: u8) -> Self {
+        self.next_header = Some(next_header);
+        self
     }
 
-    pub fn from_raw_packet(packet: &[u8], protocol: u8) -> Option<Self> {
-        match protocol {
-            6 => TcpPacket::new(packet).map(|p| Self::from_tcp(&p)),  // TCP
-            17 => UdpPacket::new(packet).map(|p| Self::from_udp(&p)), // UDP
-            47 => parse_gre(packet),     // GRE
-            50 => parse_esp(packet),     // ESP
-            51 => parse_ah(packet),      // AH
-            2 => parse_igmp(packet),     // IGMP
-            89 => parse_ospf(packet),    // OSPF
-            103 => parse_pim(packet),    // PIM
-            112 => parse_vrrp(packet),   // VRRP
-            115 => parse_l2tp(packet),   // L2TP
-            124 => parse_isis(packet),   // IS-IS
-            132 => parse_sctp(packet),   // SCTP
-            137 => parse_mpls(packet),   // MPLS
-            179 => parse_bgp(packet),    // BGP
-            _ => None,
-        }
+    pub fn with_sequence(mut self, sequence: u32) -> Self {
+        self.sequence = Some(sequence);
+        self
     }
 
-    pub fn get_encapsulated_flow(&self) -> Option<Self> {
-        if let Some(payload) = &self.inner_payload {
-            match self.protocol {
-                47 => parse_gre(payload),     // GRE
-                50 => parse_esp(payload),     // ESP
-                51 => parse_ah(payload),      // AH
-                137 => parse_mpls(payload),   // MPLS
-                _ => None
+    pub fn with_spi(mut self, spi: u32) -> Self {
+        self.spi = Some(spi);
+        self
+    }
+
+    pub fn with_ethertype(mut self, ethertype: u16) -> Self {
+        self.ethertype = Some(ethertype);
+        self
+    }
+
+    pub fn with_flags(mut self, flags: u8) -> Self {
+        self.flags = Some(flags);
+        self
+    }
+
+    pub fn with_version(mut self, version: u8) -> Self {
+        self.version = Some(version);
+        self
+    }
+
+    pub fn with_qrv(mut self, qrv: u8) -> Self {
+        self.qrv = Some(qrv);
+        self
+    }
+
+    pub fn with_qqic(mut self, qqic: u8) -> Self {
+        self.qqic = Some(qqic);
+        self
+    }
+
+    pub fn with_ttl(mut self, ttl: u8) -> Self {
+        self.ttl = Some(ttl);
+        self
+    }
+
+    pub fn with_src_network(mut self, network: u32) -> Self {
+        self.src_network = Some(network);
+        self
+    }
+
+    pub fn with_dst_network(mut self, network: u32) -> Self {
+        self.dst_network = Some(network);
+        self
+    }
+
+    pub fn with_checksum(mut self, checksum: u16) -> Self {
+        self.checksum = Some(checksum);
+        self
+    }
+
+    pub fn from_ethertype(payload: &[u8], ethertype: u16) -> Option<Self> {
+        trace!(
+            "Attempting to parse raw protocol from EtherType: 0x{:04x}",
+            ethertype
+        );
+
+        // Try ethertypes module first
+        if let Some(header) = ethertypes::parse_ethertype(payload, ethertype) {
+            debug!("Successfully parsed using ethertypes module");
+            return Some(header);
+        }
+
+        // Fallback to protocol-based parsing
+        Self::from_raw_packet(payload, ethertype as u8)
+    }
+
+    pub fn from_raw_packet(payload: &[u8], protocol_hint: u8) -> Option<Self> {
+        trace!(
+            "Attempting raw packet parsing with protocol hint: {}",
+            protocol_hint
+        );
+
+        // Try known protocols first
+        if let Some(header) = protocols::parse_protocol(payload, protocol_hint) {
+            debug!("Successfully parsed using protocol module");
+            return Some(header);
+        }
+
+        // Fallback to generic packet analysis
+        if payload.len() < 4 {
+            warn!("Payload too short for generic analysis");
+            debug!("Payload: {:?}", payload);
+            return None;
+        }
+
+        // Look for common protocol patterns
+        let possible_header = match protocol_hint {
+            0xb9 => {
+                // Netflix VPN pattern
+                debug!("Detected possible Netflix VPN traffic");
+                Some(Self::new(
+                    None,
+                    None,
+                    ((payload[0] as u16) << 8) | payload[1] as u16,
+                    ((payload[2] as u16) << 8) | payload[3] as u16,
+                    protocol_hint,
+                    payload.len() as u16,
+                    Some(payload[4..].to_vec()),
+                ))
             }
-        } else {
-            None
-        }
-    }
+            0x36 => {
+                // Custom VPN pattern
+                debug!("Detected possible custom VPN traffic");
+                Some(Self::new(
+                    None,
+                    None,
+                    payload[0] as u16,
+                    payload[1] as u16,
+                    protocol_hint,
+                    payload.len() as u16,
+                    Some(payload[2..].to_vec()),
+                ))
+            }
+            _ => {
+                trace!("Using generic packet analysis");
+                Some(Self::new(
+                    None,
+                    None,
+                    if payload.len() >= 2 {
+                        ((payload[0] as u16) << 8) | payload[1] as u16
+                    } else {
+                        0
+                    },
+                    if payload.len() >= 4 {
+                        ((payload[2] as u16) << 8) | payload[3] as u16
+                    } else {
+                        0
+                    },
+                    protocol_hint,
+                    payload.len() as u16,
+                    Some(payload.to_vec()),
+                ))
+            }
+        };
 
-    // pub fn get_inner_flow(&self) -> Option<Vec<Self>> {
-    //     let mut flows = Vec::new();
-        
-    //     // First check for encapsulated protocols
-    //     if let Some(inner) = self.get_encapsulated_flow() {
-    //         flows.push(inner);
-    //         // Recursively check for more encapsulated flows
-    //         if let Some(mut deeper_flows) = inner.get_inner_flow() {
-    //             flows.append(&mut deeper_flows);
-    //         }
-    //     }
-        
-    //     if flows.is_empty() {
-    //         None
-    //     } else {
-    //         Some(flows)
-    //     }
-    // }
+        if possible_header.is_some() {
+            debug!("Created raw protocol header through generic analysis");
+        }
+
+        possible_header
+    }
 }
