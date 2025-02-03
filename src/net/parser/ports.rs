@@ -1,8 +1,8 @@
 use crate::net::NetError;
 
+use crate::net::parser::raw::RawProtocolHeader;
 use log::debug;
 use pnet::packet::{tcp::TcpPacket, udp::UdpPacket};
-use crate::net::parser::raw::RawProtocolHeader;
 
 pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError> {
     match protocol {
@@ -29,25 +29,28 @@ pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError>
         },
         unknown_protocol => {
             debug!("Attempting to parse unknown protocol: {}", unknown_protocol);
-            
+
             // Try TCP first
             if let Some(tcp) = TcpPacket::new(payload) {
                 debug!("Successfully parsed as TCP packet");
                 return Ok((tcp.get_source(), tcp.get_destination()));
             }
-            
+
             // Try UDP next
             if let Some(udp) = UdpPacket::new(payload) {
                 debug!("Successfully parsed as UDP packet");
                 return Ok((udp.get_source(), udp.get_destination()));
             }
-            
+
             // Finally try RawProtocolHeader as fallback
             debug!("Attempting to parse using RawProtocolHeader");
             if let Some(header) = RawProtocolHeader::from_raw_packet(payload, unknown_protocol) {
                 Ok((header.src_port, header.dst_port))
             } else {
-                debug!("Failed to parse protocol {}, returning default ports", unknown_protocol);
+                debug!(
+                    "Failed to parse protocol {}, returning default ports",
+                    unknown_protocol
+                );
                 Ok((0, 0))
             }
         }
