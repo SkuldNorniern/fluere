@@ -47,7 +47,6 @@ impl CaptureDevice {
 impl Drop for CaptureDevice {
     fn drop(&mut self) {
         info!("Closing capture session for device {}", self.name);
-        // println!("Closing capture session for device {}", self.name);
     }
 }
 pub fn find_device(identifier: &str) -> Result<Device, NetError> {
