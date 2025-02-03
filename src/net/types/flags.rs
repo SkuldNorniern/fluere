@@ -25,4 +25,7 @@ impl TcpFlags {
             ns: flags[8],
         }
     }
+    pub fn is_finished(&self) -> bool {
+        self.fin == 1 || self.rst == 1
+    }
 }
