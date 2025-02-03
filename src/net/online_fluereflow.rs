@@ -37,13 +37,14 @@ use tokio::{task, task::JoinHandle};
 // It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
 // The function runs indefinitely, capturing packets and exporting the captured data to a CSV file.
 pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
-    let csv_file = arg.files.csv.unwrap();
-    let use_mac = arg.parameters.use_mac.unwrap();
+    let csv_file = arg.files.csv.expect("this should be defaulted to `output` on construction");
+    //let enable_ipv6
+    let use_mac = arg.parameters.use_mac.expect("this should be defaulted to `false` on construction");
     let interface_name = arg.interface.expect("interface not found");
-    let duration = arg.parameters.duration.unwrap();
-    let interval = arg.parameters.interval.unwrap();
-    let flow_timeout = arg.parameters.timeout.unwrap();
-    let _sleep_windows = arg.parameters.sleep_windows.unwrap();
+    let duration = arg.parameters.duration.expect("this should be defaulted to `0(infinite)` on construction");
+    let interval = arg.parameters.interval.expect("this should be defaulted to `30 minutes` on construction");
+    let flow_timeout = arg.parameters.timeout.expect("this should be defaulted to `10 minutes` on construction");
+    let _sleep_windows = arg.parameters.sleep_windows.expect("this should be defaulted to `false`, and now deprecated");
     let config = Config::new();
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
     let plugin_worker = plugin_manager.start_worker();
@@ -66,7 +67,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
     // FIX:TASK: there is a possibility of a permission error
     // | need to check, if it is a permission error and handle it
-    let mut file = fs::File::create(file_path.as_ref()).unwrap();
+    let mut file = fs::File::create(file_path.as_ref())?;
 
     //let mut wtr = csv::Writer::from_writer(file);
 
@@ -219,13 +220,16 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                     let file_path_clone = file_path.clone();
                     info!("Export {} Started", file_path_clone);
                     export_tasks.push(task::spawn(async move {
-                        let _ = fluere_exporter(records_to_export, file).await;
+                        let exporter = fluere_exporter(records_to_export, file).await;
+                        if let Err(err) = exporter {
+                            error!("Export error: {}", err);
+                        }
                         info!("Export {} Finished", file_path_clone);
                     }));
 
                     info!("running without blocking");
                     file_path = cur_time_file(&csv_file, file_dir, ".csv");
-                    file = fs::File::create(file_path.as_ref()).unwrap();
+                    file = fs::File::create(file_path.as_ref())?;
                     last_export = Instant::now();
                 }
 
@@ -260,8 +264,8 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let records_to_export = take(&mut records);
     export_tasks.push(task::spawn(async {
         let exporter = fluere_exporter(records_to_export, file).await;
-        if exporter.is_err() {
-            error!("Export error: {}", exporter.unwrap_err());
+        if let Err(err) = exporter {
+            error!("Export error: {}", err);
         }
     }));
     plugin_manager.await_completion(plugin_worker).await;
