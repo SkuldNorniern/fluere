@@ -20,6 +20,7 @@ use crate::{
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
     FluereError,
+    error::OptionExt,
 };
 
 use fluere_config::Config;
@@ -37,14 +38,14 @@ use tokio::{task, task::JoinHandle};
 // It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
 // The function runs indefinitely, capturing packets and exporting the captured data to a CSV file.
 pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
-    let csv_file = arg.files.csv.expect("this should be defaulted to `output` on construction");
+    let csv_file = arg.files.csv.required("this should be defaulted to `output` on construction")?;
     //let enable_ipv6
-    let use_mac = arg.parameters.use_mac.expect("this should be defaulted to `false` on construction");
-    let interface_name = arg.interface.expect("interface not found");
-    let duration = arg.parameters.duration.expect("this should be defaulted to `0(infinite)` on construction");
-    let interval = arg.parameters.interval.expect("this should be defaulted to `30 minutes` on construction");
-    let flow_timeout = arg.parameters.timeout.expect("this should be defaulted to `10 minutes` on construction");
-    let _sleep_windows = arg.parameters.sleep_windows.expect("this should be defaulted to `false`, and now deprecated");
+    let use_mac = arg.parameters.use_mac.required("this should be defaulted to `false` on construction")?;
+    let interface_name = arg.interface.required("interface should be provided")?;
+    let duration = arg.parameters.duration.required("this should be defaulted to `0(infinite)` on construction")?;
+    let interval = arg.parameters.interval.required("this should be defaulted to `30 minutes` on construction")?;
+    let flow_timeout = arg.parameters.timeout.required("this should be defaulted to `10 minutes` on construction")?;
+    let _sleep_windows = arg.parameters.sleep_windows.required("this should be defaulted to `false`, and now deprecated")?;
     let config = Config::new();
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
     let plugin_worker = plugin_manager.start_worker();
@@ -81,7 +82,10 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
 
     loop {
         match cap.next_packet() {
-            Err(_) => continue,
+            Err(e) => {
+                trace!("Error capturing packet: {}", e);
+                continue;
+            }
             Ok(packet) => {
                 trace!("received packet");
 
@@ -172,11 +176,11 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                     trace!("flow key detail: {:?}", flow_key);
 
                     // Check if the flow has finished
-                    if flags.fin == 1 || flags.rst == 1 {
+                    if flags.is_finished() {
                         trace!("flow finished");
                         trace!("flow data: {:?}", flow);
 
-                        plugin_manager.process_flow_data(*flow).await.unwrap();
+                        plugin_manager.process_flow_data(*flow).await.map_err(|e| FluereError::PluginError(e.to_string()))?;
                         records.push(*flow);
 
                         active_flow.remove(flow_key);
@@ -203,7 +207,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                         for key in keys {
                             if let Some(flow) = active_flow.remove(&key) {
                                 trace!("flow expired");
-                                plugin_manager.process_flow_data(flow).await.unwrap();
+                                plugin_manager.process_flow_data(flow).await.map_err(|e| FluereError::PluginError(e.to_string()))?;
                                 records.push(flow);
                             }
                         }
@@ -246,7 +250,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     for (_exp_time, keys) in flow_expirations.iter() {
         for key in keys {
             if let Some(flow) = active_flow.remove(key) {
-                plugin_manager.process_flow_data(flow).await.unwrap();
+                plugin_manager.process_flow_data(flow).await.map_err(|e| FluereError::PluginError(e.to_string()))?;
                 records.push(flow);
             }
         }
@@ -254,7 +258,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
 
     debug!("Captured in {:?}", start.elapsed());
     for (_key, flow) in active_flow.iter() {
-        plugin_manager.process_flow_data(*flow).await.unwrap();
+        plugin_manager.process_flow_data(*flow).await.map_err(|e| FluereError::PluginError(e.to_string()))?;
         records.push(*flow);
     }
     for task in tasks {

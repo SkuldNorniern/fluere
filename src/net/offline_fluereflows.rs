@@ -24,10 +24,10 @@ use pcap::Capture;
 use tokio::task;
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
-    let _csv_file = arg.files.csv.required("csv file")?;
-    let file_name = arg.files.file.required("input file")?;
-    let use_mac = arg.parameters.use_mac.required("use_mac parameter")?;
-    let flow_timeout = arg.parameters.timeout.required("timeout parameter")?;
+    let _csv_file = arg.files.csv.required("this should be defaulted to `output` on construction")?;
+    let file_name = arg.files.file.required("pcap file path should be provided")?;
+    let use_mac = arg.parameters.use_mac.required("this should be defaulted to `false` on construction")?;
+    let flow_timeout = arg.parameters.timeout.required("this should be defaulted to `10 minutes` on construction")?;
 
     let mut cap = Capture::from_file(file_name.clone())?;
 
@@ -137,7 +137,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
                 if is_reverse { "reverse" } else { "forward" }
             );
 
-            if flags.fin == 1 || flags.rst == 1 {
+            if flags.is_finished() {
                 trace!("Flow finished");
                 trace!("Flow data: {:?}", flow);
                 records.push(*flow);

@@ -13,6 +13,7 @@ pub enum FluereError {
     // Add new variants
     FileNotFound(PathBuf),
     ParameterMissing(String),
+    PluginError(String),
     InvalidValue { field: String, value: String },
 }
 
@@ -31,6 +32,7 @@ impl std::fmt::Display for FluereError {
             Self::InvalidValue { field, value } => {
                 write!(f, "Invalid value '{}' for field '{}'", value, field)
             }
+            Self::PluginError(e) => write!(f, "Plugin error: {}", e),
         }
     }
 }
