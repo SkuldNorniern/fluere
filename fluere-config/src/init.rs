@@ -22,7 +22,6 @@ impl Config {
                 Ok(_) => {
                     #[cfg(feature = "log")]
                     debug!("Created directory at {:?}", path_base);
-                    ()
                 }
                 Err(e) => {
                     #[cfg(feature = "log")]
@@ -94,6 +93,6 @@ fn home_config_path() -> PathBuf {
             config_dir().expect("Could not determine the home directory")
         }
     };
-    let path_config = path_base.join("fluere");
-    path_config
+    
+    path_base.join("fluere")
 }
