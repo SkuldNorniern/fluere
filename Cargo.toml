@@ -2,7 +2,7 @@
 name = "fluere"
 version = "0.7.1-dev"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
-edition = "2021"
+edition = "2024"
 description = "Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool"
 readme = "README.md"
 license = "Apache-2.0"
