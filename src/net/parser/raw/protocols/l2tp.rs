@@ -37,8 +37,8 @@ pub fn parse_l2tp(payload: &[u8]) -> Option<RawProtocolHeader> {
         // Offset bit set
         header_size += 2;
         if payload.len() > header_size {
-            header_size +=
-                (((payload[header_size - 2] as u16) << 8) | payload[header_size - 1] as u16) as usize;
+            header_size += (((payload[header_size - 2] as u16) << 8)
+                | payload[header_size - 1] as u16) as usize;
         }
     }
 
