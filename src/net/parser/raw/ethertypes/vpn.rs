@@ -139,12 +139,18 @@ fn extract_ip_addresses(payload: &[u8]) -> (Option<IpAddr>, Option<IpAddr>) {
     // Check for IPv4 header (Version should be 4 in first 4 bits)
     if (payload[0] >> 4) == 4 {
         let src_ip = IpAddr::V4(Ipv4Addr::new(
-            payload[12], payload[13], payload[14], payload[15]
+            payload[12],
+            payload[13],
+            payload[14],
+            payload[15],
         ));
         let dst_ip = IpAddr::V4(Ipv4Addr::new(
-            payload[16], payload[17], payload[18], payload[19]
+            payload[16],
+            payload[17],
+            payload[18],
+            payload[19],
         ));
-        
+
         trace!("Found IPv4 addresses - Src: {}, Dst: {}", src_ip, dst_ip);
         return (Some(src_ip), Some(dst_ip));
     }
@@ -159,7 +165,7 @@ fn extract_ip_addresses(payload: &[u8]) -> (Option<IpAddr>, Option<IpAddr>) {
             u16::from_be_bytes([payload[16], payload[17]]),
             u16::from_be_bytes([payload[18], payload[19]]),
             u16::from_be_bytes([payload[20], payload[21]]),
-            u16::from_be_bytes([payload[22], payload[23]])
+            u16::from_be_bytes([payload[22], payload[23]]),
         ));
         let dst_ip = IpAddr::V6(Ipv6Addr::new(
             u16::from_be_bytes([payload[24], payload[25]]),
@@ -169,9 +175,9 @@ fn extract_ip_addresses(payload: &[u8]) -> (Option<IpAddr>, Option<IpAddr>) {
             u16::from_be_bytes([payload[32], payload[33]]),
             u16::from_be_bytes([payload[34], payload[35]]),
             u16::from_be_bytes([payload[36], payload[37]]),
-            u16::from_be_bytes([payload[38], payload[39]])
+            u16::from_be_bytes([payload[38], payload[39]]),
         ));
-        
+
         trace!("Found IPv6 addresses - Src: {}, Dst: {}", src_ip, dst_ip);
         return (Some(src_ip), Some(dst_ip));
     }
