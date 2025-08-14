@@ -87,8 +87,8 @@ impl ProtocolParser for IpxParser {
         let mut header = RawProtocolHeader::new(
             None,
             None,
-            dst_socket,
             src_socket,
+            dst_socket,
             Self::protocol_number(),
             packet_length,
             if payload.len() > 30 {

@@ -37,5 +37,5 @@ pub fn parse_arp(payload: &[u8]) -> Option<RawProtocolHeader> {
         0x08, // ARP protocol number (using 8 instead of 806/0x0806)
         payload.len() as u16,
         None,
-    ))
+    ).with_ethertype(0x0806))
 }
