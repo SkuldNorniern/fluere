@@ -12,9 +12,13 @@ fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
     loop {
         match rx.next() {
             Ok(packet) => {
-                // Process the packet
-                let ethernet_packet = EthernetPacket::new(packet).unwrap();
-
+                let ethernet_packet = match EthernetPacket::new(packet) {
+                    Some(pkt) => pkt,
+                    None => {
+                        debug!("Failed to parse Ethernet packet");
+                        continue;
+                    }
+                };
                 let protocol = ethernet_packet.get_ethertype();
                 match protocol {
                     EtherTypes::Ipv4 => {
@@ -66,7 +70,7 @@ fn process_packets(rx: &mut Box<dyn DataLinkReceiver>) -> Vec<C_Ipv4Packet> {
             }
             Err(e) => {
                 // An error occurred while reading the packet
-                panic!("An error occurred while reading: {}", e);
+                panic!("An error occurred while reading packets: {}", e);
             }
         }
     }
