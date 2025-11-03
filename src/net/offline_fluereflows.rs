@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::{
+    FluereError,
     error::OptionExt,
     net::{
         flows::update_flow,
@@ -14,7 +15,6 @@ use crate::{
     },
     types::{Args, UDFlowKey},
     utils::fluere_exporter,
-    FluereError,
 };
 
 use fluereflow::FluereRecord;

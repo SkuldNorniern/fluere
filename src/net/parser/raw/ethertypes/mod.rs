@@ -179,8 +179,14 @@ mod tests {
 
         let header = parse_ethertype(&packet, 0x0806).unwrap();
         assert_eq!(header.protocol, 0x08);
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
     }
 
     #[test]
@@ -224,7 +230,7 @@ mod tests {
 
         let header = parse_ethertype(&packet, 0x88B8);
         assert!(header.is_some());
-        
+
         let header = header.unwrap();
         assert_eq!(header.protocol, 1); // Message type
         assert_eq!(header.flags, Some(1)); // Handshake flag

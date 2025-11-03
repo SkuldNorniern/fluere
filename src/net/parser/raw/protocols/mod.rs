@@ -8,11 +8,11 @@ mod igmp;
 mod ipx;
 mod isis;
 mod l2tp;
+mod openvpn;
 mod ospf;
 mod pim;
 mod sctp;
 mod vrrp;
-mod openvpn;
 
 use super::RawProtocolHeader;
 
@@ -49,7 +49,7 @@ pub fn parse_protocol(packet: &[u8], protocol: u8) -> Option<RawProtocolHeader> 
     // First, try all known IANA-assigned protocol numbers
     let header = match protocol {
         // 0x1D => IpxParser::parse_packet(packet, protocol),
-        1    => IcmpParser::parse_packet(packet, protocol),
+        1 => IcmpParser::parse_packet(packet, protocol),
         // 2    => IgmpParser::parse_packet(packet, protocol),
         // 47   => GreParser::parse_packet(packet, protocol),
         // 50   => EspParser::parse_packet(packet, protocol),

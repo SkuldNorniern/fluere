@@ -11,9 +11,9 @@ pub mod parser;
 pub mod types;
 
 //pub use flows::packet_capture;
-pub use capture::find_device;
 pub use capture::CaptureDevice;
 pub use capture::DeviceError;
+pub use capture::find_device;
 // pub use interface::list_interface_names;
 // pub use interface::list_interfaces;
 pub use offline_fluereflows::fluereflow_fileparse;

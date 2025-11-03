@@ -2,17 +2,16 @@
 // It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
 // The data is then displayed in a terminal user interface using the ratatui library.
 use crate::{
+    FluereError,
     error::OptionExt,
     net::{
-        find_device,
+        CaptureDevice, find_device,
         flows::update_flow,
         parser::{microseconds_to_timestamp, parse_fluereflow, parse_keys, parse_microseconds},
         types::TcpFlags,
-        CaptureDevice,
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
-    FluereError,
 };
 use std::{
     borrow::Cow,
@@ -29,15 +28,15 @@ use fluereflow::FluereRecord;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use log::{debug, error, trace};
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
-    Frame, Terminal,
 };
 use tokio::{sync::Mutex, task};
 
@@ -548,8 +547,8 @@ fn draw_ui(
 }
 async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
     loop {
-        if event::poll(std::time::Duration::from_millis(100))? {
-            if let event::Event::Key(KeyEvent {
+        if event::poll(std::time::Duration::from_millis(100))?
+            && let event::Event::Key(KeyEvent {
                 code, modifiers, ..
             }) = event::read()?
             {
@@ -565,6 +564,5 @@ async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
                     _ => {}
                 }
             }
-        }
     }
 }

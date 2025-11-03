@@ -1,19 +1,19 @@
 use pcap;
 
+use crate::net::NetError;
 use crate::net::parser::raw::RawProtocolHeader;
 use crate::net::parser::{dscp_to_tos, parse_flags, parse_microseconds, parse_ports};
-use crate::net::NetError;
 
 use fluereflow::FluereRecord;
 use log::trace;
 use pnet::packet::{
+    Packet, PacketSize,
     arp::ArpPacket,
     ethernet::{EtherTypes, EthernetPacket},
     ip::IpNextHeaderProtocols,
     ipv4::Ipv4Packet,
     ipv6::Ipv6Packet,
     udp::UdpPacket,
-    Packet, PacketSize,
 };
 
 const VXLAN_HEADER: [u8; 8] = [0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00];
@@ -252,9 +252,9 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
     let dst_ip = packet.get_destination();
 
     // Special handling for DNS over UDP
-    if packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
-        if let Some(udp) = UdpPacket::new(packet.payload()) {
-            if udp.get_destination() == 53 || udp.get_source() == 53 {
+    if packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp
+        && let Some(udp) = UdpPacket::new(packet.payload())
+            && (udp.get_destination() == 53 || udp.get_source() == 53) {
                 return Ok((
                     packet.packet_size(),
                     [0; 9], // DNS doesn't use TCP flags
@@ -289,8 +289,6 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
                     ),
                 ));
             }
-        }
-    }
 
     // Continue with normal packet processing...
     let (src_port, dst_port) = parse_ports(protocol, packet.payload()).unwrap_or((0, 0));

@@ -1,5 +1,5 @@
-use crate::net::parser::raw::protocols::ProtocolParser;
 use crate::net::parser::raw::RawProtocolHeader;
+use crate::net::parser::raw::protocols::ProtocolParser;
 
 pub struct IcmpParser;
 

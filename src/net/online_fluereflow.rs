@@ -10,17 +10,16 @@ use std::{
 };
 
 use crate::{
+    FluereError,
     error::OptionExt,
     net::{
-        find_device,
+        CaptureDevice, NetError, find_device,
         flows::update_flow,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
-        CaptureDevice, NetError,
     },
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
-    FluereError,
 };
 
 use fluere_config::Config;

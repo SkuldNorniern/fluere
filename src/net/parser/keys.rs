@@ -1,11 +1,12 @@
 use std::net::{IpAddr, Ipv4Addr};
 
+use crate::net::NetError;
 use crate::net::parser::parse_ports;
 use crate::net::types::{Key, MacAddress};
-use crate::net::NetError;
 
 use pcap;
 
+use pnet::packet::Packet;
 use pnet::packet::arp::ArpPacket;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::gre::GrePacket;
@@ -14,7 +15,6 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::vlan::VlanPacket;
-use pnet::packet::Packet;
 
 use log::trace;
 
@@ -101,8 +101,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         return Err(NetError::EmptyPacket);
     }
     trace!("Parsing ethernet packet");
-    let ethernet_packet = EthernetPacket::new(packet.data)
-        .ok_or(NetError::InvalidPacket)?;
+    let ethernet_packet = EthernetPacket::new(packet.data).ok_or(NetError::InvalidPacket)?;
     trace!("Parsed ethernet packet");
 
     let is_udp: bool = match ethernet_packet.get_ethertype() {
@@ -111,9 +110,9 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             if i.is_none() {
                 return Err(NetError::EmptyPacket);
             }
-            let is_udp = UdpPacket::new(i.unwrap().payload()).is_some();
+            
 
-            is_udp
+            UdpPacket::new(i.unwrap().payload()).is_some()
         }
         EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload());
@@ -121,9 +120,9 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                 return Err(NetError::EmptyPacket);
             }
 
-            let is_udp = UdpPacket::new(i.unwrap().payload()).is_some();
+            
 
-            is_udp
+            UdpPacket::new(i.unwrap().payload()).is_some()
         }
         EtherTypes::Arp => {
             let i = ArpPacket::new(ethernet_packet.payload());
@@ -131,9 +130,9 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                 return Err(NetError::EmptyPacket);
             }
 
-            let is_udp = UdpPacket::new(i.unwrap().payload()).is_some();
+            
 
-            is_udp
+            UdpPacket::new(i.unwrap().payload()).is_some()
         }
 
         _ => false,
@@ -366,8 +365,8 @@ fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
     let (src_port, dst_port) = parse_ports(protocol, packet.payload())?;
 
     // Handle GRE specially
-    if protocol == 47 {
-        if let Some(gre) = GrePacket::new(packet.payload()) {
+    if protocol == 47
+        && let Some(gre) = GrePacket::new(packet.payload()) {
             // For GRE, we might want to parse the inner protocol
             let inner_protocol = gre.get_protocol_type();
             return Ok((
@@ -378,7 +377,6 @@ fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
                 protocol,
             ));
         }
-    }
 
     Ok((
         std::net::IpAddr::V4(src_ip),
@@ -396,8 +394,8 @@ fn ipv6_keys(packet: Ipv6Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
     let (src_port, dst_port) = parse_ports(protocol, packet.payload())?;
 
     // Handle ICMPv6 specially
-    if protocol == 58 {
-        if let Some(icmpv6) = Icmpv6Packet::new(packet.payload()) {
+    if protocol == 58
+        && let Some(icmpv6) = Icmpv6Packet::new(packet.payload()) {
             return Ok((
                 std::net::IpAddr::V6(src_ip),
                 std::net::IpAddr::V6(dst_ip),
@@ -406,7 +404,6 @@ fn ipv6_keys(packet: Ipv6Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
                 protocol,
             ));
         }
-    }
 
     Ok((
         std::net::IpAddr::V6(src_ip),

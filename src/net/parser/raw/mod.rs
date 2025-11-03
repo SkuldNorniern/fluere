@@ -157,25 +157,31 @@ impl RawProtocolHeader {
 
         // Try to parse as IPv4 first to capture outer IP information
         let outer_header = if payload.len() >= 20 && (payload[0] >> 4) == 4 {
-            let version = payload[0] >> 4;
+            let _version = payload[0] >> 4;
             let header_length = (payload[0] & 0x0F) * 4;
-            
+
             if header_length >= 20 && header_length as usize <= payload.len() {
                 let src_ip = IpAddr::V4(Ipv4Addr::new(
-                    payload[12], payload[13], payload[14], payload[15]
+                    payload[12],
+                    payload[13],
+                    payload[14],
+                    payload[15],
                 ));
                 let dst_ip = IpAddr::V4(Ipv4Addr::new(
-                    payload[16], payload[17], payload[18], payload[19]
+                    payload[16],
+                    payload[17],
+                    payload[18],
+                    payload[19],
                 ));
-                
+
                 let actual_protocol = payload[9];
-                
+
                 let (src_port, dst_port) = if header_length as usize + 4 <= payload.len() {
                     let transport_data = &payload[header_length as usize..];
                     if transport_data.len() >= 4 {
                         (
                             u16::from_be_bytes([transport_data[0], transport_data[1]]),
-                            u16::from_be_bytes([transport_data[2], transport_data[3]])
+                            u16::from_be_bytes([transport_data[2], transport_data[3]]),
                         )
                     } else {
                         (0, 0)
@@ -184,8 +190,10 @@ impl RawProtocolHeader {
                     (0, 0)
                 };
 
-                debug!("IPv4 packet detected: {}:{} -> {}:{}", 
-                    src_ip, src_port, dst_ip, dst_port);
+                debug!(
+                    "IPv4 packet detected: {}:{} -> {}:{}",
+                    src_ip, src_port, dst_ip, dst_port
+                );
 
                 Some((src_ip, dst_ip, src_port, dst_port, actual_protocol))
             } else {
@@ -244,12 +252,12 @@ impl RawProtocolHeader {
                 let (src_port, dst_port) = if payload.len() >= 4 {
                     (
                         u16::from_be_bytes([payload[0], payload[1]]),
-                        u16::from_be_bytes([payload[2], payload[3]])
+                        u16::from_be_bytes([payload[2], payload[3]]),
                     )
                 } else {
                     (0, 0)
                 };
-                
+
                 Some(Self::new(
                     None,
                     None,
@@ -266,7 +274,7 @@ impl RawProtocolHeader {
                 Some(Self::new(
                     None,
                     None,
-                    payload.get(0).copied().unwrap_or(0) as u16,
+                    payload.first().copied().unwrap_or(0) as u16,
                     payload.get(1).copied().unwrap_or(0) as u16,
                     protocol_hint,
                     payload.len() as u16,
@@ -278,12 +286,12 @@ impl RawProtocolHeader {
                 let (src_port, dst_port) = if payload.len() >= 4 {
                     (
                         u16::from_be_bytes([payload[0], payload[1]]),
-                        u16::from_be_bytes([payload[2], payload[3]])
+                        u16::from_be_bytes([payload[2], payload[3]]),
                     )
                 } else {
                     (0, 0)
                 };
-                
+
                 Some(Self::new(
                     None,
                     None,
@@ -378,16 +386,22 @@ mod tests {
             0x45, 0x00, 0x00, 0x28, // Version=4, IHL=5, TOS=0, Total Length=40
             0x12, 0x34, 0x40, 0x00, // ID=0x1234, Flags=Don't Fragment
             0x40, 0x06, 0x00, 0x00, // TTL=64, Protocol=TCP, Checksum=0
-            192, 168, 1, 1,         // Source IP
-            192, 168, 1, 2,         // Destination IP
+            192, 168, 1, 1, // Source IP
+            192, 168, 1, 2, // Destination IP
             0x00, 0x50, 0x01, 0xbb, // Source Port=80, Dest Port=443
             0x00, 0x00, 0x00, 0x00, // Sequence number
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.src_port, 80);
         assert_eq!(header.dst_port, 443);
         assert_eq!(header.protocol, 6); // TCP
@@ -398,10 +412,7 @@ mod tests {
         // IPv4 packet with invalid header length
         let packet = [
             0x44, 0x00, 0x00, 0x14, // Version=4, IHL=4 (invalid, minimum is 5)
-            0x12, 0x34, 0x40, 0x00,
-            0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1,
-            192, 168, 1, 2,
+            0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1, 192, 168, 1, 2,
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 6);
@@ -414,7 +425,7 @@ mod tests {
     #[test]
     fn test_from_raw_packet_too_short() {
         let packet = [0x45, 0x00]; // Too short for IPv4 header
-        
+
         let header = RawProtocolHeader::from_raw_packet(&packet, 6);
         assert!(header.is_none());
     }
@@ -428,7 +439,7 @@ mod tests {
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 0xb9).unwrap();
-        
+
         assert_eq!(header.src_port, 80);
         assert_eq!(header.dst_port, 443);
         assert_eq!(header.protocol, 0xb9);
@@ -439,12 +450,12 @@ mod tests {
     fn test_from_raw_packet_custom_vpn_pattern() {
         let packet = [
             0x50, // Source port/identifier
-            0xbb, // Dest port/identifier  
+            0xbb, // Dest port/identifier
             0xde, 0xad, 0xbe, 0xef, // Payload
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 0x36).unwrap();
-        
+
         assert_eq!(header.src_port, 0x50);
         assert_eq!(header.dst_port, 0xbb);
         assert_eq!(header.protocol, 0x36);
@@ -460,7 +471,7 @@ mod tests {
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 99).unwrap();
-        
+
         assert_eq!(header.src_port, 0x1234);
         assert_eq!(header.dst_port, 0x5678);
         assert_eq!(header.protocol, 99);
@@ -474,22 +485,28 @@ mod tests {
             0x45, 0x00, 0x00, 0x1c, // Version=4, IHL=5, TOS=0, Total Length=28
             0x12, 0x34, 0x40, 0x00, // ID, Flags
             0x40, 0x11, 0x00, 0x00, // TTL=64, Protocol=UDP, Checksum
-            192, 168, 1, 1,         // Source IP
-            192, 168, 1, 2,         // Destination IP
+            192, 168, 1, 1, // Source IP
+            192, 168, 1, 2, // Destination IP
             0x00, 0x35, 0x00, 0x35, // UDP source port 53, dest port 53
         ];
 
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
-        
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.protocol, 17); // UDP
     }
 
     #[test]
     fn test_from_ethertype_unknown() {
         let packet = [0x12, 0x34, 0x56, 0x78, 0xaa, 0xbb, 0xcc, 0xdd];
-        
+
         let header = RawProtocolHeader::from_ethertype(&packet, 0x9999);
         // Should create some header through fallback
         assert!(header.is_some());
@@ -500,19 +517,23 @@ mod tests {
         // IPv4 packet with options (IHL=6, header length = 24 bytes)
         let packet = [
             0x46, 0x00, 0x00, 0x20, // Version=4, IHL=6, Total Length=32
-            0x12, 0x34, 0x40, 0x00,
-            0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1,         // Source IP
-            192, 168, 1, 2,         // Destination IP
+            0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1, // Source IP
+            192, 168, 1, 2, // Destination IP
             0x01, 0x02, 0x03, 0x04, // 4 bytes of options
             0x00, 0x50, 0x01, 0xbb, // TCP ports after options
             0x00, 0x00, 0x00, 0x00,
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.src_port, 80);
         assert_eq!(header.dst_port, 443);
     }
@@ -542,44 +563,44 @@ mod tests {
         // Test with packet that has less than 4 bytes after IP header
         let packet = [
             0x45, 0x00, 0x00, 0x16, // IPv4 header, total length = 22
-            0x12, 0x34, 0x40, 0x00,
-            0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1,
-            192, 168, 1, 2,
-            0x00, 0x50, // Only 2 bytes of transport header
+            0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1, 192, 168, 1, 2, 0x00,
+            0x50, // Only 2 bytes of transport header
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        
+
         // Should handle gracefully and set ports to 0
         assert_eq!(header.src_port, 0);
         assert_eq!(header.dst_port, 0);
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
     }
 
     #[test]
     fn test_protocol_preservation() {
         // Test that protocol from IPv4 header is preserved correctly
         let packet = [
-            0x45, 0x00, 0x00, 0x1c,
-            0x12, 0x34, 0x40, 0x00,
-            0x40, 0x32, 0x00, 0x00, // Protocol = 50 (ESP)
-            192, 168, 1, 1,
-            192, 168, 1, 2,
-            0x12, 0x34, 0x56, 0x78, // ESP header
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x32, 0x00,
+            0x00, // Protocol = 50 (ESP)
+            192, 168, 1, 1, 192, 168, 1, 2, 0x12, 0x34, 0x56, 0x78, // ESP header
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 99).unwrap();
-        
+
         // Should use protocol from IPv4 header (50), not the hint (99)
         assert_eq!(header.protocol, 50);
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
     }
 
     #[test]
     fn test_empty_payload() {
         let packet = [];
-        
+
         let header = RawProtocolHeader::from_raw_packet(&packet, 6);
         assert!(header.is_none());
     }
@@ -600,7 +621,10 @@ mod tests {
             .with_dst_network(0x11223344);
 
         assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))));
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)))
+        );
         assert_eq!(header.src_port, 8080);
         assert_eq!(header.dst_port, 9090);
         assert_eq!(header.ethertype, Some(0x86dd));
@@ -617,10 +641,7 @@ mod tests {
         // IPv4 packet with total length larger than actual packet
         let packet = [
             0x45, 0x00, 0xff, 0xff, // Total length = 65535 (way larger than packet)
-            0x12, 0x34, 0x40, 0x00,
-            0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1,
-            192, 168, 1, 2,
+            0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1, 192, 168, 1, 2,
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 6);
@@ -632,19 +653,21 @@ mod tests {
     fn test_ipv4_fragmented_packet() {
         // IPv4 packet with fragment flags set
         let packet = [
-            0x45, 0x00, 0x00, 0x1c,
-            0x12, 0x34, 0x20, 0x00, // More Fragments flag set
-            0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1,
-            192, 168, 1, 2,
-            0x00, 0x50, 0x01, 0xbb,
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x20, 0x00, // More Fragments flag set
+            0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1, 192, 168, 1, 2, 0x00, 0x50, 0x01, 0xbb,
         ];
 
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        
+
         // Should still parse correctly
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.protocol, 6);
     }
 }
