@@ -1,7 +1,9 @@
 use pcap;
 
+use crate::net::parser::raw::RawProtocolHeader;
 use crate::net::parser::{dscp_to_tos, parse_flags, parse_microseconds, parse_ports};
 use crate::net::NetError;
+
 use fluereflow::FluereRecord;
 use log::trace;
 use pnet::packet::{
@@ -143,11 +145,53 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
             };
             arp_packet(time, i)
         }
-        _ => {
-            trace!("Unknown EtherType: {}", ethernet_packet.get_ethertype());
-            return Err(NetError::UnknownEtherType(
-                ethernet_packet.get_ethertype().to_string(),
-            ));
+        ethertype => {
+            trace!("Attempting fallback parsing for EtherType: {}", ethertype);
+            if let Some(raw_header) =
+                RawProtocolHeader::from_ethertype(ethernet_packet.packet(), ethertype.0)
+            {
+                let flags = raw_header.flags.map_or([0; 9], |f| parse_flags(f, &[]));
+                Ok((
+                    raw_header.length as usize,
+                    flags,
+                    FluereRecord::new(
+                        raw_header
+                            .src_ip
+                            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+                        raw_header
+                            .dst_ip
+                            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+                        0,
+                        0,
+                        time,
+                        time,
+                        raw_header.src_port,
+                        raw_header.dst_port,
+                        raw_header.length as u32,
+                        raw_header.length as u32,
+                        raw_header.ttl.unwrap_or(0),
+                        raw_header.ttl.unwrap_or(0),
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        raw_header.protocol,
+                        0,
+                    ),
+                ))
+            } else {
+                trace!("Unknown EtherType: {}", ethertype);
+                Err(NetError::UnknownEtherType(ethertype.to_string()))
+            }
         }
     }?;
 

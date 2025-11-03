@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use crate::net::parser::parse_ports;
 use crate::net::types::{Key, MacAddress};
@@ -18,6 +18,8 @@ use pnet::packet::Packet;
 
 use log::trace;
 
+use super::raw::RawProtocolHeader;
+
 const VXLAN_HEADER: [u8; 8] = [0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00];
 
 fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
@@ -29,16 +31,78 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+fn parse_ethernet_packet(
+    ethernet_packet: &EthernetPacket,
+) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
+    trace!("Parsing Ethernet packet with fallback to RawProtocolHeader");
+    let parse_test_ipv4 = if let Some(packet) = Ipv4Packet::new(ethernet_packet.payload()) {
+        ipv4_keys(packet)
+    } else {
+        Err(NetError::InvalidPacket)
+    };
+
+    let parse_test_ipv6 = if let Some(packet) = Ipv6Packet::new(ethernet_packet.payload()) {
+        ipv6_keys(packet)
+    } else {
+        Err(NetError::InvalidPacket)
+    };
+
+    let parse_test_arp = if let Some(packet) = ArpPacket::new(ethernet_packet.payload()) {
+        arp_keys(packet)
+    } else {
+        Err(NetError::InvalidPacket)
+    };
+
+    let parse_test_vlan = if let Some(packet) = VlanPacket::new(ethernet_packet.payload()) {
+        vlan_keys(packet)
+    } else {
+        Err(NetError::InvalidPacket)
+    };
+
+    // If all standard parsers fail, try raw parser as a fallback
+    let parse_test_raw = if let Some(raw_header) = RawProtocolHeader::from_raw_packet(
+        ethernet_packet.payload(),
+        // Cast EtherType to u16, then down to u8 for the protocol match in raw parsing
+        ethernet_packet.get_ethertype().0 as u8,
+    ) {
+        Ok((
+            raw_header
+                .src_ip
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            raw_header
+                .dst_ip
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            raw_header.src_port,
+            raw_header.dst_port,
+            raw_header.protocol,
+        ))
+    } else {
+        Err(NetError::InvalidPacket)
+    };
+
+    trace!("parse_test_ipv4: {:?}", parse_test_ipv4);
+    trace!("parse_test_ipv6: {:?}", parse_test_ipv6);
+    trace!("parse_test_arp: {:?}", parse_test_arp);
+    trace!("parse_test_vlan: {:?}", parse_test_vlan);
+    trace!("parse_test_raw: {:?}", parse_test_raw);
+
+    // Return the first successful parse, or an error if they all fail
+    parse_test_ipv4
+        .or(parse_test_ipv6)
+        .or(parse_test_arp)
+        .or(parse_test_vlan)
+        .or(parse_test_raw)
+        .map_err(|_| NetError::UnknownEtherType(ethernet_packet.get_ethertype().to_string()))
+}
+
 pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     trace!("Parsing keys");
     if packet.is_empty() {
         return Err(NetError::EmptyPacket);
     }
     trace!("Parsing ethernet packet");
-    let ethernet_packet = match EthernetPacket::new(packet.data) {
-        Some(p) => p,
-        None => return Err(NetError::EmptyPacket),
-    };
+    let ethernet_packet = EthernetPacket::new(packet.data)
+        .ok_or(NetError::InvalidPacket)?;
     trace!("Parsed ethernet packet");
 
     let is_udp: bool = match ethernet_packet.get_ethertype() {
@@ -187,7 +251,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             arp_keys(i.unwrap())?
         }
         _ => {
-            // Try each parsing method without unwrapping
+            // Try standard parsers first
             let parse_test_ipv4 = if let Some(packet) = Ipv4Packet::new(ethernet_packet.payload()) {
                 ipv4_keys(packet)
             } else {
@@ -212,16 +276,38 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                 Err(NetError::InvalidPacket)
             };
 
+            // If all standard parsers fail, try raw parser as fallback
+            let parse_test_raw = if let Some(raw_header) = RawProtocolHeader::from_raw_packet(
+                ethernet_packet.payload(),
+                ethernet_packet.get_ethertype().0 as u8,
+            ) {
+                Ok((
+                    raw_header
+                        .src_ip
+                        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+                    raw_header
+                        .dst_ip
+                        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+                    raw_header.src_port,
+                    raw_header.dst_port,
+                    raw_header.protocol,
+                ))
+            } else {
+                Err(NetError::InvalidPacket)
+            };
+
             trace!("parse_test_ipv4: {:?}", parse_test_ipv4);
             trace!("parse_test_ipv6: {:?}", parse_test_ipv6);
             trace!("parse_test_arp: {:?}", parse_test_arp);
             trace!("parse_test_vlan: {:?}", parse_test_vlan);
+            trace!("parse_test_raw: {:?}", parse_test_raw);
 
-            // Try to use the first successful parse result
+            // Try to use the first successful parse result, including raw parser
             parse_test_ipv4
                 .or(parse_test_ipv6)
                 .or(parse_test_arp)
                 .or(parse_test_vlan)
+                .or(parse_test_raw)
                 .or(Err(NetError::UnknownEtherType(
                     ethernet_packet.get_ethertype().to_string(),
                 )))?
@@ -258,15 +344,15 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
 }
 
 fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
-    let src_ip = packet.get_sender_proto_addr();
-    let dst_ip = packet.get_target_proto_addr();
+    let sender_ip = packet.get_sender_proto_addr();
+    let target_ip = packet.get_target_proto_addr();
     let src_port = 0;
     let dst_port = 0;
     let protocol = 4;
 
     Ok((
-        std::net::IpAddr::V4(src_ip),
-        std::net::IpAddr::V4(dst_ip),
+        IpAddr::V4(sender_ip),
+        IpAddr::V4(target_ip),
         src_port,
         dst_port,
         protocol,
