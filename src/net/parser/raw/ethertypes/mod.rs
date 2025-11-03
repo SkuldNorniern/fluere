@@ -75,8 +75,8 @@ fn is_known_ethertype(ethertype: u16) -> bool {
 
 // Move dump_packet_details to mod.rs since it's useful for all ethertype parsers
 pub(crate) fn dump_packet_details(packet: &[u8], prefix: &str) {
-    debug!("{} packet dump:", prefix);
-    debug!("Packet length: {} bytes", packet.len());
+    trace!("{} packet dump:", prefix);
+    trace!("Packet length: {} bytes", packet.len());
 
     // Print first few bytes as potential header
     if packet.len() >= 4 {
@@ -100,7 +100,7 @@ pub(crate) fn dump_packet_details(packet: &[u8], prefix: &str) {
             .map(|&b| if b.is_ascii_graphic() { b as char } else { '.' })
             .collect();
 
-        debug!("[{:04x}] {:<48} {}", i * 16, hex, ascii);
+        trace!("[{:04x}] {:<48} {}", i * 16, hex, ascii);
     }
 }
 
@@ -152,8 +152,190 @@ fn analyze_packet_structure(packet: &[u8]) -> (usize, bool) {
         _ => {
             // Default assumption: 4-byte header, rest is payload
             debug!("Unknown protocol structure, using default parsing");
-            dump_packet_details(packet, "Unknown protocol structure");
+            // dump_packet_details(packet, "Unknown protocol structure");
             (4, packet.len() > 4)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_parse_ethertype_arp() {
+        // Standard ARP packet
+        let packet = [
+            0x00, 0x01, // Hardware type: Ethernet
+            0x08, 0x00, // Protocol type: IPv4
+            0x06, 0x04, // Hardware size: 6, Protocol size: 4
+            0x00, 0x01, // Operation: Request
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // Sender MAC
+            192, 168, 1, 1, // Sender IP
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Target MAC
+            192, 168, 1, 2, // Target IP
+        ];
+
+        let header = parse_ethertype(&packet, 0x0806).unwrap();
+        assert_eq!(header.protocol, 0x08);
+        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+    }
+
+    #[test]
+    fn test_parse_ethertype_mpls() {
+        // MPLS packet with label 100
+        let packet = [
+            0x00, 0x01, 0x90, 0x3f, // Label: 100, TC: 0, S: 1, TTL: 63
+            0x45, 0x00, 0x00, 0x1c, // Start of inner IPv4 packet
+        ];
+
+        let header = parse_ethertype(&packet, 0x8847);
+        assert!(header.is_some());
+        let header = header.unwrap();
+        assert_eq!(header.protocol, 137); // MPLS protocol number
+    }
+
+    #[test]
+    fn test_parse_ethertype_vxlan() {
+        // VXLAN packet with standard header
+        let packet = [
+            0x08, 0x00, 0x00, 0x00, // VXLAN flags and reserved
+            0x00, 0x00, 0x64, 0x00, // VNI: 100, reserved
+            // Inner Ethernet frame would follow
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+        ];
+
+        let header = parse_ethertype(&packet, 0x12B5);
+        assert!(header.is_some());
+        let header = header.unwrap();
+        assert_eq!(header.protocol, 0x12); // VXLAN protocol identifier
+    }
+
+    #[test]
+    fn test_parse_ethertype_wireguard() {
+        // WireGuard handshake initiation packet (must be exactly 148 bytes)
+        let mut packet = vec![
+            0x01, 0x00, 0x00, 0x00, // Message type: 1 (Handshake initiation)
+        ];
+        // Pad to exactly 148 bytes as required by WireGuard protocol
+        packet.extend(vec![0u8; 144]);
+
+        let header = parse_ethertype(&packet, 0x88B8);
+        assert!(header.is_some());
+        
+        let header = header.unwrap();
+        assert_eq!(header.protocol, 1); // Message type
+        assert_eq!(header.flags, Some(1)); // Handshake flag
+        assert_eq!(header.version, Some(1)); // WireGuard version
+
+        // Test WireGuard data packet (minimum 16 bytes)
+        let data_packet = vec![
+            0x04, 0x00, 0x00, 0x00, // Message type: 4 (Data)
+            0x12, 0x34, 0x56, 0x78, // Counter
+            0x9a, 0xbc, 0xde, 0xf0, // Encrypted data
+            0x11, 0x22, 0x33, 0x44, // More encrypted data
+        ];
+
+        let header = parse_ethertype(&data_packet, 0x88B8);
+        assert!(header.is_some());
+        let header = header.unwrap();
+        assert_eq!(header.protocol, 4); // Data message type
+    }
+
+    #[test]
+    fn test_parse_ethertype_vpn_data() {
+        let packet = [
+            0x05, 0x02, // Version 5, flags 2
+            0x12, 0x34, // Sequence
+            0xde, 0xad, 0xbe, 0xef, // Payload
+        ];
+
+        let header = parse_ethertype(&packet, 0x0A08);
+        assert!(header.is_some());
+        let header = header.unwrap();
+        assert_eq!(header.src_port, 2186); // VPN_DATA_PORT
+    }
+
+    #[test]
+    fn test_parse_ethertype_vpn_control() {
+        let packet = [
+            0x03, 0x01, // Type 3, flags 1
+            0x56, 0x78, // Message ID
+            0xca, 0xfe, 0xba, 0xbe, // Control data
+        ];
+
+        let header = parse_ethertype(&packet, 0x4B65);
+        assert!(header.is_some());
+        let header = header.unwrap();
+        assert_eq!(header.src_port, 19301); // VPN_CONTROL_PORT
+    }
+
+    #[test]
+    fn test_parse_ethertype_experimental() {
+        let packet = [0xB8, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
+
+        let header = parse_ethertype(&packet, 0xB801);
+        assert!(header.is_some());
+    }
+
+    #[test]
+    fn test_parse_ethertype_vendor_specific() {
+        let packet = [0x36, 0x01, 0x02, 0x03, 0x04, 0x05];
+
+        let header = parse_ethertype(&packet, 0x3601);
+        assert!(header.is_some());
+    }
+
+    #[test]
+    fn test_parse_ethertype_unknown() {
+        let packet = [0x12, 0x34, 0x56, 0x78];
+
+        let header = parse_ethertype(&packet, 0xFFFF);
+        assert!(header.is_none());
+    }
+
+    #[test]
+    fn test_parse_ethertype_too_short() {
+        let packet = [0x00]; // Too short for any meaningful parsing
+
+        let header = parse_ethertype(&packet, 0x0806);
+        assert!(header.is_none());
+    }
+
+    #[test]
+    fn test_is_known_ethertype() {
+        assert!(is_known_ethertype(0x0806)); // ARP
+        assert!(is_known_ethertype(0x8847)); // MPLS
+        assert!(is_known_ethertype(0x88B8)); // WireGuard
+        assert!(!is_known_ethertype(0xFFFF)); // Unknown
+    }
+
+    #[test]
+    fn test_analyze_packet_structure() {
+        // Test experimental protocol
+        let packet = [0xB8, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
+        let (header_size, has_payload) = analyze_packet_structure(&packet);
+        assert_eq!(header_size, 8);
+        assert!(has_payload);
+
+        // Test vendor-specific protocol
+        let packet = [0x36, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
+        let (header_size, has_payload) = analyze_packet_structure(&packet);
+        assert_eq!(header_size, 6);
+        assert!(has_payload);
+
+        // Test custom encapsulation
+        let packet = [0x6C, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let (header_size, has_payload) = analyze_packet_structure(&packet);
+        assert_eq!(header_size, 4);
+        assert!(has_payload);
+
+        // Test unknown protocol
+        let packet = [0xFF, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let (header_size, has_payload) = analyze_packet_structure(&packet);
+        assert_eq!(header_size, 4);
+        assert!(has_payload);
     }
 }
