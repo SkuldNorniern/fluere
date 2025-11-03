@@ -40,9 +40,9 @@ pub fn parse_ethertype(packet: &[u8], ethertype: u16) -> Option<super::RawProtoc
     } else {
         match ethertype {
             0x0806 => arp::parse_arp(packet),
-            //0x8847 | 0x8848 => mpls::parse_mpls(packet),
-            // 0x12B5 => vxlan::parse_vxlan(packet),
-            // 0x88B8 => wireguard::parse_wireguard(packet),
+            0x8847 | 0x8848 => mpls::parse_mpls(packet),
+            0x12B5 => vxlan::parse_vxlan(packet),
+            0x88B8 => wireguard::parse_wireguard(packet),
             // Add common experimental/vendor-specific ranges
             0xB800..=0xBFFF => {
                 debug!("Experimental ethertype: 0x{:04x}", ethertype);
