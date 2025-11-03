@@ -46,19 +46,21 @@ impl ProtocolParser for PimParser {
             return None;
         }
 
-        // Create base header with version in version field
+        // Create base header - pim_type goes to src_port, version will be set separately
         let mut header = RawProtocolHeader::new(
             None,
             None,
-            version as u16, // This sets the version correctly
-            pim_type as u16,
+            pim_type as u16, // src_port = message type  
+            0,               // dst_port = unused
             Self::protocol_number(),
             payload.len() as u16,
             Some(payload[4..].to_vec()),
         );
 
-        // Add checksum
-        header = header.with_checksum(checksum);
+        // Add version and checksum
+        header = header
+            .with_version(version)
+            .with_checksum(checksum);
 
         // Parse specific message types
         match pim_type {
@@ -82,7 +84,7 @@ impl ProtocolParser for PimParser {
 }
 
 impl PimParser {
-    fn parse_hello_message(payload: &[u8], header: &mut RawProtocolHeader) -> Option<()> {
+    fn parse_hello_message(payload: &[u8], _header: &mut RawProtocolHeader) -> Option<()> {
         if payload.len() < 4 {
             return None;
         }
@@ -90,7 +92,7 @@ impl PimParser {
         // Parse Hello options
         let mut offset = 4;
         while offset + 4 <= payload.len() {
-            let option_type = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
+            let _option_type = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
             let option_length =
                 u16::from_be_bytes([payload[offset + 2], payload[offset + 3]]) as usize;
 
@@ -114,7 +116,7 @@ impl PimParser {
         header.src_ip = Some(bytes_to_ipv4(&payload[4..8])?);
 
         let num_groups = payload[8] as usize;
-        let holdtime = u16::from_be_bytes([payload[10], payload[11]]);
+        let _holdtime = u16::from_be_bytes([payload[10], payload[11]]);
         let mut offset = 12;
 
         // Parse group entries
@@ -124,7 +126,7 @@ impl PimParser {
             }
 
             // Group address
-            let group_addr = bytes_to_ipv4(&payload[offset..offset + 4])?;
+            let _group_addr = bytes_to_ipv4(&payload[offset..offset + 4])?;
             offset += 4;
 
             // Number of joined and pruned sources
@@ -141,7 +143,7 @@ impl PimParser {
                 if offset + 4 > payload.len() {
                     return None;
                 }
-                let source_addr = bytes_to_ipv4(&payload[offset..offset + 4])?;
+                let _source_addr = bytes_to_ipv4(&payload[offset..offset + 4])?;
                 offset += 4;
             }
         }
