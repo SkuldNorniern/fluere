@@ -18,9 +18,9 @@ pub fn parse_eigrp(payload: &[u8]) -> Option<RawProtocolHeader> {
     // |                    Autonomous System Number                     |
     // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-    let version = payload[0] >> 4;
+    let _version = payload[0] >> 4;
     let opcode = payload[1];
-    let flags = ((payload[4] as u16) << 8) | payload[5] as u16;
+    let _flags = ((payload[4] as u16) << 8) | payload[5] as u16;
     let as_number = ((payload[16] as u32) << 24)
         | ((payload[17] as u32) << 16)
         | ((payload[18] as u32) << 8)

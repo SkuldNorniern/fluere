@@ -40,7 +40,7 @@ impl ProtocolParser for VrrpParser {
         let virtual_rtr_id = payload[1];
         let priority = payload[2];
         let count_ip_addr = payload[3];
-        let max_adver_int = u16::from_be_bytes([payload[4] & 0x0F, payload[5]]);
+        let _max_adver_int = u16::from_be_bytes([payload[4] & 0x0F, payload[5]]);
         let checksum = u16::from_be_bytes([payload[6], payload[7]]);
 
         // Validate VRRP version and type

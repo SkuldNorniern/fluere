@@ -27,7 +27,7 @@ impl super::ProtocolParser for SctpParser {
         let src_port = u16::from_be_bytes([payload[0], payload[1]]);
         let dst_port = u16::from_be_bytes([payload[2], payload[3]]);
         let verification_tag = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
-        let checksum = u32::from_be_bytes([payload[8], payload[9], payload[10], payload[11]]);
+        let _checksum = u32::from_be_bytes([payload[8], payload[9], payload[10], payload[11]]);
 
         // Only include payload if there's data after the header
         let inner_payload = if payload.len() > 12 {

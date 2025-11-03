@@ -2,6 +2,7 @@
 // It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
 // The data is then displayed in a terminal user interface using the ratatui library.
 use crate::{
+    error::OptionExt,
     net::{
         find_device,
         flows::update_flow,
@@ -12,7 +13,6 @@ use crate::{
     types::{Args, UDFlowKey},
     utils::{cur_time_file, fluere_exporter},
     FluereError,
-    error::OptionExt,
 };
 use std::{
     borrow::Cow,
@@ -66,14 +66,32 @@ struct FlowSummary {
 // It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
 // The function runs indefinitely, capturing packets and updating the terminal user interface with the captured data.
 pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
-    let csv_file = arg.files.csv.required("this should be defaulted to `output` on construction")?;
+    let csv_file = arg
+        .files
+        .csv
+        .required("this should be defaulted to `output` on construction")?;
     //let enable_ipv6
-    let use_mac = arg.parameters.use_mac.required("this should be defaulted to `false` on construction")?;
+    let use_mac = arg
+        .parameters
+        .use_mac
+        .required("this should be defaulted to `false` on construction")?;
     let interface_name = arg.interface.required("interface should be provided")?;
-    let duration = arg.parameters.duration.required("this should be defaulted to `0(infinite)` on construction")?;
-    let interval = arg.parameters.interval.required("this should be defaulted to `30 minutes` on construction")?;
-    let flow_timeout = arg.parameters.timeout.required("this should be defaulted to `10 minutes` on construction")?;
-    let _sleep_windows = arg.parameters.sleep_windows.required("this should be defaulted to `false`, and now deprecated")?;
+    let duration = arg
+        .parameters
+        .duration
+        .required("this should be defaulted to `0(infinite)` on construction")?;
+    let interval = arg
+        .parameters
+        .interval
+        .required("this should be defaulted to `30 minutes` on construction")?;
+    let flow_timeout = arg
+        .parameters
+        .timeout
+        .required("this should be defaulted to `10 minutes` on construction")?;
+    let _sleep_windows = arg
+        .parameters
+        .sleep_windows
+        .required("this should be defaulted to `false`, and now deprecated")?;
     let config = Config::new();
     let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
     let plugin_worker = plugin_manager.start_worker();
