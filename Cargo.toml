@@ -20,7 +20,7 @@ pnet_macros = "0.35"
 # using custom forked version of pcap-rs for fixing audits
 # pcap = { version = "1.1.0", git = "https://github.com/SkuldNorniern/pcap", rev = "40f1163" }
 
-pcap = "2.2.0"
+pcap = "2.3.0"
 
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 libc = "0.2"
