@@ -61,7 +61,6 @@ impl ProtocolParser for PimParser {
         header = header
             .with_version(version)
             .with_checksum(checksum);
-
         // Parse specific message types
         match pim_type {
             HELLO => {

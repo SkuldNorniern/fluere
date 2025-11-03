@@ -93,6 +93,6 @@ fn home_config_path() -> PathBuf {
             config_dir().expect("Could not determine the home directory")
         }
     };
-    
+
     path_base.join("fluere")
 }

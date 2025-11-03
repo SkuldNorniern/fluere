@@ -29,13 +29,16 @@ pub fn parse_arp(payload: &[u8]) -> Option<RawProtocolHeader> {
     let src_ip = bytes_to_ipv4(&payload[14..18]);
     let dst_ip = bytes_to_ipv4(&payload[24..28]);
 
-    Some(RawProtocolHeader::new(
-        src_ip,
-        dst_ip,
-        operation,
-        0,
-        0x08, // ARP protocol number (using 8 instead of 806/0x0806)
-        payload.len() as u16,
-        None,
-    ))
+    Some(
+        RawProtocolHeader::new(
+            src_ip,
+            dst_ip,
+            operation,
+            0,
+            0x08, // ARP protocol number (using 8 instead of 806/0x0806)
+            payload.len() as u16,
+            None,
+        )
+        .with_ethertype(0x0806),
+    )
 }

@@ -76,11 +76,11 @@ impl ProtocolParser for IpxParser {
 
         // Parse destination and source addresses
         let dst_network = Self::parse_network_number(&payload[6..10]);
-        let dst_node = Self::parse_node_address(&payload[10..16]);
+        let _dst_node = Self::parse_node_address(&payload[10..16]);
         let dst_socket = u16::from_be_bytes([payload[16], payload[17]]);
 
         let src_network = Self::parse_network_number(&payload[18..22]);
-        let src_node = Self::parse_node_address(&payload[22..28]);
+        let _src_node = Self::parse_node_address(&payload[22..28]);
         let src_socket = u16::from_be_bytes([payload[28], payload[29]]);
 
         // Create header with the parsed information
