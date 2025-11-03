@@ -1,4 +1,4 @@
-use crate::net::parser::raw::{protocols::ProtocolParser, RawProtocolHeader};
+use crate::net::parser::raw::{RawProtocolHeader, protocols::ProtocolParser};
 
 pub struct EspParser;
 

@@ -1,4 +1,4 @@
-use crate::net::parser::raw::{protocols::ProtocolParser, RawProtocolHeader};
+use crate::net::parser::raw::{RawProtocolHeader, protocols::ProtocolParser};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub struct VrrpParser;

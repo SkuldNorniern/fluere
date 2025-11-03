@@ -1,5 +1,5 @@
-use chrono::prelude::*;
 use chrono::DateTime;
+use chrono::prelude::*;
 
 #[inline]
 pub fn parse_microseconds(sec: u64, usec: u64) -> u64 {

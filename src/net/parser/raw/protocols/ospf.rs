@@ -1,5 +1,5 @@
 use crate::net::parser::raw::protocols::ProtocolParser;
-use crate::net::parser::raw::{utils::bytes_to_ipv4, RawProtocolHeader};
+use crate::net::parser::raw::{RawProtocolHeader, utils::bytes_to_ipv4};
 
 // OSPF Message Types
 const HELLO: u8 = 1;

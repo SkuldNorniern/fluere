@@ -1,8 +1,8 @@
 use std::process::exit;
 
 use crate::{
-    types::{Args, Files, Parameters},
     FluereError,
+    types::{Args, Files, Parameters},
 };
 
 use clap::{Arg, ArgAction, ArgMatches, Command};

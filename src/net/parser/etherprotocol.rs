@@ -1,5 +1,5 @@
 use crate::net::types::{EtherFrame, EtherProtocol, MacAddress};
-use nom::{bytes::complete::take, IResult};
+use nom::{IResult, bytes::complete::take};
 
 pub fn _parse_etherprotocol(packet_data: &[u8]) -> IResult<&[u8], EtherFrame> {
     let (packet_data, dest_mac_bytes) = take(6usize)(packet_data)?;

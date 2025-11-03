@@ -1,5 +1,5 @@
 use crate::net::types::ipv4::{IPProtocol, IPv4};
-use nom::{bytes::complete::take, IResult};
+use nom::{IResult, bytes::complete::take};
 use std::net::Ipv4Addr;
 
 pub fn _parse_ipv4(payload: &[u8]) -> IResult<&[u8], IPv4> {

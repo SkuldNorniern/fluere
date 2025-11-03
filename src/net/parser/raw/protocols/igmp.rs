@@ -1,5 +1,5 @@
-use crate::net::parser::raw::protocols::ProtocolParser;
 use crate::net::parser::raw::RawProtocolHeader;
+use crate::net::parser::raw::protocols::ProtocolParser;
 use std::net::{IpAddr, Ipv4Addr};
 
 pub struct IgmpParser;

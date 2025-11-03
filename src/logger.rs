@@ -47,11 +47,10 @@ impl Logger {
         let mut file = None;
 
         // check if there is a file at the path and create it if it doesn't exist
-        if let Some(path_ref) = path.as_ref() {
-            if let Some(parent) = path_ref.parent() {
+        if let Some(path_ref) = path.as_ref()
+            && let Some(parent) = path_ref.parent() {
                 std::fs::create_dir_all(parent).expect("Failed to create log directory");
             }
-        }
 
         if write_to_file {
             file = Some(
@@ -88,8 +87,8 @@ impl Log for Logger {
             record.args()
         );
 
-        if let Some(write_to_std) = self.write_to_std.as_ref() {
-            if record.level() <= self.severity {
+        if let Some(write_to_std) = self.write_to_std.as_ref()
+            && record.level() <= self.severity {
                 match write_to_std {
                     Logstdout::Stdout => {
                         println!("{}", formatted_message);
@@ -99,13 +98,11 @@ impl Log for Logger {
                     }
                 }
             }
-        }
 
-        if self.write_to_file {
-            if let Some(mut file_ref) = self.file.as_ref() {
+        if self.write_to_file
+            && let Some(mut file_ref) = self.file.as_ref() {
                 writeln!(file_ref, "{}", formatted_message).expect("Failed to write to log file");
             }
-        }
     }
 
     fn flush(&self) {}

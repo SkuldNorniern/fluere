@@ -11,7 +11,9 @@ const TCP_ECE: u8 = 0x40;
 const TCP_CWR: u8 = 0x80;
 
 pub fn parse_flags(protocol: u8, payload: &[u8]) -> [u8; 9] {
-    let flags = match protocol {
+    
+
+    match protocol {
         6 => {
             match TcpPacket::new(payload) {
                 Some(tcp) => {
@@ -32,7 +34,5 @@ pub fn parse_flags(protocol: u8, payload: &[u8]) -> [u8; 9] {
             }
         }
         _ => [0; 9],
-    };
-
-    flags
+    }
 }

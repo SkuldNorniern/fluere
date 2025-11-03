@@ -1,4 +1,4 @@
-use crate::net::parser::raw::{utils::bytes_to_ipv4, RawProtocolHeader};
+use crate::net::parser::raw::{RawProtocolHeader, utils::bytes_to_ipv4};
 
 pub fn parse_arp(payload: &[u8]) -> Option<RawProtocolHeader> {
     if payload.len() < 28 {

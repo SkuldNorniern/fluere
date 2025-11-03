@@ -1,4 +1,4 @@
-use nom::{bytes::complete::take, IResult};
+use nom::{IResult, bytes::complete::take};
 
 use crate::net::types::Ports;
 use crate::net::types::Udp;

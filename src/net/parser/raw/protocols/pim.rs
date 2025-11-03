@@ -1,5 +1,5 @@
 use crate::net::parser::raw::protocols::ProtocolParser;
-use crate::net::parser::raw::{utils::bytes_to_ipv4, RawProtocolHeader};
+use crate::net::parser::raw::{RawProtocolHeader, utils::bytes_to_ipv4};
 
 // PIM Version
 const PIM_VERSION2: u8 = 2;
@@ -50,7 +50,7 @@ impl ProtocolParser for PimParser {
         let mut header = RawProtocolHeader::new(
             None,
             None,
-            pim_type as u16, // src_port = message type  
+            pim_type as u16, // src_port = message type
             0,               // dst_port = unused
             Self::protocol_number(),
             payload.len() as u16,
@@ -58,9 +58,7 @@ impl ProtocolParser for PimParser {
         );
 
         // Add version and checksum
-        header = header
-            .with_version(version)
-            .with_checksum(checksum);
+        header = header.with_version(version).with_checksum(checksum);
         // Parse specific message types
         match pim_type {
             HELLO => {
