@@ -35,7 +35,7 @@ Fluere is a robust tool designed for comprehensive network monitoring and analys
 
 ## Technical Overview
 
-Fluere is built with Rust and leverages the `libpcap` library for packet capture. The core functionalities are encapsulated within the `main.rs` file, which defines the command-line interface and handles various commands and options.
+Fluere is built with Rust and leverages the `libpcap` library for packet capture. The command-line interface itself lives in `src/cli.rs`, while `main.rs` simply invokes it as the application's entry point.
 
 ## Command Line Arguments
 
