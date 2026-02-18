@@ -82,7 +82,7 @@ impl PluginManager {
                                     argument_table.set(key.as_str(), value.as_str())?;
                                 }
 
-                                func.call(argument_table)?;
+                                func.call::<_, ()>(argument_table)?;
                                 lua.globals().set(name.as_str(), plugin_table)?;
                                 /*let _ = lua_guard.context(|ctx| -> mlua::Result<()> {
                                 // Load the Lua plugin code into a chunk
@@ -152,7 +152,7 @@ impl PluginManager {
                                             argument_table.set(key.as_str(), value.as_str())?;
                                         }
 
-                                        func.call(argument_table)?;
+                                        func.call::<_, ()>(argument_table)?;
                                         lua.globals().set(name.as_str(), plugin_table)?;
                                         /*let _ = lua_guard.context(|ctx| -> rlua::Result<()> {
                                         // Load the Lua plugin code into a chunk
