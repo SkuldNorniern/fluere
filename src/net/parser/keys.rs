@@ -79,18 +79,12 @@ fn dispatch_keys(
     l3_payload: &[u8],
 ) -> Result<(IpAddr, IpAddr, u16, u16, u8), ParseError> {
     match ethertype {
-        EtherTypes::Ipv6 => {
-            ipv6_keys(Ipv6Packet::new(l3_payload).ok_or(ParseError::EmptyPacket)?)
-        }
-        EtherTypes::Ipv4 => {
-            ipv4_keys(Ipv4Packet::new(l3_payload).ok_or(ParseError::EmptyPacket)?)
-        }
+        EtherTypes::Ipv6 => ipv6_keys(Ipv6Packet::new(l3_payload).ok_or(ParseError::EmptyPacket)?),
+        EtherTypes::Ipv4 => ipv4_keys(Ipv4Packet::new(l3_payload).ok_or(ParseError::EmptyPacket)?),
         EtherTypes::Arp | EtherTypes::Rarp => {
             arp_keys(ArpPacket::new(l3_payload).ok_or(ParseError::EmptyPacket)?)
         }
-        EtherTypes::Vlan => {
-            vlan_keys(VlanPacket::new(l3_payload).ok_or(ParseError::EmptyPacket)?)
-        }
+        EtherTypes::Vlan => vlan_keys(VlanPacket::new(l3_payload).ok_or(ParseError::EmptyPacket)?),
         other => fallback_keys(other, l3_payload),
     }
 }
@@ -233,17 +227,18 @@ fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), Parse
 
     // Handle GRE specially
     if protocol == 47
-        && let Some(gre) = GrePacket::new(packet.payload()) {
-            // For GRE, we might want to parse the inner protocol
-            let inner_protocol = gre.get_protocol_type();
-            return Ok((
-                std::net::IpAddr::V4(src_ip),
-                std::net::IpAddr::V4(dst_ip),
-                inner_protocol, // Use inner protocol as "port"
-                0,
-                protocol,
-            ));
-        }
+        && let Some(gre) = GrePacket::new(packet.payload())
+    {
+        // For GRE, we might want to parse the inner protocol
+        let inner_protocol = gre.get_protocol_type();
+        return Ok((
+            std::net::IpAddr::V4(src_ip),
+            std::net::IpAddr::V4(dst_ip),
+            inner_protocol, // Use inner protocol as "port"
+            0,
+            protocol,
+        ));
+    }
 
     Ok((
         std::net::IpAddr::V4(src_ip),
@@ -262,15 +257,16 @@ fn ipv6_keys(packet: Ipv6Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), Parse
 
     // Handle ICMPv6 specially
     if protocol == 58
-        && let Some(icmpv6) = Icmpv6Packet::new(packet.payload()) {
-            return Ok((
-                std::net::IpAddr::V6(src_ip),
-                std::net::IpAddr::V6(dst_ip),
-                icmpv6.get_icmpv6_type().0 as u16, // Use ICMPv6 type as "port"
-                icmpv6.get_icmpv6_code().0 as u16, // Use ICMPv6 code as "port"
-                protocol,
-            ));
-        }
+        && let Some(icmpv6) = Icmpv6Packet::new(packet.payload())
+    {
+        return Ok((
+            std::net::IpAddr::V6(src_ip),
+            std::net::IpAddr::V6(dst_ip),
+            icmpv6.get_icmpv6_type().0 as u16, // Use ICMPv6 type as "port"
+            icmpv6.get_icmpv6_code().0 as u16, // Use ICMPv6 code as "port"
+            protocol,
+        ));
+    }
 
     Ok((
         std::net::IpAddr::V6(src_ip),

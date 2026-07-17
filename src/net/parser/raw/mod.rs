@@ -242,10 +242,16 @@ impl RawProtocolHeader {
             return None;
         }
         let src = IpAddr::V4(Ipv4Addr::new(
-            payload[12], payload[13], payload[14], payload[15],
+            payload[12],
+            payload[13],
+            payload[14],
+            payload[15],
         ));
         let dst = IpAddr::V4(Ipv4Addr::new(
-            payload[16], payload[17], payload[18], payload[19],
+            payload[16],
+            payload[17],
+            payload[18],
+            payload[19],
         ));
         let proto = payload[9];
         let (sp, dp) = if hdr_len + 4 <= payload.len() {
@@ -453,11 +459,9 @@ impl RawProtocolHeader {
         if matches!(ethertype, 0x0806 | 0x0800 | 0x86DD) {
             let frame = Self::build_ethernet_frame(payload, ethertype);
             if let Ok(parsed) = BuiltinPacketParser::parse(&frame) {
-                if let Some(header) = Self::parsed_to_header(
-                    &parsed,
-                    payload.len() as u16,
-                    Some(payload.to_vec()),
-                ) {
+                if let Some(header) =
+                    Self::parsed_to_header(&parsed, payload.len() as u16, Some(payload.to_vec()))
+                {
                     debug!("Parsed via paccel");
                     return Some(header);
                 }
@@ -505,13 +509,18 @@ mod tests {
     #[test]
     fn test_from_raw_packet_valid_ipv4() {
         let packet = [
-            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2,
-            0x00, 0x50, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x00,
+            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x00, 0x50, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x00,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.src_port, 80);
         assert_eq!(header.dst_port, 443);
         assert_eq!(header.protocol, 6);
@@ -520,8 +529,8 @@ mod tests {
     #[test]
     fn test_from_raw_packet_malformed_ipv4() {
         let packet = [
-            0x44, 0x00, 0x00, 0x14, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2,
+            0x44, 0x00, 0x00, 0x14, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 6);
         assert!(header.is_some());
@@ -569,12 +578,18 @@ mod tests {
     #[test]
     fn test_from_ethertype_ipv4() {
         let packet = [
-            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2, 0x00, 0x35, 0x00, 0x35,
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x00, 0x35, 0x00, 0x35,
         ];
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.protocol, 17);
     }
 
@@ -588,9 +603,9 @@ mod tests {
     #[test]
     fn test_from_ethertype_ipv4_tcp_port_ordering() {
         let packet = [
-            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
-            192, 0, 2, 1, 198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00,
-            0x01, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 0, 2, 1,
+            198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
 
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
@@ -602,9 +617,8 @@ mod tests {
     #[test]
     fn test_from_ethertype_ipv4_udp_port_ordering() {
         let packet = [
-            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00,
-            192, 0, 2, 1, 198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00,
-            0x00,
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 192, 0, 2, 1,
+            198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00, 0x00,
         ];
 
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
@@ -617,64 +631,65 @@ mod tests {
     fn test_from_raw_packet_truncated_inputs_do_not_panic() {
         let short_inputs: &[&[u8]] = &[&[], &[0x45], &[0x45, 0x00, 0x00]];
         for packet in short_inputs {
-            let result = std::panic::catch_unwind(|| {
-                RawProtocolHeader::from_raw_packet(packet, 6)
-            });
+            let result = std::panic::catch_unwind(|| RawProtocolHeader::from_raw_packet(packet, 6));
             assert!(result.is_ok());
             assert!(result.unwrap().is_none());
         }
 
-        let truncated_ipv4 = [
-            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06,
-        ];
-        assert!(std::panic::catch_unwind(|| {
-            RawProtocolHeader::from_raw_packet(&truncated_ipv4, 6)
-        })
-        .is_ok());
+        let truncated_ipv4 = [0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06];
+        assert!(
+            std::panic::catch_unwind(|| { RawProtocolHeader::from_raw_packet(&truncated_ipv4, 6) })
+                .is_ok()
+        );
     }
 
     #[test]
     fn test_from_ethertype_truncated_inputs_do_not_panic() {
         let short_inputs: &[&[u8]] = &[&[], &[0x45], &[0x45, 0x00, 0x00]];
         for packet in short_inputs {
-            let result = std::panic::catch_unwind(|| {
-                RawProtocolHeader::from_ethertype(packet, 0x0800)
-            });
+            let result =
+                std::panic::catch_unwind(|| RawProtocolHeader::from_ethertype(packet, 0x0800));
             assert!(result.is_ok());
             assert!(result.unwrap().is_none());
         }
 
-        let truncated_ipv4 = [
-            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06,
-        ];
-        assert!(std::panic::catch_unwind(|| {
-            RawProtocolHeader::from_ethertype(&truncated_ipv4, 0x0800)
-        })
-        .is_ok());
+        let truncated_ipv4 = [0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06];
+        assert!(
+            std::panic::catch_unwind(|| {
+                RawProtocolHeader::from_ethertype(&truncated_ipv4, 0x0800)
+            })
+            .is_ok()
+        );
     }
 
     #[test]
     fn test_from_ethertype_ipv4_tcp_field_assignment() {
         let packet = [
-            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
-            203, 0, 113, 10, 192, 0, 2, 20, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00,
-            0x01, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 203, 0, 113,
+            10, 192, 0, 2, 20, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
 
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
 
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20)))
+        );
         assert_eq!(header.protocol, 6);
     }
 
     #[test]
     fn test_from_ethertype_ipv6_udp_fields_and_port_ordering() {
         let packet = [
-            0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40, 0x20, 0x01, 0x0d, 0xb8,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
-            0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x02, 0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00, 0x00,
+            0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x20, 0x01, 0x0d, 0xb8,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x12, 0x34,
+            0x00, 0x50, 0x00, 0x08, 0x00, 0x00,
         ];
 
         let header = RawProtocolHeader::from_ethertype(&packet, 0x86DD).unwrap();
@@ -695,9 +710,8 @@ mod tests {
     #[test]
     fn test_from_ethertype_uncommon_short_payload_does_not_panic() {
         let packet = [0x12, 0x34, 0x56];
-        let result = std::panic::catch_unwind(|| {
-            RawProtocolHeader::from_ethertype(&packet, 0x88B8)
-        });
+        let result =
+            std::panic::catch_unwind(|| RawProtocolHeader::from_ethertype(&packet, 0x88B8));
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
@@ -706,13 +720,18 @@ mod tests {
     #[test]
     fn test_ipv4_header_with_options() {
         let packet = [
-            0x46, 0x00, 0x00, 0x20, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2, 0x01, 0x02, 0x03, 0x04,
-            0x00, 0x50, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x00,
+            0x46, 0x00, 0x00, 0x20, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x01, 0x02, 0x03, 0x04, 0x00, 0x50, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x00,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.src_port, 80);
         assert_eq!(header.dst_port, 443);
     }
@@ -720,10 +739,10 @@ mod tests {
     #[test]
     fn test_ipv6_version_detection() {
         let packet = [
-            0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40,
-            0x20, 0x01, 0x0d, 0xb8, 0x85, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x34,
-            0x20, 0x01, 0x0d, 0xb8, 0x85, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x35,
-            0x00, 0x35, 0x00, 0x35, 0x00, 0x08, 0x00, 0x00,
+            0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0x85, 0xa3,
+            0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x34, 0x20, 0x01, 0x0d, 0xb8,
+            0x85, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x35, 0x00, 0x35,
+            0x00, 0x35, 0x00, 0x08, 0x00, 0x00,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 17);
         assert!(header.is_some());
@@ -734,24 +753,30 @@ mod tests {
     #[test]
     fn test_port_extraction_edge_cases() {
         let packet = [
-            0x45, 0x00, 0x00, 0x16, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2, 0x00, 0x50,
+            0x45, 0x00, 0x00, 0x16, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x00, 0x50,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
         assert_eq!(header.src_port, 0);
         assert_eq!(header.dst_port, 0);
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
     }
 
     #[test]
     fn test_protocol_preservation() {
         let packet = [
-            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x32, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2, 0x12, 0x34, 0x56, 0x78,
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x32, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x12, 0x34, 0x56, 0x78,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 99).unwrap();
         assert_eq!(header.protocol, 50);
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
     }
 
     #[test]
@@ -796,8 +821,8 @@ mod tests {
     #[test]
     fn test_invalid_ipv4_total_length() {
         let packet = [
-            0x45, 0x00, 0xff, 0xff, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2,
+            0x45, 0x00, 0xff, 0xff, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 6);
         assert!(header.is_some());
@@ -806,12 +831,18 @@ mod tests {
     #[test]
     fn test_ipv4_fragmented_packet() {
         let packet = [
-            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x20, 0x00, 0x40, 0x06, 0x00, 0x00,
-            192, 168, 1, 1, 192, 168, 1, 2, 0x00, 0x50, 0x01, 0xbb,
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x20, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x00, 0x50, 0x01, 0xbb,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        );
         assert_eq!(header.protocol, 6);
     }
 }
