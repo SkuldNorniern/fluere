@@ -27,86 +27,149 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// Extract the UDP payload beneath an IPv6/IPv4 L3 header (if any). Returns
+/// `Err(InvalidPacket)` if the ethertype implies an L3 header that fails to
+/// parse; `Ok(None)` for ethertypes with no UDP-bearing L3 (or L3 that isn't
+/// UDP), matching the prior two-pass is_udp/udp_payload behavior (where a
+/// failed `UdpPacket::new` meant `is_udp == false`, not an error).
+fn extract_udp_payload(
+    ethertype: pnet::packet::ethernet::EtherType,
+    payload: &[u8],
+) -> Result<Option<Vec<u8>>, ParseError> {
+    let inner_payload: Vec<u8> = match ethertype {
+        EtherTypes::Ipv6 => Ipv6Packet::new(payload)
+            .ok_or(ParseError::InvalidPacket)?
+            .payload()
+            .to_vec(),
+        EtherTypes::Ipv4 => Ipv4Packet::new(payload)
+            .ok_or(ParseError::InvalidPacket)?
+            .payload()
+            .to_vec(),
+        _ => return Ok(None),
+    };
+    Ok(UdpPacket::new(&inner_payload).map(|udp| {
+        trace!("UDP payload length: {}", udp.payload().len());
+        udp.payload().to_vec()
+    }))
+}
+
+/// If the frame carries a VXLAN-encapsulated inner Ethernet frame, return its
+/// raw bytes; otherwise `Ok(None)`.
+fn maybe_vxlan_payload(
+    ethertype: pnet::packet::ethernet::EtherType,
+    payload: &[u8],
+) -> Result<Option<Vec<u8>>, ParseError> {
+    let Some(udp_payload) = extract_udp_payload(ethertype, payload)? else {
+        return Ok(None);
+    };
+    Ok(decapsulate_vxlan(&udp_payload))
+}
+
+/// Dispatch to the correct per-ethertype record extractor.
+fn dispatch_fluereflow(
+    ethernet_packet: &EthernetPacket,
+    time: u64,
+) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
+    match ethernet_packet.get_ethertype() {
+        EtherTypes::Ipv4 => {
+            let i = Ipv4Packet::new(ethernet_packet.payload()).ok_or_else(|| {
+                trace!("Failed to parse IPv4 packet");
+                ParseError::InvalidPacket
+            })?;
+            ipv4_packet(time, i)
+        }
+        EtherTypes::Ipv6 => {
+            let i = Ipv6Packet::new(ethernet_packet.payload()).ok_or_else(|| {
+                trace!("Failed to parse IPv6 packet");
+                ParseError::InvalidPacket
+            })?;
+            ipv6_packet(time, i)
+        }
+        EtherTypes::Arp => {
+            let i = ArpPacket::new(ethernet_packet.payload()).ok_or_else(|| {
+                trace!("Failed to parse ARP packet");
+                ParseError::InvalidPacket
+            })?;
+            arp_packet(time, i)
+        }
+        ethertype => fallback_fluereflow(ethernet_packet, ethertype, time),
+    }
+}
+
+/// Fallback for ethertypes with no dedicated arm: try the raw protocol-agnostic
+/// parser via ethertype.
+fn fallback_fluereflow(
+    ethernet_packet: &EthernetPacket,
+    ethertype: pnet::packet::ethernet::EtherType,
+    time: u64,
+) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
+    trace!("Attempting fallback parsing for EtherType: {}", ethertype);
+    let Some(raw_header) = RawProtocolHeader::from_ethertype(ethernet_packet.packet(), ethertype.0)
+    else {
+        trace!("Unknown EtherType: {}", ethertype);
+        return Err(ParseError::UnknownEtherType(ethertype.to_string()));
+    };
+
+    let flags = raw_header.flags.map_or([0; 9], |f| parse_flags(f, &[]));
+    Ok((
+        raw_header.length as usize,
+        flags,
+        FluereRecord::new(
+            raw_header
+                .src_ip
+                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+            raw_header
+                .dst_ip
+                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+            0,
+            0,
+            time,
+            time,
+            raw_header.src_port,
+            raw_header.dst_port,
+            raw_header.length as u32,
+            raw_header.length as u32,
+            raw_header.ttl.unwrap_or(0),
+            raw_header.ttl.unwrap_or(0),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            raw_header.protocol,
+            0,
+        ),
+    ))
+}
+
 pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
     trace!("Parsing packet");
     if packet.is_empty() {
         return Err(ParseError::EmptyPacket);
     }
 
-    let ethernet_packet_raw = EthernetPacket::new(packet.data);
-    let ethernet_packet_unpack = match ethernet_packet_raw {
-        None => return Err(ParseError::EmptyPacket),
-        Some(e) => e,
-    };
+    let ethernet_packet_unpack =
+        EthernetPacket::new(packet.data).ok_or(ParseError::EmptyPacket)?;
 
-    let is_udp: bool = match ethernet_packet_unpack.get_ethertype() {
-        EtherTypes::Ipv6 => {
-            let i = match Ipv6Packet::new(ethernet_packet_unpack.payload()) {
-                Some(packet) => packet,
-                None => return Err(ParseError::InvalidPacket),
-            };
-            UdpPacket::new(i.payload()).is_some()
-        }
-        EtherTypes::Ipv4 => {
-            let i = match Ipv4Packet::new(ethernet_packet_unpack.payload()) {
-                Some(packet) => packet,
-                None => return Err(ParseError::InvalidPacket),
-            };
-            UdpPacket::new(i.payload()).is_some()
-        }
-        _ => false,
-    };
+    let decapsulated_data = maybe_vxlan_payload(
+        ethernet_packet_unpack.get_ethertype(),
+        ethernet_packet_unpack.payload(),
+    )?;
 
-    let mut decapsulated_data: Option<Vec<u8>> = None;
-
-    if is_udp {
-        let udp_payload = match ethernet_packet_unpack.get_ethertype() {
-            EtherTypes::Ipv6 => {
-                let i = match Ipv6Packet::new(ethernet_packet_unpack.payload()) {
-                    Some(packet) => packet,
-                    None => return Err(ParseError::InvalidPacket),
-                };
-
-                match UdpPacket::new(i.payload()) {
-                    Some(udp) => {
-                        trace!("UDP payload length: {}", udp.payload().len());
-                        udp.payload().to_vec()
-                    }
-                    None => return Err(ParseError::InvalidPacket),
-                }
-            }
-            EtherTypes::Ipv4 => {
-                let i = match Ipv4Packet::new(ethernet_packet_unpack.payload()) {
-                    Some(packet) => packet,
-                    None => return Err(ParseError::InvalidPacket),
-                };
-
-                match UdpPacket::new(i.payload()) {
-                    Some(udp) => {
-                        trace!("UDP payload length: {}", udp.payload().len());
-                        udp.payload().to_vec()
-                    }
-                    None => return Err(ParseError::InvalidPacket),
-                }
-            }
-            _ => Vec::new(),
-        };
-
-        // Only check if UDP payload is empty when we expect it to have content
-        if udp_payload.is_empty() && is_udp {
-            trace!("Empty UDP payload detected");
-        }
-
-        decapsulated_data = decapsulate_vxlan(&udp_payload);
-    }
-
-    let ethernet_packet = if let Some(data) = &decapsulated_data {
-        match EthernetPacket::new(data) {
+    let ethernet_packet = match &decapsulated_data {
+        Some(data) => match EthernetPacket::new(data) {
             None => ethernet_packet_unpack, // Fall back to original packet if decapsulation fails
             Some(e) => e,
-        }
-    } else {
-        ethernet_packet_unpack
+        },
+        None => ethernet_packet_unpack,
     };
 
     let time = parse_microseconds(
@@ -114,88 +177,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
         packet.header.ts.tv_usec as u64,
     );
 
-    let record_result = match ethernet_packet.get_ethertype() {
-        EtherTypes::Ipv4 => {
-            let i = match Ipv4Packet::new(ethernet_packet.payload()) {
-                Some(packet) => packet,
-                None => {
-                    trace!("Failed to parse IPv4 packet");
-                    return Err(ParseError::InvalidPacket);
-                }
-            };
-            ipv4_packet(time, i)
-        }
-        EtherTypes::Ipv6 => {
-            let i = match Ipv6Packet::new(ethernet_packet.payload()) {
-                Some(packet) => packet,
-                None => {
-                    trace!("Failed to parse IPv6 packet");
-                    return Err(ParseError::InvalidPacket);
-                }
-            };
-            ipv6_packet(time, i)
-        }
-        EtherTypes::Arp => {
-            let i = match ArpPacket::new(ethernet_packet.payload()) {
-                Some(packet) => packet,
-                None => {
-                    trace!("Failed to parse ARP packet");
-                    return Err(ParseError::InvalidPacket);
-                }
-            };
-            arp_packet(time, i)
-        }
-        ethertype => {
-            trace!("Attempting fallback parsing for EtherType: {}", ethertype);
-            if let Some(raw_header) =
-                RawProtocolHeader::from_ethertype(ethernet_packet.packet(), ethertype.0)
-            {
-                let flags = raw_header.flags.map_or([0; 9], |f| parse_flags(f, &[]));
-                Ok((
-                    raw_header.length as usize,
-                    flags,
-                    FluereRecord::new(
-                        raw_header
-                            .src_ip
-                            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
-                        raw_header
-                            .dst_ip
-                            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
-                        0,
-                        0,
-                        time,
-                        time,
-                        raw_header.src_port,
-                        raw_header.dst_port,
-                        raw_header.length as u32,
-                        raw_header.length as u32,
-                        raw_header.ttl.unwrap_or(0),
-                        raw_header.ttl.unwrap_or(0),
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        raw_header.protocol,
-                        0,
-                    ),
-                ))
-            } else {
-                trace!("Unknown EtherType: {}", ethertype);
-                Err(ParseError::UnknownEtherType(ethertype.to_string()))
-            }
-        }
-    }?;
-
-    Ok(record_result)
+    dispatch_fluereflow(&ethernet_packet, time)
 }
 
 fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
