@@ -44,7 +44,6 @@ cognitive_complexity = "deny"
 members = [
   "fluere-plugin",
   "fluere-config",
-  #"fluere-plugin-trait",
   "fluereflow",
 ]
 
