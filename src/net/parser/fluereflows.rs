@@ -150,14 +150,15 @@ fn fallback_fluereflow(
     ))
 }
 
-pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
+pub fn parse_fluereflow(
+    packet: pcap::Packet,
+) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
     trace!("Parsing packet");
     if packet.is_empty() {
         return Err(ParseError::EmptyPacket);
     }
 
-    let ethernet_packet_unpack =
-        EthernetPacket::new(packet.data).ok_or(ParseError::EmptyPacket)?;
+    let ethernet_packet_unpack = EthernetPacket::new(packet.data).ok_or(ParseError::EmptyPacket)?;
 
     let decapsulated_data = maybe_vxlan_payload(
         ethernet_packet_unpack.get_ethertype(),
@@ -228,7 +229,10 @@ fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRec
     ))
 }
 
-fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
+fn ipv4_packet(
+    time: u64,
+    packet: Ipv4Packet,
+) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
     let protocol = packet.get_next_level_protocol().0;
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
@@ -236,41 +240,42 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
     // Special handling for DNS over UDP
     if packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp
         && let Some(udp) = UdpPacket::new(packet.payload())
-            && (udp.get_destination() == 53 || udp.get_source() == 53) {
-                return Ok((
-                    packet.packet_size(),
-                    [0; 9], // DNS doesn't use TCP flags
-                    FluereRecord::new(
-                        std::net::IpAddr::V4(src_ip),
-                        std::net::IpAddr::V4(dst_ip),
-                        0,
-                        0,
-                        time,
-                        time,
-                        udp.get_source(),
-                        udp.get_destination(),
-                        udp.packet_size() as u32,
-                        udp.packet_size() as u32,
-                        packet.get_ttl(),
-                        packet.get_ttl(),
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        17, // UDP
-                        0,  // No TOS for DNS
-                    ),
-                ));
-            }
+        && (udp.get_destination() == 53 || udp.get_source() == 53)
+    {
+        return Ok((
+            packet.packet_size(),
+            [0; 9], // DNS doesn't use TCP flags
+            FluereRecord::new(
+                std::net::IpAddr::V4(src_ip),
+                std::net::IpAddr::V4(dst_ip),
+                0,
+                0,
+                time,
+                time,
+                udp.get_source(),
+                udp.get_destination(),
+                udp.packet_size() as u32,
+                udp.packet_size() as u32,
+                packet.get_ttl(),
+                packet.get_ttl(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                17, // UDP
+                0,  // No TOS for DNS
+            ),
+        ));
+    }
 
     // Continue with normal packet processing...
     let (src_port, dst_port) = parse_ports(protocol, packet.payload()).unwrap_or((0, 0));
@@ -317,7 +322,10 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
     ))
 }
 
-fn ipv6_packet(time: u64, packet: Ipv6Packet) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
+fn ipv6_packet(
+    time: u64,
+    packet: Ipv6Packet,
+) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
     let protocol = packet.get_next_header().0;
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
