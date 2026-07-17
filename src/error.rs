@@ -1,10 +1,8 @@
-use crate::net::NetError;
 use std::{io, path::PathBuf};
 
 #[derive(Debug)]
 pub enum FluereError {
     IoError(io::Error),
-    NetworkError(NetError),
     PcapError(pcap::Error),
     ParseError(String),
     ConfigError(String),
@@ -15,13 +13,19 @@ pub enum FluereError {
     ParameterMissing(String),
     PluginError(String),
     InvalidValue { field: String, value: String },
+    UnknownProtocol(u8),
+    UnknownEtherType(String),
+    UnknownDSCP(u8),
+    InvalidPacket,
+    EmptyPacket,
+    DeviceNotFound(String),
+    InvalidDeviceIndex(usize),
 }
 
 impl std::fmt::Display for FluereError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::IoError(e) => write!(f, "IO error: {}", e),
-            Self::NetworkError(e) => write!(f, "Network error: {}", e),
             Self::PcapError(e) => write!(f, "PCAP error: {}", e),
             Self::ParseError(e) => write!(f, "Parse error: {}", e),
             Self::ConfigError(e) => write!(f, "Configuration error: {}", e),
@@ -33,6 +37,15 @@ impl std::fmt::Display for FluereError {
                 write!(f, "Invalid value '{}' for field '{}'", value, field)
             }
             Self::PluginError(e) => write!(f, "Plugin error: {}", e),
+            Self::UnknownProtocol(protocol) => write!(f, "Unknown protocol: {}", protocol),
+            Self::UnknownEtherType(ether_type) => {
+                write!(f, "Unknown ether type: {}", ether_type)
+            }
+            Self::UnknownDSCP(dscp) => write!(f, "Unknown dscp: {}", dscp),
+            Self::InvalidPacket => write!(f, "Invalid packet"),
+            Self::EmptyPacket => write!(f, "Empty packet"),
+            Self::DeviceNotFound(device) => write!(f, "Device not found: {}", device),
+            Self::InvalidDeviceIndex(index) => write!(f, "Invalid device index: {}", index),
         }
     }
 }
@@ -47,12 +60,6 @@ impl From<io::Error> for FluereError {
 impl From<pcap::Error> for FluereError {
     fn from(error: pcap::Error) -> Self {
         FluereError::PcapError(error)
-    }
-}
-
-impl From<NetError> for FluereError {
-    fn from(error: NetError) -> Self {
-        FluereError::NetworkError(error)
     }
 }
 

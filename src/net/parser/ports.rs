@@ -1,10 +1,10 @@
-use crate::net::NetError;
+use crate::error::FluereError;
 
 use crate::net::parser::raw::RawProtocolHeader;
 use log::debug;
 use pnet::packet::{tcp::TcpPacket, udp::UdpPacket};
 
-pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError> {
+pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), FluereError> {
     match protocol {
         0 => Ok((0, 0)), // IPv6 Hop-by-Hop Option
         1 => Ok((0, 0)), // ICMP
@@ -12,11 +12,11 @@ pub fn parse_ports(protocol: u8, payload: &[u8]) -> Result<(u16, u16), NetError>
         4 => Ok((0, 0)), // IPv4 encapsulation
         6 => match TcpPacket::new(payload) {
             Some(tcp) => Ok((tcp.get_source(), tcp.get_destination())),
-            None => Err(NetError::InvalidPacket),
+            None => Err(FluereError::InvalidPacket),
         },
         17 => match UdpPacket::new(payload) {
             Some(udp) => Ok((udp.get_source(), udp.get_destination())),
-            None => Err(NetError::InvalidPacket),
+            None => Err(FluereError::InvalidPacket),
         },
         47 => Ok((0, 0)), // GRE
         50 => Ok((0, 0)), // ESP

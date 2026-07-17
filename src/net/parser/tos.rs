@@ -1,6 +1,6 @@
-use crate::net::NetError;
+use crate::error::FluereError;
 
-pub fn dscp_to_tos(dscp: u8) -> Result<u8, NetError> {
+pub fn dscp_to_tos(dscp: u8) -> Result<u8, FluereError> {
     let tos = match dscp {
         0 => 0,
         8 => 32,
@@ -23,7 +23,7 @@ pub fn dscp_to_tos(dscp: u8) -> Result<u8, NetError> {
         46 => 184,
         48 => 192,
         56 => 224,
-        _ => return Err(NetError::UnknownDSCP(dscp)),
+        _ => return Err(FluereError::UnknownDSCP(dscp)),
     };
 
     Ok(tos)

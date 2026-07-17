@@ -1,6 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr};
 
-use crate::net::NetError;
+use crate::error::FluereError;
 use crate::net::parser::parse_ports;
 use crate::net::types::{Key, MacAddress};
 
@@ -31,20 +31,20 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
+pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), FluereError> {
     trace!("Parsing keys");
     if packet.is_empty() {
-        return Err(NetError::EmptyPacket);
+        return Err(FluereError::EmptyPacket);
     }
     trace!("Parsing ethernet packet");
-    let ethernet_packet = EthernetPacket::new(packet.data).ok_or(NetError::InvalidPacket)?;
+    let ethernet_packet = EthernetPacket::new(packet.data).ok_or(FluereError::InvalidPacket)?;
     trace!("Parsed ethernet packet");
 
     let is_udp: bool = match ethernet_packet.get_ethertype() {
         EtherTypes::Ipv6 => {
             let i = Ipv6Packet::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
             
 
@@ -53,7 +53,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
 
             
@@ -63,7 +63,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         EtherTypes::Arp => {
             let i = ArpPacket::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
 
             
@@ -82,7 +82,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             EtherTypes::Ipv6 => {
                 let i = Ipv6Packet::new(ethernet_packet.payload());
                 if i.is_none() {
-                    return Err(NetError::EmptyPacket);
+                    return Err(FluereError::EmptyPacket);
                 }
 
                 UdpPacket::new(i.unwrap().payload())
@@ -93,7 +93,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             EtherTypes::Ipv4 => {
                 let i = Ipv4Packet::new(ethernet_packet.payload());
                 if i.is_none() {
-                    return Err(NetError::EmptyPacket);
+                    return Err(FluereError::EmptyPacket);
                 }
 
                 UdpPacket::new(i.unwrap().payload())
@@ -104,7 +104,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             EtherTypes::Arp => {
                 let i = ArpPacket::new(ethernet_packet.payload());
                 if i.is_none() {
-                    return Err(NetError::EmptyPacket);
+                    return Err(FluereError::EmptyPacket);
                 }
 
                 UdpPacket::new(i.unwrap().payload())
@@ -116,7 +116,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         };
         trace!("Parsed UDP payload");
         if udp_payload.is_empty() {
-            return Err(NetError::EmptyPacket);
+            return Err(FluereError::EmptyPacket);
         }
         trace!("Parsed UDP payload");
         //UdpPacket::new(ethernet_packet_unpack.payload()).unwrap().payload().to_vec();
@@ -126,7 +126,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
 
     let ethernet_packet_decapsulated = if let Some(data) = &decapsulated_data {
         match EthernetPacket::new(data) {
-            None => return Err(NetError::EmptyPacket),
+            None => return Err(FluereError::EmptyPacket),
             Some(e) => e,
         }
     } else {
@@ -142,7 +142,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         EtherTypes::Ipv6 => {
             let i = Ipv6Packet::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
 
             trace!("IPv6 packet detected");
@@ -152,7 +152,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         EtherTypes::Ipv4 => {
             let i = Ipv4Packet::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
 
             trace!("IPv4 packet detected");
@@ -162,7 +162,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         EtherTypes::Arp => {
             let i = ArpPacket::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
 
             trace!("ARP packet detected");
@@ -172,7 +172,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         EtherTypes::Vlan => {
             let i = VlanPacket::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
             trace!("VLAN packet detected");
             vlan_keys(i.unwrap())?
@@ -180,7 +180,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
         EtherTypes::Rarp => {
             let i = ArpPacket::new(ethernet_packet.payload());
             if i.is_none() {
-                return Err(NetError::EmptyPacket);
+                return Err(FluereError::EmptyPacket);
             }
             trace!("RARP packet detected");
             arp_keys(i.unwrap())?
@@ -190,25 +190,25 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
             let parse_test_ipv4 = if let Some(packet) = Ipv4Packet::new(ethernet_packet.payload()) {
                 ipv4_keys(packet)
             } else {
-                Err(NetError::InvalidPacket)
+                Err(FluereError::InvalidPacket)
             };
 
             let parse_test_ipv6 = if let Some(packet) = Ipv6Packet::new(ethernet_packet.payload()) {
                 ipv6_keys(packet)
             } else {
-                Err(NetError::InvalidPacket)
+                Err(FluereError::InvalidPacket)
             };
 
             let parse_test_arp = if let Some(packet) = ArpPacket::new(ethernet_packet.payload()) {
                 arp_keys(packet)
             } else {
-                Err(NetError::InvalidPacket)
+                Err(FluereError::InvalidPacket)
             };
 
             let parse_test_vlan = if let Some(packet) = VlanPacket::new(ethernet_packet.payload()) {
                 vlan_keys(packet)
             } else {
-                Err(NetError::InvalidPacket)
+                Err(FluereError::InvalidPacket)
             };
 
             // If all standard parsers fail, try raw parser as fallback
@@ -228,7 +228,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                     raw_header.protocol,
                 ))
             } else {
-                Err(NetError::InvalidPacket)
+                Err(FluereError::InvalidPacket)
             };
 
             trace!("parse_test_ipv4: {:?}", parse_test_ipv4);
@@ -243,7 +243,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
                 .or(parse_test_arp)
                 .or(parse_test_vlan)
                 .or(parse_test_raw)
-                .or(Err(NetError::UnknownEtherType(
+                .or(Err(FluereError::UnknownEtherType(
                     ethernet_packet.get_ethertype().to_string(),
                 )))?
         }
@@ -278,7 +278,7 @@ pub fn parse_keys(packet: pcap::Packet) -> Result<(Key, Key), NetError> {
     Ok((key_value, key_reverse_value))
 }
 
-fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
+fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), FluereError> {
     let sender_ip = packet.get_sender_proto_addr();
     let target_ip = packet.get_target_proto_addr();
     let src_port = 0;
@@ -294,7 +294,7 @@ fn arp_keys(packet: ArpPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetErro
     ))
 }
 
-fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
+fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), FluereError> {
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
     let protocol = packet.get_next_level_protocol().0;
@@ -323,7 +323,7 @@ fn ipv4_keys(packet: Ipv4Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
     ))
 }
 
-fn ipv6_keys(packet: Ipv6Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
+fn ipv6_keys(packet: Ipv6Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), FluereError> {
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
     let protocol = packet.get_next_header().0;
@@ -350,21 +350,21 @@ fn ipv6_keys(packet: Ipv6Packet) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetEr
     ))
 }
 
-fn vlan_keys(packet: VlanPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), NetError> {
+fn vlan_keys(packet: VlanPacket) -> Result<(IpAddr, IpAddr, u16, u16, u8), FluereError> {
     trace!("Parsing VLAN packet");
-    let inner_packet = EthernetPacket::new(packet.payload()).ok_or(NetError::InvalidPacket)?;
+    let inner_packet = EthernetPacket::new(packet.payload()).ok_or(FluereError::InvalidPacket)?;
     match inner_packet.get_ethertype() {
         EtherTypes::Ipv4 => {
             let ipv4_packet =
-                Ipv4Packet::new(inner_packet.payload()).ok_or(NetError::InvalidPacket)?;
+                Ipv4Packet::new(inner_packet.payload()).ok_or(FluereError::InvalidPacket)?;
             ipv4_keys(ipv4_packet)
         }
         EtherTypes::Ipv6 => {
             let ipv6_packet =
-                Ipv6Packet::new(inner_packet.payload()).ok_or(NetError::InvalidPacket)?;
+                Ipv6Packet::new(inner_packet.payload()).ok_or(FluereError::InvalidPacket)?;
             ipv6_keys(ipv6_packet)
         }
-        _ => Err(NetError::UnknownEtherType(
+        _ => Err(FluereError::UnknownEtherType(
             inner_packet.get_ethertype().to_string(),
         )),
     }

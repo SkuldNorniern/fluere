@@ -13,7 +13,7 @@ use crate::{
     FluereError,
     error::OptionExt,
     net::{
-        CaptureDevice, NetError, find_device,
+        CaptureDevice, find_device,
         flows::update_flow,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
         types::{Key, TcpFlags},
@@ -73,7 +73,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
         .expect("Failed to load plugins");
 
     let interface = find_device(&interface_name)?;
-    let mut cap_device = CaptureDevice::new(interface.clone()).map_err(NetError::from)?;
+    let mut cap_device = CaptureDevice::new(interface.clone())?;
     let cap = &mut cap_device.capture;
 
     let file_dir = "./output";

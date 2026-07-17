@@ -1,6 +1,6 @@
 use pcap;
 
-use crate::net::NetError;
+use crate::error::FluereError;
 use crate::net::parser::raw::RawProtocolHeader;
 use crate::net::parser::{dscp_to_tos, parse_flags, parse_microseconds, parse_ports};
 
@@ -27,15 +27,15 @@ fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereRecord), FluereError> {
     trace!("Parsing packet");
     if packet.is_empty() {
-        return Err(NetError::EmptyPacket);
+        return Err(FluereError::EmptyPacket);
     }
 
     let ethernet_packet_raw = EthernetPacket::new(packet.data);
     let ethernet_packet_unpack = match ethernet_packet_raw {
-        None => return Err(NetError::EmptyPacket),
+        None => return Err(FluereError::EmptyPacket),
         Some(e) => e,
     };
 
@@ -43,14 +43,14 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
         EtherTypes::Ipv6 => {
             let i = match Ipv6Packet::new(ethernet_packet_unpack.payload()) {
                 Some(packet) => packet,
-                None => return Err(NetError::InvalidPacket),
+                None => return Err(FluereError::InvalidPacket),
             };
             UdpPacket::new(i.payload()).is_some()
         }
         EtherTypes::Ipv4 => {
             let i = match Ipv4Packet::new(ethernet_packet_unpack.payload()) {
                 Some(packet) => packet,
-                None => return Err(NetError::InvalidPacket),
+                None => return Err(FluereError::InvalidPacket),
             };
             UdpPacket::new(i.payload()).is_some()
         }
@@ -64,7 +64,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
             EtherTypes::Ipv6 => {
                 let i = match Ipv6Packet::new(ethernet_packet_unpack.payload()) {
                     Some(packet) => packet,
-                    None => return Err(NetError::InvalidPacket),
+                    None => return Err(FluereError::InvalidPacket),
                 };
 
                 match UdpPacket::new(i.payload()) {
@@ -72,13 +72,13 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
                         trace!("UDP payload length: {}", udp.payload().len());
                         udp.payload().to_vec()
                     }
-                    None => return Err(NetError::InvalidPacket),
+                    None => return Err(FluereError::InvalidPacket),
                 }
             }
             EtherTypes::Ipv4 => {
                 let i = match Ipv4Packet::new(ethernet_packet_unpack.payload()) {
                     Some(packet) => packet,
-                    None => return Err(NetError::InvalidPacket),
+                    None => return Err(FluereError::InvalidPacket),
                 };
 
                 match UdpPacket::new(i.payload()) {
@@ -86,7 +86,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
                         trace!("UDP payload length: {}", udp.payload().len());
                         udp.payload().to_vec()
                     }
-                    None => return Err(NetError::InvalidPacket),
+                    None => return Err(FluereError::InvalidPacket),
                 }
             }
             _ => Vec::new(),
@@ -120,7 +120,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
                 Some(packet) => packet,
                 None => {
                     trace!("Failed to parse IPv4 packet");
-                    return Err(NetError::InvalidPacket);
+                    return Err(FluereError::InvalidPacket);
                 }
             };
             ipv4_packet(time, i)
@@ -130,7 +130,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
                 Some(packet) => packet,
                 None => {
                     trace!("Failed to parse IPv6 packet");
-                    return Err(NetError::InvalidPacket);
+                    return Err(FluereError::InvalidPacket);
                 }
             };
             ipv6_packet(time, i)
@@ -140,7 +140,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
                 Some(packet) => packet,
                 None => {
                     trace!("Failed to parse ARP packet");
-                    return Err(NetError::InvalidPacket);
+                    return Err(FluereError::InvalidPacket);
                 }
             };
             arp_packet(time, i)
@@ -190,7 +190,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
                 ))
             } else {
                 trace!("Unknown EtherType: {}", ethertype);
-                Err(NetError::UnknownEtherType(ethertype.to_string()))
+                Err(FluereError::UnknownEtherType(ethertype.to_string()))
             }
         }
     }?;
@@ -198,7 +198,7 @@ pub fn parse_fluereflow(packet: pcap::Packet) -> Result<(usize, [u8; 9], FluereR
     Ok(record_result)
 }
 
-fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRecord), FluereError> {
     let src_ip = packet.get_sender_proto_addr();
     let dst_ip = packet.get_target_proto_addr();
 
@@ -246,7 +246,7 @@ fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRec
     ))
 }
 
-fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereRecord), FluereError> {
     let protocol = packet.get_next_level_protocol().0;
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
@@ -335,7 +335,7 @@ fn ipv4_packet(time: u64, packet: Ipv4Packet) -> Result<(usize, [u8; 9], FluereR
     ))
 }
 
-fn ipv6_packet(time: u64, packet: Ipv6Packet) -> Result<(usize, [u8; 9], FluereRecord), NetError> {
+fn ipv6_packet(time: u64, packet: Ipv6Packet) -> Result<(usize, [u8; 9], FluereRecord), FluereError> {
     let protocol = packet.get_next_header().0;
     let src_ip = packet.get_source();
     let dst_ip = packet.get_destination();
