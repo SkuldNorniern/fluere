@@ -1,19 +1,14 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fs,
-    path::Path,
-    time::Instant,
-};
+use std::{fs, path::Path, time::Instant};
 
 use crate::{
     FluereError,
     error::OptionExt,
     net::{
-        flows::update_flow,
+        flow_engine::FlowEngine,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
-        types::{Key, TcpFlags},
+        types::TcpFlags,
     },
-    types::{Args, UDFlowKey},
+    types::Args,
     utils::fluere_exporter,
 };
 
@@ -58,8 +53,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let file = fs::File::create(&output_file_path)?;
 
     let mut records: Vec<FluereRecord> = Vec::new();
-    let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
-    let mut flow_expirations: BTreeMap<u64, Vec<Key>> = BTreeMap::new();
+    let mut engine = FlowEngine::new(flow_timeout);
 
     info!("Converting file: {}", file_name);
 
@@ -93,95 +87,27 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
         );
 
         let flags = TcpFlags::new(raw_flags);
-        // Pushing packet into active_flows if it is not present
-        let is_reverse = match active_flow.get(&key_value) {
-            None => match active_flow.get(&reverse_key) {
-                None => {
-                    // If the protocol is TCP, check if it's a SYN packet
-                    if flowdata.prot == 6 {
-                        if flags.syn > 0 {
-                            let expiration_time = packet_time + (flow_timeout * 1_000); // Convert milliseconds to microseconds
-                            flow_expirations
-                                .entry(expiration_time)
-                                .or_default()
-                                .push(key_value);
-                            active_flow.insert(key_value, flowdata);
-
-                            trace!("Flow established");
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        let expiration_time = packet_time + (flow_timeout * 1_000); // Convert milliseconds to microseconds
-                        flow_expirations
-                            .entry(expiration_time)
-                            .or_default()
-                            .push(key_value);
-                        active_flow.insert(key_value, flowdata);
-
-                        trace!("Flow established");
-                    }
-
-                    false
-                }
-                Some(_) => true,
-            },
-            Some(_) => false,
-        };
-
-        let pkt = flowdata.min_pkt;
-        let ttl = flowdata.min_ttl;
-
-        let flow_key = if is_reverse { &reverse_key } else { &key_value };
-        if let Some(flow) = active_flow.get_mut(flow_key) {
-            let update_key = UDFlowKey {
-                doctets,
-                pkt,
-                ttl,
-                flags,
-                time: packet_time, // Use the correct variable here
-            };
-
-            update_flow(flow, is_reverse, update_key);
-
-            trace!(
-                "{} flow updated",
-                if is_reverse { "reverse" } else { "forward" }
-            );
-
-            if flags.is_finished() {
-                trace!("Flow finished");
-                trace!("Flow data: {:?}", flow);
-                records.push(*flow);
-                active_flow.remove(flow_key);
-            }
+        if let Some(flow) = engine.offer(
+            key_value,
+            reverse_key,
+            flowdata,
+            doctets,
+            flags,
+            packet_time,
+        ) {
+            trace!("Flow finished");
+            trace!("Flow data: {:?}", flow);
+            records.push(flow);
         }
 
-        // Remove expired flows before processing the next packet
-        let current_time = packet_time;
-        let expired_times: Vec<u64> = flow_expirations
-            .range(..=current_time)
-            .map(|(&time, _)| time)
-            .collect();
-
-        for expiration_time in expired_times {
-            if let Some(keys) = flow_expirations.remove(&expiration_time) {
-                for key in keys {
-                    if let Some(flow) = active_flow.remove(&key) {
-                        records.push(flow);
-                    }
-                }
-            }
-        }
+        records.extend(engine.sweep_expired(packet_time));
     }
     bar.finish();
     info!("Converted in {:?}", start.elapsed());
-    let ac_flow_cnt = active_flow.len();
+    let ac_flow_cnt = engine.active_count();
     let ended_flow_cnt = records.len();
 
-    for (_key, flow) in active_flow.clone().iter() {
-        records.push(*flow);
-    }
+    records.extend(engine.drain());
 
     let tasks = task::spawn(async {
         let _ = fluere_exporter(records, file).await;

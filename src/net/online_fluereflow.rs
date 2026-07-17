@@ -3,7 +3,6 @@
 // The data is then exported to a CSV file.
 
 use std::{
-    collections::{BTreeMap, HashMap},
     fs,
     mem::take,
     time::{Duration, Instant},
@@ -14,11 +13,11 @@ use crate::{
     error::OptionExt,
     net::{
         CaptureDevice, find_device,
-        flows::update_flow,
+        flow_engine::FlowEngine,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
-        types::{Key, TcpFlags},
+        types::TcpFlags,
     },
-    types::{Args, UDFlowKey},
+    types::Args,
     utils::{cur_time_file, fluere_exporter},
 };
 
@@ -64,21 +63,21 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
         .sleep_windows
         .required("this should be defaulted to `false`, and now deprecated")?;
     let config = Config::new();
-    let plugin_manager = PluginManager::new().expect("Failed to create plugin manager");
+    let plugin_manager =
+        PluginManager::new().map_err(|error| FluereError::Plugin(error.to_string()))?;
     let plugin_worker = plugin_manager.start_worker();
 
     plugin_manager
         .load_plugins(&config)
         .await
-        .expect("Failed to load plugins");
+        .map_err(|error| FluereError::Plugin(error.to_string()))?;
 
     let interface = find_device(&interface_name)?;
     let mut cap_device = CaptureDevice::new(interface.clone())?;
     let cap = &mut cap_device.capture;
 
     let file_dir = "./output";
-    fs::create_dir_all(file_dir)
-        .unwrap_or_else(|error| panic!("Problem creating directory: {:?}", error));
+    fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
     let mut last_export = Instant::now();
@@ -90,12 +89,9 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     //let mut wtr = csv::Writer::from_writer(file);
 
     let mut records: Vec<FluereRecord> = Vec::new();
-    let mut active_flow: HashMap<Key, FluereRecord> = HashMap::new();
+    let mut engine = FlowEngine::new(flow_timeout);
     let tasks: Vec<JoinHandle<Result<(), FluereError>>> = vec![];
     let mut export_tasks = vec![];
-
-    // Initialize flow_expirations BTreeMap
-    let mut flow_expirations: BTreeMap<u64, Vec<Key>> = BTreeMap::new();
 
     loop {
         match cap.next_packet() {
@@ -133,108 +129,30 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                     packet.header.ts.tv_usec as u64,
                 );
 
-                // When a new flow is established
-                let is_reverse = match active_flow.get(&key_value) {
-                    None => match active_flow.get(&reverse_key) {
-                        None => {
-                            // If the protocol is TCP, check if it's a SYN packet
-                            if flowdata.prot == 6 {
-                                if flags.syn > 0 {
-                                    let expiration_time = packet_time + (flow_timeout * 1_000); // Convert milliseconds to microseconds
-                                    flow_expirations
-                                        .entry(expiration_time)
-                                        .or_default()
-                                        .push(key_value);
-                                    active_flow.insert(key_value, flowdata);
-                                    trace!("flow established");
-                                } else {
-                                    continue;
-                                }
-                            } else {
-                                let expiration_time = packet_time + (flow_timeout * 1_000); // Convert milliseconds to microseconds
-                                flow_expirations
-                                    .entry(expiration_time)
-                                    .or_default()
-                                    .push(key_value);
-                                active_flow.insert(key_value, flowdata);
-                                trace!("flow established");
-                            }
-                            false
-                        }
-                        Some(_) => true,
-                    },
-                    Some(_) => false,
-                };
-
-                let flow_key = if is_reverse { &reverse_key } else { &key_value };
-
-                // Update the flow
-                if let Some(flow) = active_flow.get_mut(flow_key) {
-                    let update_key = UDFlowKey {
-                        doctets,
-                        pkt: flowdata.min_pkt,
-                        ttl: flowdata.min_ttl,
-                        flags,
-                        time: packet_time,
-                    };
-                    update_flow(flow, is_reverse, update_key);
-
-                    // Update the expiration time for the flow
-                    let new_expiration_time = packet_time + (flow_timeout * 1_000);
-                    flow_expirations
-                        .entry(new_expiration_time)
-                        .or_default()
-                        .push(*flow_key);
-
-                    trace!(
-                        "{} flow updated",
-                        if is_reverse { "reverse" } else { "forward" }
-                    );
-                    trace!("flow key detail: {:?}", flow_key);
-
-                    // Check if the flow has finished
-                    if flags.is_finished() {
-                        trace!("flow finished");
-                        trace!("flow data: {:?}", flow);
-
-                        plugin_manager
-                            .process_flow_data(*flow)
-                            .await
-                            .map_err(|e| FluereError::Plugin(e.to_string()))?;
-                        records.push(*flow);
-
-                        active_flow.remove(flow_key);
-
-                        // Remove the flow from flow_expirations
-                        for (_exp_time, keys) in flow_expirations.iter_mut() {
-                            if let Some(pos) = keys.iter().position(|k| k == flow_key) {
-                                keys.swap_remove(pos);
-                                break;
-                            }
-                        }
-                    }
+                if let Some(flow) = engine.offer(
+                    key_value,
+                    reverse_key,
+                    flowdata,
+                    doctets,
+                    flags,
+                    packet_time,
+                ) {
+                    trace!("flow finished");
+                    trace!("flow data: {:?}", flow);
+                    plugin_manager
+                        .process_flow_data(flow)
+                        .await
+                        .map_err(|error| FluereError::Plugin(error.to_string()))?;
+                    records.push(flow);
                 }
 
-                // Remove expired flows before processing the next packet
-                let current_time = packet_time;
-                let expired_times: Vec<u64> = flow_expirations
-                    .range(..=current_time)
-                    .map(|(&time, _)| time)
-                    .collect();
-
-                for expiration_time in expired_times {
-                    if let Some(keys) = flow_expirations.remove(&expiration_time) {
-                        for key in keys {
-                            if let Some(flow) = active_flow.remove(&key) {
-                                trace!("flow expired");
-                                plugin_manager
-                                    .process_flow_data(flow)
-                                    .await
-                                    .map_err(|e| FluereError::Plugin(e.to_string()))?;
-                                records.push(flow);
-                            }
-                        }
-                    }
+                for flow in engine.sweep_expired(packet_time) {
+                    trace!("flow expired");
+                    plugin_manager
+                        .process_flow_data(flow)
+                        .await
+                        .map_err(|error| FluereError::Plugin(error.to_string()))?;
+                    records.push(flow);
                 }
 
                 // Export flows if the interval has been reached
@@ -268,27 +186,13 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
         }
     }
 
-    // After the loop, handle any remaining flows
-    // Remove any flows that have not yet expired and process them
-    for (_exp_time, keys) in flow_expirations.iter() {
-        for key in keys {
-            if let Some(flow) = active_flow.remove(key) {
-                plugin_manager
-                    .process_flow_data(flow)
-                    .await
-                    .map_err(|e| FluereError::Plugin(e.to_string()))?;
-                records.push(flow);
-            }
-        }
-    }
-
     debug!("Captured in {:?}", start.elapsed());
-    for (_key, flow) in active_flow.iter() {
+    for flow in engine.drain() {
         plugin_manager
-            .process_flow_data(*flow)
+            .process_flow_data(flow)
             .await
-            .map_err(|e| FluereError::Plugin(e.to_string()))?;
-        records.push(*flow);
+            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        records.push(flow);
     }
     for task in tasks {
         let _ = task.await;
