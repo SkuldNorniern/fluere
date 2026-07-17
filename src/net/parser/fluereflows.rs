@@ -31,6 +31,7 @@ fn innermost(parsed: &ParsedPacket) -> &ParsedPacket {
 /// tunnel overhead instead of mixing captured lengths with IP-declared lengths.
 pub fn parse_fluereflow(
     packet: pcap::Packet,
+    linktype: u16,
 ) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
     trace!("Parsing packet");
     if packet.is_empty() {
@@ -41,8 +42,9 @@ pub fn parse_fluereflow(
         stop_after: StopLayer::Transport,
         ..Default::default()
     };
-    let parsed = BuiltinPacketParser::parse_with_config(packet.data, config)
-        .map_err(|_| ParseError::InvalidPacket)?;
+    let parsed =
+        BuiltinPacketParser::parse_with_config_and_linktype(packet.data, config, Some(linktype))
+            .map_err(|_| ParseError::InvalidPacket)?;
     let time = parse_microseconds(
         packet.header.ts.tv_sec as u64,
         packet.header.ts.tv_usec as u64,
@@ -285,7 +287,7 @@ mod tests {
             caplen: frame.len() as u32,
             len: frame.len() as u32,
         };
-        parse_fluereflow(Packet::new(&header, frame))
+        parse_fluereflow(Packet::new(&header, frame), 1)
     }
 
     fn ethernet_frame(ethertype: u16, payload: &[u8]) -> Vec<u8> {

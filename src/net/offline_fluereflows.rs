@@ -27,8 +27,8 @@ struct ParsedPacket {
     packet_time: u64,
 }
 
-fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool) -> Option<ParsedPacket> {
-    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
+fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool, linktype: u16) -> Option<ParsedPacket> {
+    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone(), linktype) {
         Ok(keys) => keys,
         Err(_) => return None,
     };
@@ -38,7 +38,7 @@ fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool) -> Option<ParsedPacket>
         reverse_key.mac_defaultate();
     }
 
-    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone(), linktype) {
         Ok(result) => result,
         Err(error) => {
             debug!("{}", error);
@@ -95,6 +95,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
         .required("this should be defaulted to `10 minutes` on construction")?;
 
     let mut cap = Capture::from_file(file_name.clone())?;
+    let linktype = u16::try_from(cap.get_datalink().0).unwrap_or(1);
 
     let file_dir = "./output";
     fs::create_dir_all(file_dir)?;
@@ -119,7 +120,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
 
     while let Ok(packet) = cap.next_packet() {
         trace!("Parsing packet");
-        let Some(packet) = parse_packet(packet, use_mac) else {
+        let Some(packet) = parse_packet(packet, use_mac, linktype) else {
             continue;
         };
         process_packet(packet, &mut engine, &mut records);
