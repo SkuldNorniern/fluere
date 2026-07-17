@@ -8,7 +8,7 @@ use crate::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
         parser::{microseconds_to_timestamp, parse_fluereflow, parse_keys, parse_microseconds},
-        types::TcpFlags,
+        types::{Key, TcpFlags},
     },
     types::Args,
     utils::{cur_time_file, fluere_exporter},
@@ -45,34 +45,20 @@ use tokio::{
 
 const MAX_RECENT_FLOWS: usize = 50;
 
-// This function is the entry point for the live packet capture functionality.
-// It takes the command line arguments as input and calls the online_packet_capture function.
-// It returns a Result indicating whether the operation was successful.
-pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
-    debug!("Starting Terminal User Interface");
-
-    online_packet_capture(arg).await?;
-    debug!("Terminal User Interface Stopped");
-    Ok(())
-}
-#[derive(Debug, Clone)]
-struct FlowSummary {
-    src: Cow<'static, str>,
-    dst: Cow<'static, str>,
-    src_port: Cow<'static, str>,
-    dst_port: Cow<'static, str>,
-    protocol: Cow<'static, str>, //flow_data: String, // or any other relevant data you want to display
+struct LiveArgs {
+    csv_file: String,
+    use_mac: bool,
+    interface_name: String,
+    duration: u64,
+    interval: u64,
+    flow_timeout: u64,
 }
 
-// This function captures packets from a network interface and converts them into NetFlow data.
-// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
-// The function runs indefinitely, capturing packets and updating the terminal user interface with the captured data.
-pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
+fn extract_live_args(arg: Args) -> Result<LiveArgs, FluereError> {
     let csv_file = arg
         .files
         .csv
         .required("this should be defaulted to `output` on construction")?;
-    //let enable_ipv6
     let use_mac = arg
         .parameters
         .use_mac
@@ -94,6 +80,226 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         .parameters
         .sleep_windows
         .required("this should be defaulted to `false`, and now deprecated")?;
+    Ok(LiveArgs {
+        csv_file,
+        use_mac,
+        interface_name,
+        duration,
+        interval,
+        flow_timeout,
+    })
+}
+
+// This function is the entry point for the live packet capture functionality.
+// It takes the command line arguments as input and calls the online_packet_capture function.
+// It returns a Result indicating whether the operation was successful.
+pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
+    debug!("Starting Terminal User Interface");
+
+    online_packet_capture(arg).await?;
+    debug!("Terminal User Interface Stopped");
+    Ok(())
+}
+#[derive(Debug, Clone)]
+struct FlowSummary {
+    src: Cow<'static, str>,
+    dst: Cow<'static, str>,
+    src_port: Cow<'static, str>,
+    dst_port: Cow<'static, str>,
+    protocol: Cow<'static, str>, //flow_data: String, // or any other relevant data you want to display
+}
+
+struct ParsedPacket {
+    key_value: Key,
+    reverse_key: Key,
+    flowdata: FluereRecord,
+    doctets: usize,
+    flags: TcpFlags,
+    packet_time: u64,
+}
+
+struct ExportSchedule<'a> {
+    interval: u64,
+    last_export: &'a Mutex<Instant>,
+    last_export_unix_time: &'a Mutex<u64>,
+}
+
+fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool) -> Option<ParsedPacket> {
+    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
+        Ok(keys) => keys,
+        Err(error) => {
+            debug!("Error on parse_keys: {}", error);
+            return None;
+        }
+    };
+    if !use_mac {
+        key_value.mac_defaultate();
+        reverse_key.mac_defaultate();
+    }
+
+    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+        Ok(result) => result,
+        Err(error) => {
+            debug!("Error on parse_fluereflow: {}", error);
+            return None;
+        }
+    };
+
+    Some(ParsedPacket {
+        key_value,
+        reverse_key,
+        flowdata,
+        doctets,
+        flags: TcpFlags::new(raw_flags),
+        packet_time: parse_microseconds(
+            packet.header.ts.tv_sec as u64,
+            packet.header.ts.tv_usec as u64,
+        ),
+    })
+}
+
+fn next_packet(cap: &mut pcap::Capture<pcap::Active>) -> Option<pcap::Packet<'_>> {
+    match cap.next_packet() {
+        Ok(packet) => Some(packet),
+        Err(error) => {
+            trace!("Error capturing packet: {}", error);
+            None
+        }
+    }
+}
+
+fn duration_reached(start: Instant, duration: u64) -> bool {
+    start.elapsed() >= Duration::from_millis(duration) && duration != 0
+}
+
+async fn add_recent_flow(recent_flows: &Mutex<Vec<FlowSummary>>, key: Key) {
+    let mut recent_flows_guard = recent_flows.lock().await;
+    recent_flows_guard.push(FlowSummary {
+        src: Cow::from(key.src_ip.to_string()),
+        dst: Cow::from(key.dst_ip.to_string()),
+        src_port: Cow::from(key.src_port.to_string()),
+        dst_port: Cow::from(key.dst_port.to_string()),
+        protocol: Cow::from(key.protocol.to_string()),
+    });
+    if recent_flows_guard.len() > MAX_RECENT_FLOWS {
+        recent_flows_guard.remove(0);
+    }
+}
+
+async fn emit_completed_flows(
+    completed: Vec<FluereRecord>,
+    plugin_manager: &PluginManager,
+    records: &mut Vec<FluereRecord>,
+) -> Result<(), FluereError> {
+    for flow in completed {
+        trace!("flow completed");
+        plugin_manager
+            .process_flow_data(flow)
+            .await
+            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        records.push(flow);
+    }
+    Ok(())
+}
+
+async fn process_packet(
+    packet: ParsedPacket,
+    engine: &Mutex<FlowEngine>,
+    recent_flows: &Mutex<Vec<FlowSummary>>,
+    plugin_manager: &PluginManager,
+    records: &mut Vec<FluereRecord>,
+) -> Result<(), FluereError> {
+    let (completed, new_flow) = {
+        let mut engine_guard = engine.lock().await;
+        let was_active = engine_guard.active().contains_key(&packet.key_value)
+            || engine_guard.active().contains_key(&packet.reverse_key);
+        let finished = engine_guard.offer(
+            packet.key_value,
+            packet.reverse_key,
+            packet.flowdata,
+            packet.doctets,
+            packet.flags,
+            packet.packet_time,
+        );
+        let expired = engine_guard.sweep_expired(packet.packet_time);
+        let new_flow = !was_active && engine_guard.active().contains_key(&packet.key_value);
+        let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
+        if let Some(flow) = finished {
+            completed.push(flow);
+        }
+        completed.extend(expired);
+        (completed, new_flow)
+    };
+
+    if new_flow {
+        add_recent_flow(recent_flows, packet.key_value).await;
+    }
+    emit_completed_flows(completed, plugin_manager, records).await
+}
+
+async fn export_if_due(
+    records: &mut Vec<FluereRecord>,
+    file: fs::File,
+    file_path: Cow<'static, str>,
+    csv_file: &str,
+    file_dir: &str,
+    schedule: ExportSchedule<'_>,
+    export_tasks: &mut Vec<task::JoinHandle<()>>,
+) -> Result<(fs::File, Cow<'static, str>), FluereError> {
+    let mut last_export_guard = schedule.last_export.lock().await;
+    let mut last_export_unix_time_guard = schedule.last_export_unix_time.lock().await;
+    if last_export_guard.elapsed() >= Duration::from_millis(schedule.interval)
+        && schedule.interval != 0
+    {
+        let records_to_export = take(records);
+        let file_path_clone = file_path.clone();
+        export_tasks.push(task::spawn(async move {
+            if let Err(error) = fluere_exporter(records_to_export, file).await {
+                error!("Export error: {}", error);
+            }
+            debug!("Export {} Finished", file_path_clone);
+        }));
+
+        let file_path = cur_time_file(csv_file, file_dir, ".csv");
+        let file = fs::File::create(file_path.as_ref())?;
+        *last_export_guard = Instant::now();
+        *last_export_unix_time_guard = unix_time_seconds();
+        return Ok((file, file_path));
+    }
+    Ok((file, file_path))
+}
+
+async fn await_render_task(
+    draw_task: task::JoinHandle<Result<(), FluereError>>,
+) -> Result<(), FluereError> {
+    match draw_task.await {
+        Ok(result) => result,
+        Err(error) => Err(FluereError::from(io::Error::other(format!(
+            "render task failed: {error}"
+        )))),
+    }
+}
+
+async fn await_export_tasks(export_tasks: Vec<task::JoinHandle<()>>) {
+    for export_task in export_tasks {
+        if let Err(error) = export_task.await {
+            error!("Export task failed: {}", error);
+        }
+    }
+}
+
+// This function captures packets from a network interface and converts them into NetFlow data.
+// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
+// The function runs indefinitely, capturing packets and updating the terminal user interface with the captured data.
+pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
+    let LiveArgs {
+        csv_file,
+        use_mac,
+        interface_name,
+        duration,
+        interval,
+        flow_timeout,
+    } = extract_live_args(arg)?;
     let config = Config::new();
     let plugin_manager =
         PluginManager::new().map_err(|error| FluereError::Plugin(error.to_string()))?;
@@ -151,113 +357,39 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
 
     let capture_result: Result<(), FluereError> = async {
         loop {
-            match cap.next_packet() {
-                Err(error) => {
-                    trace!("Error capturing packet: {}", error);
-                    continue;
-                }
-                Ok(packet) => {
-                    trace!("received packet");
+            let Some(packet) = next_packet(cap) else {
+                continue;
+            };
+            trace!("received packet");
+            let Some(packet) = parse_packet(packet, use_mac) else {
+                continue;
+            };
+            process_packet(
+                packet,
+                &engine,
+                &recent_flows,
+                &plugin_manager,
+                &mut records,
+            )
+            .await?;
 
-                    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
-                        Ok(keys) => keys,
-                        Err(error) => {
-                            debug!("Error on parse_keys: {}", error);
-                            continue;
-                        }
-                    };
-                    if !use_mac {
-                        key_value.mac_defaultate();
-                        reverse_key.mac_defaultate();
-                    }
+            (file, file_path) = export_if_due(
+                &mut records,
+                file,
+                file_path,
+                csv_file.as_str(),
+                file_dir,
+                ExportSchedule {
+                    interval,
+                    last_export: &last_export,
+                    last_export_unix_time: &last_export_unix_time,
+                },
+                &mut export_tasks,
+            )
+            .await?;
 
-                    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
-                        Ok(result) => result,
-                        Err(error) => {
-                            debug!("Error on parse_fluereflow: {}", error);
-                            continue;
-                        }
-                    };
-
-                    let flags = TcpFlags::new(raw_flags);
-                    let packet_time = parse_microseconds(
-                        packet.header.ts.tv_sec as u64,
-                        packet.header.ts.tv_usec as u64,
-                    );
-
-                    let (completed, new_flow) = {
-                        let mut engine_guard = engine.lock().await;
-                        let was_active = engine_guard.active().contains_key(&key_value)
-                            || engine_guard.active().contains_key(&reverse_key);
-                        let finished = engine_guard.offer(
-                            key_value,
-                            reverse_key,
-                            flowdata,
-                            doctets,
-                            flags,
-                            packet_time,
-                        );
-                        let expired = engine_guard.sweep_expired(packet_time);
-                        let new_flow =
-                            !was_active && engine_guard.active().contains_key(&key_value);
-                        let mut completed =
-                            Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
-                        if let Some(flow) = finished {
-                            completed.push(flow);
-                        }
-                        completed.extend(expired);
-                        (completed, new_flow)
-                    };
-
-                    if new_flow {
-                        let mut recent_flows_guard = recent_flows.lock().await;
-                        recent_flows_guard.push(FlowSummary {
-                            src: Cow::from(key_value.src_ip.to_string()),
-                            dst: Cow::from(key_value.dst_ip.to_string()),
-                            src_port: Cow::from(key_value.src_port.to_string()),
-                            dst_port: Cow::from(key_value.dst_port.to_string()),
-                            protocol: Cow::from(key_value.protocol.to_string()),
-                        });
-                        if recent_flows_guard.len() > MAX_RECENT_FLOWS {
-                            recent_flows_guard.remove(0);
-                        }
-                    }
-
-                    for flow in completed {
-                        trace!("flow completed");
-                        plugin_manager
-                            .process_flow_data(flow)
-                            .await
-                            .map_err(|error| FluereError::Plugin(error.to_string()))?;
-                        records.push(flow);
-                    }
-
-                    let mut last_export_guard = last_export.lock().await;
-                    let mut last_export_unix_time_guard = last_export_unix_time.lock().await;
-                    if last_export_guard.elapsed() >= Duration::from_millis(interval)
-                        && interval != 0
-                    {
-                        let records_to_export = take(&mut records);
-                        let file_path_clone = file_path.clone();
-                        export_tasks.push(task::spawn(async move {
-                            if let Err(error) = fluere_exporter(records_to_export, file).await {
-                                error!("Export error: {}", error);
-                            }
-                            debug!("Export {} Finished", file_path_clone);
-                        }));
-
-                        file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
-                        file = fs::File::create(file_path.as_ref())?;
-                        *last_export_guard = Instant::now();
-                        *last_export_unix_time_guard = unix_time_seconds();
-                    }
-                    drop(last_export_unix_time_guard);
-                    drop(last_export_guard);
-
-                    if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
-                        break;
-                    }
-                }
+            if duration_reached(start, duration) {
+                break;
             }
         }
 
@@ -287,20 +419,11 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
 
     let _ = render_shutdown_tx.send(());
     exit_key_task.abort();
-    let render_result = match draw_task.await {
-        Ok(result) => result,
-        Err(error) => Err(FluereError::from(io::Error::other(format!(
-            "render task failed: {error}"
-        )))),
-    };
+    let render_result = await_render_task(draw_task).await;
 
     plugin_manager.await_completion(plugin_worker).await;
     drop(plugin_manager);
-    for export_task in export_tasks {
-        if let Err(error) = export_task.await {
-            error!("Export task failed: {}", error);
-        }
-    }
+    await_export_tasks(export_tasks).await;
 
     capture_result?;
     render_result?;
@@ -374,33 +497,14 @@ async fn render_ui(
     loop {
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                let flow_summaries: Vec<FlowSummary> = {
-                    let recent_flows_guard = recent_flows.lock().await;
-                    recent_flows_guard.clone()
-                };
-                let (progress, recent_exported_time): (f64, u64) = {
-                    let last_export_unix_time_guard = last_export_unix_time.lock().await;
-                    let last_export_guard = last_export.lock().await;
-                    let progress = (last_export_guard.elapsed().as_millis() as f64
-                        / interval as f64)
-                        .clamp(0.0, 1.0);
-                    (progress, *last_export_unix_time_guard)
-                };
-                let active_flow_count: usize = {
-                    let engine_guard = engine.lock().await;
-                    engine_guard.active_count()
-                };
-                if let Err(error) = terminal.draw(|f| {
-                        draw_ui(
-                            f,
-                            &flow_summaries,
-                            progress,
-                            active_flow_count,
-                            recent_exported_time,
-                        );
-                    }) {
-                    error!("Failed to draw terminal UI: {}", error);
-                }
+                refresh_ui(
+                    &mut terminal,
+                    &recent_flows,
+                    &last_export,
+                    &last_export_unix_time,
+                    &engine,
+                    interval,
+                ).await;
             }
             _ = &mut shutdown_rx => break,
         }
@@ -408,6 +512,42 @@ async fn render_ui(
 
     restore_terminal(&mut terminal)?;
     Ok(())
+}
+
+async fn refresh_ui(
+    terminal: &mut LiveTerminal,
+    recent_flows: &Mutex<Vec<FlowSummary>>,
+    last_export: &Mutex<Instant>,
+    last_export_unix_time: &Mutex<u64>,
+    engine: &Mutex<FlowEngine>,
+    interval: u64,
+) {
+    let flow_summaries: Vec<FlowSummary> = {
+        let recent_flows_guard = recent_flows.lock().await;
+        recent_flows_guard.clone()
+    };
+    let (progress, recent_exported_time): (f64, u64) = {
+        let last_export_unix_time_guard = last_export_unix_time.lock().await;
+        let last_export_guard = last_export.lock().await;
+        let progress =
+            (last_export_guard.elapsed().as_millis() as f64 / interval as f64).clamp(0.0, 1.0);
+        (progress, *last_export_unix_time_guard)
+    };
+    let active_flow_count: usize = {
+        let engine_guard = engine.lock().await;
+        engine_guard.active_count()
+    };
+    if let Err(error) = terminal.draw(|f| {
+        draw_ui(
+            f,
+            &flow_summaries,
+            progress,
+            active_flow_count,
+            recent_exported_time,
+        );
+    }) {
+        error!("Failed to draw terminal UI: {}", error);
+    }
 }
 
 fn unix_time_seconds() -> u64 {
