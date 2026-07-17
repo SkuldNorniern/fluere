@@ -201,143 +201,106 @@ impl RawProtocolHeader {
         None
     }
 
-    pub fn from_raw_packet(payload: &[u8], protocol_hint: u8) -> Option<Self> {
-        trace!(
-            "Attempting raw packet parsing with protocol hint: {}",
-            protocol_hint
-        );
-
-        let outer_ipv4 = if payload.len() >= 20 && (payload[0] >> 4) == 4 {
-            let ihl = (payload[0] & 0x0F) as usize;
-            let hdr_len = ihl * 4;
-            if ihl >= 5 && hdr_len <= payload.len() {
-                let src = IpAddr::V4(Ipv4Addr::new(
-                    payload[12], payload[13], payload[14], payload[15],
-                ));
-                let dst = IpAddr::V4(Ipv4Addr::new(
-                    payload[16], payload[17], payload[18], payload[19],
-                ));
-                let proto = payload[9];
-                let (sp, dp) = if hdr_len + 4 <= payload.len() {
-                    let t = &payload[hdr_len..];
-                    (
-                        u16::from_be_bytes([t[0], t[1]]),
-                        u16::from_be_bytes([t[2], t[3]]),
-                    )
-                } else {
-                    (0, 0)
-                };
-                Some((src, dst, sp, dp, proto))
+    /// Extract (src_port, dst_port) from an L4 payload for the protocols we
+    /// understand (TCP/UDP), falling back to reading the first 4 bytes as
+    /// raw big-endian port fields when the dedicated parser can't validate
+    /// the packet, and `(0, 0)` for anything else / too-short buffers.
+    fn extract_l4_ports(proto: u8, l4: &[u8]) -> (u16, u16) {
+        let raw_ports = || {
+            if l4.len() >= 4 {
+                Some((
+                    u16::from_be_bytes([l4[0], l4[1]]),
+                    u16::from_be_bytes([l4[2], l4[3]]),
+                ))
             } else {
                 None
             }
-        } else {
-            None
         };
-
-        if payload.len() >= 1 && (payload[0] >> 4) == 6 {
-            if let Some(ipv6) = Ipv6Packet::new(payload) {
-                let proto = ipv6.next_header();
-                let l4 = ipv6.payload();
-                let (src_port, dst_port) = match proto {
-                    6 => TcpPacket::new(l4)
-                        .map(|t| (t.source_port(), t.destination_port()))
-                        .or_else(|| {
-                            if l4.len() >= 4 {
-                                Some((
-                                    u16::from_be_bytes([l4[0], l4[1]]),
-                                    u16::from_be_bytes([l4[2], l4[3]]),
-                                ))
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or((0, 0)),
-                    17 => UdpPacket::new(l4)
-                        .map(|u| (u.source_port(), u.destination_port()))
-                        .or_else(|| {
-                            if l4.len() >= 4 {
-                                Some((
-                                    u16::from_be_bytes([l4[0], l4[1]]),
-                                    u16::from_be_bytes([l4[2], l4[3]]),
-                                ))
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or((0, 0)),
-                    _ => (0, 0),
-                };
-                return Some(Self::new(
-                    Some(IpAddr::V6(ipv6.source())),
-                    Some(IpAddr::V6(ipv6.destination())),
-                    src_port,
-                    dst_port,
-                    proto,
-                    payload.len() as u16,
-                    Some(payload.to_vec()),
-                ));
-            }
+        match proto {
+            6 => TcpPacket::new(l4)
+                .map(|t| (t.source_port(), t.destination_port()))
+                .or_else(raw_ports)
+                .unwrap_or((0, 0)),
+            17 => UdpPacket::new(l4)
+                .map(|u| (u.source_port(), u.destination_port()))
+                .or_else(raw_ports)
+                .unwrap_or((0, 0)),
+            _ => (0, 0),
         }
+    }
 
-        if let Some(ipv4) = Ipv4Packet::new(payload) {
-            let proto = ipv4.protocol();
-            let l4 = ipv4.payload();
-            let (src_port, dst_port) = match proto {
-                6 => TcpPacket::new(l4)
-                    .map(|t| (t.source_port(), t.destination_port()))
-                    .or_else(|| {
-                        if l4.len() >= 4 {
-                            Some((
-                                u16::from_be_bytes([l4[0], l4[1]]),
-                                u16::from_be_bytes([l4[2], l4[3]]),
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or((0, 0)),
-                17 => UdpPacket::new(l4)
-                    .map(|u| (u.source_port(), u.destination_port()))
-                    .or_else(|| {
-                        if l4.len() >= 4 {
-                            Some((
-                                u16::from_be_bytes([l4[0], l4[1]]),
-                                u16::from_be_bytes([l4[2], l4[3]]),
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or((0, 0)),
-                _ => (0, 0),
-            };
-            return Some(
-                Self::new(
-                    Some(IpAddr::V4(ipv4.source())),
-                    Some(IpAddr::V4(ipv4.destination())),
-                    src_port,
-                    dst_port,
-                    proto,
-                    payload.len() as u16,
-                    Some(payload.to_vec()),
-                )
-                .with_ttl(64),
-            );
+    /// Sniff a bare (non-Ethernet-framed) IPv4 header directly out of
+    /// `payload`, independent of whether `Ipv4Packet::new` would accept it —
+    /// used as a best-effort fallback source for src/dst IP and L4 ports.
+    fn sniff_outer_ipv4(payload: &[u8]) -> Option<(IpAddr, IpAddr, u16, u16, u8)> {
+        if payload.len() < 20 || (payload[0] >> 4) != 4 {
+            return None;
         }
+        let ihl = (payload[0] & 0x0F) as usize;
+        let hdr_len = ihl * 4;
+        if ihl < 5 || hdr_len > payload.len() {
+            return None;
+        }
+        let src = IpAddr::V4(Ipv4Addr::new(
+            payload[12], payload[13], payload[14], payload[15],
+        ));
+        let dst = IpAddr::V4(Ipv4Addr::new(
+            payload[16], payload[17], payload[18], payload[19],
+        ));
+        let proto = payload[9];
+        let (sp, dp) = if hdr_len + 4 <= payload.len() {
+            let t = &payload[hdr_len..];
+            (
+                u16::from_be_bytes([t[0], t[1]]),
+                u16::from_be_bytes([t[2], t[3]]),
+            )
+        } else {
+            (0, 0)
+        };
+        Some((src, dst, sp, dp, proto))
+    }
 
-        if let Some((src_ip, dst_ip, src_port, dst_port, actual_protocol)) = outer_ipv4 {
-            return Some(Self::new(
-                Some(src_ip),
-                Some(dst_ip),
+    /// Try parsing `payload` as a bare IPv6 packet.
+    fn try_ipv6(payload: &[u8]) -> Option<Self> {
+        if payload.is_empty() || (payload[0] >> 4) != 6 {
+            return None;
+        }
+        let ipv6 = Ipv6Packet::new(payload)?;
+        let proto = ipv6.next_header();
+        let (src_port, dst_port) = Self::extract_l4_ports(proto, ipv6.payload());
+        Some(Self::new(
+            Some(IpAddr::V6(ipv6.source())),
+            Some(IpAddr::V6(ipv6.destination())),
+            src_port,
+            dst_port,
+            proto,
+            payload.len() as u16,
+            Some(payload.to_vec()),
+        ))
+    }
+
+    /// Try parsing `payload` as a bare IPv4 packet.
+    fn try_ipv4(payload: &[u8]) -> Option<Self> {
+        let ipv4 = Ipv4Packet::new(payload)?;
+        let proto = ipv4.protocol();
+        let (src_port, dst_port) = Self::extract_l4_ports(proto, ipv4.payload());
+        Some(
+            Self::new(
+                Some(IpAddr::V4(ipv4.source())),
+                Some(IpAddr::V4(ipv4.destination())),
                 src_port,
                 dst_port,
-                actual_protocol,
+                proto,
                 payload.len() as u16,
                 Some(payload.to_vec()),
-            ));
-        }
+            )
+            .with_ttl(64),
+        )
+    }
 
+    /// Last-resort probe: does `payload` parse as a bare TCP or UDP segment
+    /// with no IP header at all?
+    fn try_l4_only(payload: &[u8]) -> Option<Self> {
         if let Some(tcp) = TcpPacket::new(payload) {
             debug!("Parsed as TCP via paccel");
             return Some(Self::new(
@@ -362,13 +325,16 @@ impl RawProtocolHeader {
                 Some(payload.to_vec()),
             ));
         }
+        None
+    }
 
-        if payload.len() < 4 {
-            warn!("Payload too short for generic analysis");
-            return None;
-        }
-
-        let (sp, dp, payload_vec) = match protocol_hint {
+    /// Decode the leading bytes of `payload` as raw big-endian ports (with a
+    /// couple of known-VPN-pattern protocol hints handled specially), then
+    /// backfill any still-missing src/dst IP or port from `outer_ipv4`.
+    /// Decode leading ports (+ the remaining payload slice) for the generic
+    /// fallback path, special-casing a couple of known VPN patterns.
+    fn decode_hint_ports(payload: &[u8], protocol_hint: u8) -> (u16, u16, Vec<u8>) {
+        match protocol_hint {
             0xb9 => {
                 let (s, d) = if payload.len() >= 4 {
                     (
@@ -393,9 +359,45 @@ impl RawProtocolHeader {
                 let d = u16::from_be_bytes([payload[2], payload[3]]);
                 (s, d, payload.to_vec())
             }
-        };
+        }
+    }
 
-        let mut header = Self::new(
+    /// Fill in any src/dst IP or port the header is still missing (0/None)
+    /// from a previously sniffed outer IPv4 header.
+    fn backfill_from_outer_ipv4(
+        mut header: Self,
+        outer_ipv4: Option<(IpAddr, IpAddr, u16, u16, u8)>,
+    ) -> Self {
+        let Some((src_ip, dst_ip, s, d, _)) = outer_ipv4 else {
+            return header;
+        };
+        if header.src_ip.is_none() {
+            header = header.with_src_ip(src_ip);
+        }
+        if header.dst_ip.is_none() {
+            header = header.with_dst_ip(dst_ip);
+        }
+        if header.src_port == 0 {
+            header = header.with_src_port(s);
+        }
+        if header.dst_port == 0 {
+            header = header.with_dst_port(d);
+        }
+        header
+    }
+
+    fn generic_fallback(
+        payload: &[u8],
+        protocol_hint: u8,
+        outer_ipv4: Option<(IpAddr, IpAddr, u16, u16, u8)>,
+    ) -> Option<Self> {
+        if payload.len() < 4 {
+            warn!("Payload too short for generic analysis");
+            return None;
+        }
+
+        let (sp, dp, payload_vec) = Self::decode_hint_ports(payload, protocol_hint);
+        let header = Self::new(
             None,
             None,
             sp,
@@ -404,21 +406,42 @@ impl RawProtocolHeader {
             payload.len() as u16,
             Some(payload_vec),
         );
-        if let Some((src_ip, dst_ip, s, d, _)) = outer_ipv4 {
-            if header.src_ip.is_none() {
-                header = header.with_src_ip(src_ip);
-            }
-            if header.dst_ip.is_none() {
-                header = header.with_dst_ip(dst_ip);
-            }
-            if header.src_port == 0 {
-                header = header.with_src_port(s);
-            }
-            if header.dst_port == 0 {
-                header = header.with_dst_port(d);
-            }
+        Some(Self::backfill_from_outer_ipv4(header, outer_ipv4))
+    }
+
+    pub fn from_raw_packet(payload: &[u8], protocol_hint: u8) -> Option<Self> {
+        trace!(
+            "Attempting raw packet parsing with protocol hint: {}",
+            protocol_hint
+        );
+
+        let outer_ipv4 = Self::sniff_outer_ipv4(payload);
+
+        if let Some(header) = Self::try_ipv6(payload) {
+            return Some(header);
         }
-        Some(header)
+
+        if let Some(header) = Self::try_ipv4(payload) {
+            return Some(header);
+        }
+
+        if let Some((src_ip, dst_ip, src_port, dst_port, actual_protocol)) = outer_ipv4 {
+            return Some(Self::new(
+                Some(src_ip),
+                Some(dst_ip),
+                src_port,
+                dst_port,
+                actual_protocol,
+                payload.len() as u16,
+                Some(payload.to_vec()),
+            ));
+        }
+
+        if let Some(header) = Self::try_l4_only(payload) {
+            return Some(header);
+        }
+
+        Self::generic_fallback(payload, protocol_hint, outer_ipv4)
     }
 
     pub fn from_ethertype(payload: &[u8], ethertype: u16) -> Option<Self> {
@@ -739,6 +762,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)]
     fn test_builder_pattern_completeness() {
         let header = RawProtocolHeader::new(None, None, 0, 0, 0, 0, None)
             .with_src_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)))
