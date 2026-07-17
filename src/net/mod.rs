@@ -1,4 +1,5 @@
 mod capture;
+mod flow_engine;
 mod flows;
 pub mod live_fluereflow;
 mod offline_fluereflows;
