@@ -2,7 +2,7 @@
 // Fluere is a versatile tool designed to capture network packets in pcap format and convert them into NetFlow data.
 // It also supports live capture and conversion of NetFlow data.
 
-use fluere::{self, FluereError, Mode};
+use fluere::{self, ConfigError, FluereError, Mode};
 use log::debug;
 use std::process;
 
@@ -16,9 +16,7 @@ async fn main() -> Result<(), FluereError> {
 
         // Handle mode-specific arguments
         let Ok((params, verbosity)) = fluere::cli::handle_mode(mode_str, sub_args).await else {
-            return Err(FluereError::ConfigError(
-                "Failed to handle mode".to_string(),
-            ));
+            return Err(ConfigError::Config("Failed to handle mode".to_string()).into());
         };
 
         // Setup logging using library function

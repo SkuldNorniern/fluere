@@ -1,7 +1,7 @@
 use std::process::exit;
 
 use crate::{
-    FluereError,
+    ConfigError,
     types::{Args, Files, Parameters},
 };
 
@@ -265,7 +265,7 @@ pub fn cli_template() -> Command {
         )
 }
 
-pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Result<(Args, u8), FluereError> {
+pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Result<(Args, u8), ConfigError> {
     let verbose = args
         .get_one::<String>("verbose")
         .map_or(0, |v| v.parse::<u8>().unwrap_or(0));

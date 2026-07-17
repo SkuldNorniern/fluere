@@ -1,9 +1,9 @@
 use std::{borrow::Cow, time::Instant};
 
-use crate::error::FluereError;
+use crate::error::CaptureError;
 
 use log::{debug, info};
-use pcap::{Active, Address, Capture, Device, Error as PcapError};
+use pcap::{Active, Address, Capture, Device};
 
 pub struct CaptureDevice {
     pub name: Cow<'static, str>,
@@ -13,7 +13,7 @@ pub struct CaptureDevice {
 }
 
 impl CaptureDevice {
-    pub fn new(device: Device) -> Result<CaptureDevice, PcapError> {
+    pub fn new(device: Device) -> Result<CaptureDevice, CaptureError> {
         let capture = initialize_capture(device.clone())?;
         let name: Cow<'static, str> = Cow::Owned(device.name);
         let desc: Cow<'static, str> = Cow::Owned(device.desc.unwrap_or("".to_string()));
@@ -34,7 +34,7 @@ impl Drop for CaptureDevice {
         info!("Closing capture session for device {}", self.name);
     }
 }
-pub fn find_device(identifier: &str) -> Result<Device, FluereError> {
+pub fn find_device(identifier: &str) -> Result<Device, CaptureError> {
     let start = Instant::now();
     debug!("Looking for device: {}", identifier);
 
@@ -46,7 +46,7 @@ pub fn find_device(identifier: &str) -> Result<Device, FluereError> {
             debug!("Device {} captured in {:?}", device.name, duration);
             return Ok(device.clone());
         } else {
-            return Err(FluereError::InvalidDeviceIndex(index));
+            return Err(CaptureError::InvalidDeviceIndex(index));
         }
     }
 
@@ -58,10 +58,10 @@ pub fn find_device(identifier: &str) -> Result<Device, FluereError> {
         }
     }
 
-    Err(FluereError::DeviceNotFound(identifier.to_string()))
+    Err(CaptureError::DeviceNotFound(identifier.to_string()))
 }
 
-fn initialize_capture(device: Device) -> Result<Capture<Active>, PcapError> {
+fn initialize_capture(device: Device) -> Result<Capture<Active>, CaptureError> {
     info!("Opening capture session for device {}", device.name);
     Capture::from_device(device)?
         .promisc(true)
@@ -70,4 +70,5 @@ fn initialize_capture(device: Device) -> Result<Capture<Active>, PcapError> {
         .timeout(60000)
         .immediate_mode(true)
         .open()
+        .map_err(CaptureError::from)
 }
