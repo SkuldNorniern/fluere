@@ -40,3 +40,8 @@ config.toml
 
 # Test plugins folder
 plugins/
+
+# Logs and profiling / capture artifacts
+*.log
+*.svg
+/data/
