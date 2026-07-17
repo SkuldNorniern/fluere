@@ -563,6 +563,124 @@ mod tests {
     }
 
     #[test]
+    fn test_from_ethertype_ipv4_tcp_port_ordering() {
+        let packet = [
+            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
+            192, 0, 2, 1, 198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+
+        let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
+
+        assert_eq!(header.src_port, 4660);
+        assert_eq!(header.dst_port, 80);
+    }
+
+    #[test]
+    fn test_from_ethertype_ipv4_udp_port_ordering() {
+        let packet = [
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00,
+            192, 0, 2, 1, 198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00,
+            0x00,
+        ];
+
+        let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
+
+        assert_eq!(header.src_port, 4660);
+        assert_eq!(header.dst_port, 80);
+    }
+
+    #[test]
+    fn test_from_raw_packet_truncated_inputs_do_not_panic() {
+        let short_inputs: &[&[u8]] = &[&[], &[0x45], &[0x45, 0x00, 0x00]];
+        for packet in short_inputs {
+            let result = std::panic::catch_unwind(|| {
+                RawProtocolHeader::from_raw_packet(packet, 6)
+            });
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+
+        let truncated_ipv4 = [
+            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06,
+        ];
+        assert!(std::panic::catch_unwind(|| {
+            RawProtocolHeader::from_raw_packet(&truncated_ipv4, 6)
+        })
+        .is_ok());
+    }
+
+    #[test]
+    fn test_from_ethertype_truncated_inputs_do_not_panic() {
+        let short_inputs: &[&[u8]] = &[&[], &[0x45], &[0x45, 0x00, 0x00]];
+        for packet in short_inputs {
+            let result = std::panic::catch_unwind(|| {
+                RawProtocolHeader::from_ethertype(packet, 0x0800)
+            });
+            assert!(result.is_ok());
+            assert!(result.unwrap().is_none());
+        }
+
+        let truncated_ipv4 = [
+            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06,
+        ];
+        assert!(std::panic::catch_unwind(|| {
+            RawProtocolHeader::from_ethertype(&truncated_ipv4, 0x0800)
+        })
+        .is_ok());
+    }
+
+    #[test]
+    fn test_from_ethertype_ipv4_tcp_field_assignment() {
+        let packet = [
+            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
+            203, 0, 113, 10, 192, 0, 2, 20, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+
+        let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
+
+        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))));
+        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20))));
+        assert_eq!(header.protocol, 6);
+    }
+
+    #[test]
+    fn test_from_ethertype_ipv6_udp_fields_and_port_ordering() {
+        let packet = [
+            0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x02, 0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00, 0x00,
+        ];
+
+        let header = RawProtocolHeader::from_ethertype(&packet, 0x86DD).unwrap();
+
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 2)))
+        );
+        assert_eq!(header.src_port, 4660);
+        assert_eq!(header.dst_port, 80);
+        assert_eq!(header.protocol, 17);
+    }
+
+    #[test]
+    fn test_from_ethertype_uncommon_short_payload_does_not_panic() {
+        let packet = [0x12, 0x34, 0x56];
+        let result = std::panic::catch_unwind(|| {
+            RawProtocolHeader::from_ethertype(&packet, 0x88B8)
+        });
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
     fn test_ipv4_header_with_options() {
         let packet = [
             0x46, 0x00, 0x00, 0x20, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00,
