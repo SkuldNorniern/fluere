@@ -1,4 +1,4 @@
-use std::process::exit;
+use std::str::FromStr;
 
 use crate::{
     ConfigError,
@@ -265,15 +265,18 @@ pub fn cli_template() -> Command {
         )
 }
 
-pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Result<(Args, u8), ConfigError> {
-    let verbose = args
-        .get_one::<String>("verbose")
-        .map_or(0, |v| v.parse::<u8>().unwrap_or(0));
+pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Result<Option<(Args, u8)>, ConfigError> {
+    let verbose = match args.get_one::<String>("verbose") {
+        Some(value) => parse_value("verbose", value)?,
+        None => 0,
+    };
 
     if mode != "offline" && args.get_flag("list") {
         println!("List of network interfaces");
         println!("--------------------------");
-        let devices = Device::list().expect("Failed to list network devices");
+        let devices = Device::list().map_err(|error| {
+            ConfigError::Argument(format!("Failed to list network devices: {}", error))
+        })?;
         for (i, device) in devices.iter().enumerate() {
             print!("[{}] {:25}", i, device.name);
             let description = &device.desc;
@@ -282,56 +285,64 @@ pub async fn handle_mode(mode: &str, args: &ArgMatches) -> Result<(Args, u8), Co
             }
             println!();
         }
-        exit(0);
+        return Ok(None);
     }
 
     let arg_data = match mode {
-        "online" | "live" => parse_online_live_args(args, mode),
-        "offline" => parse_offline_args(args),
-        "pcap" => parse_pcap_args(args),
-        _ => unreachable!(),
+        "online" | "live" => parse_online_live_args(args, mode)?,
+        "offline" => parse_offline_args(args)?,
+        "pcap" => parse_pcap_args(args)?,
+        _ => {
+            return Err(ConfigError::Argument(format!(
+                "Unsupported capture mode: {}",
+                mode
+            )));
+        }
     };
 
-    Ok((arg_data, verbose))
+    Ok(Some((arg_data, verbose)))
 }
 
-fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
-    let use_mac = args.get_flag("useMACaddress");
-    let csv = args
-        .get_one::<String>("csv")
-        .expect("CSV file not specified")
-        .to_string();
-    let interface = args
-        .get_one::<String>("interface")
-        .expect("Network interface not specified")
-        .to_string();
-    let timeout = args
-        .get_one::<String>("timeout")
-        .expect("Timeout argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse timeout value");
-    let duration = args
-        .get_one::<String>("duration")
-        .expect("Duration argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse duration value");
-    let interval = args
-        .get_one::<String>("interval")
-        .expect("Interval argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse interval value");
-    let sleep_windows = args
-        .get_one::<String>("sleep_windows")
-        .expect("Sleep windows argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse sleep windows value");
-    // let verbose = args
-    //     .get_one::<String>("verbose")
-    //     .unwrap()
-    //     .parse::<u8>()
-    //     .unwrap();
+fn required_string(
+    args: &ArgMatches,
+    name: &str,
+    missing_message: &str,
+) -> Result<String, ConfigError> {
+    args.get_one::<String>(name)
+        .cloned()
+        .ok_or_else(|| ConfigError::Missing(missing_message.to_string()))
+}
 
-    Args::new(
+fn parse_value<T>(field: &str, value: &str) -> Result<T, ConfigError>
+where
+    T: FromStr,
+{
+    value.parse::<T>().map_err(|_| ConfigError::InvalidValue {
+        field: field.to_string(),
+        value: value.to_string(),
+    })
+}
+
+fn required_value<T>(args: &ArgMatches, name: &str, missing_message: &str) -> Result<T, ConfigError>
+where
+    T: FromStr,
+{
+    let value = args
+        .get_one::<String>(name)
+        .ok_or_else(|| ConfigError::Missing(missing_message.to_string()))?;
+    parse_value(name, value)
+}
+
+fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Result<Args, ConfigError> {
+    let use_mac = args.get_flag("useMACaddress");
+    let csv = required_string(args, "csv", "CSV file not specified")?;
+    let interface = required_string(args, "interface", "Network interface not specified")?;
+    let timeout = required_value(args, "timeout", "Timeout argument missing")?;
+    let duration = required_value(args, "duration", "Duration argument missing")?;
+    let interval = required_value(args, "interval", "Interval argument missing")?;
+    let sleep_windows = required_value(args, "sleep_windows", "Sleep windows argument missing")?;
+
+    Ok(Args::new(
         Some(interface),
         Files::new(Some(csv), None, None),
         Parameters::new(
@@ -342,65 +353,30 @@ fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Args {
             Some(sleep_windows),
         ),
         // Some(verbose),
-    )
+    ))
 }
-fn parse_offline_args(args: &clap::ArgMatches) -> Args {
+fn parse_offline_args(args: &clap::ArgMatches) -> Result<Args, ConfigError> {
     let use_mac = args.get_flag("useMACaddress");
     let _use_ipv6 = args.get_flag("use_ipv6");
-    let file = args
-        .get_one::<String>("file")
-        .expect("File not specified")
-        .to_string();
-    let csv = args.get_one::<String>("csv").unwrap().to_string();
-    let timeout = args
-        .get_one::<String>("timeout")
-        .expect("Timeout argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse timeout value");
-    // let verbose = args
-    // .get_one::<String>("verbose")
-    // .unwrap()
-    // .parse::<u8>()
-    // .unwrap();
+    let file = required_string(args, "file", "File not specified")?;
+    let csv = required_string(args, "csv", "CSV file not specified")?;
+    let timeout = required_value(args, "timeout", "Timeout argument missing")?;
 
-    Args::new(
+    Ok(Args::new(
         None,
         Files::new(Some(csv), Some(file), None),
         Parameters::new(Some(use_mac), Some(timeout), None, None, None),
         // Some(verbose),
-    )
+    ))
 }
-fn parse_pcap_args(args: &clap::ArgMatches) -> Args {
-    let pcap = args
-        .get_one::<String>("pcap")
-        .expect("Output PCAP file name not specified")
-        .to_string();
-    let interface = args
-        .get_one::<String>("interface")
-        .expect("Network interface not specified")
-        .to_string();
-    let duration = args
-        .get_one::<String>("duration")
-        .expect("Duration argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse duration value");
-    let interval = args
-        .get_one::<String>("interval")
-        .expect("Interval argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse interval value");
-    let sleep_windows = args
-        .get_one::<String>("sleep_windows")
-        .expect("Sleep windows argument missing")
-        .parse::<u64>()
-        .expect("Failed to parse sleep windows value");
-    // let verbose = args
-    //     .get_one::<String>("verbose")
-    //     .unwrap()
-    //     .parse::<u8>()
-    //     .unwrap();
+fn parse_pcap_args(args: &clap::ArgMatches) -> Result<Args, ConfigError> {
+    let pcap = required_string(args, "pcap", "Output PCAP file name not specified")?;
+    let interface = required_string(args, "interface", "Network interface not specified")?;
+    let duration = required_value(args, "duration", "Duration argument missing")?;
+    let interval = required_value(args, "interval", "Interval argument missing")?;
+    let sleep_windows = required_value(args, "sleep_windows", "Sleep windows argument missing")?;
 
-    Args::new(
+    Ok(Args::new(
         Some(interface),
         Files::new(None, None, Some(pcap)),
         Parameters::new(
@@ -411,5 +387,5 @@ fn parse_pcap_args(args: &clap::ArgMatches) -> Args {
             Some(sleep_windows),
         ),
         // Some(verbose),
-    )
+    ))
 }
