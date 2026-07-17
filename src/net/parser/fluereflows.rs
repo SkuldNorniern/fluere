@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use crate::error::ParseError;
 use crate::net::parser::raw::RawProtocolHeader;
-use crate::net::parser::{dscp_to_tos, parse_flags, parse_microseconds};
+use crate::net::parser::{dscp_to_tos, parse_microseconds};
 
 use fluereflow::FluereRecord;
 use log::trace;
@@ -200,7 +200,9 @@ fn raw_fallback_record(
         .ok_or_else(|| ParseError::UnknownEtherType(ethernet.ethertype.to_string()))?;
     let raw_header = RawProtocolHeader::from_ethertype(l3_payload, ethernet.ethertype)
         .ok_or_else(|| ParseError::UnknownEtherType(ethernet.ethertype.to_string()))?;
-    let flags = raw_header.flags.map_or([0; 9], |f| parse_flags(f, &[]));
+    // The raw fallback has no TCP segment to inspect (only a protocol hint),
+    // so no flag bits can ever be set here.
+    let flags = [0u8; 9];
 
     Ok((
         doctets,
