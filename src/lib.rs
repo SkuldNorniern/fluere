@@ -60,7 +60,7 @@ pub async fn execute_mode(mode: Mode, args: types::Args) -> Result<(), FluereErr
         Mode::Online => net::online_fluereflow::packet_capture(args).await?,
         Mode::Offline => net::fluereflow_fileparse(args).await?,
         Mode::Live => net::live_fluereflow::packet_capture(args).await?,
-        Mode::Pcap => net::pcap_capture(args).await,
+        Mode::Pcap => net::pcap_capture(args).await?,
     }
     Ok(())
 }
