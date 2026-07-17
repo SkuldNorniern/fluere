@@ -92,8 +92,8 @@ struct ExportSchedule {
     last_export: Instant,
 }
 
-fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool) -> Option<ParsedPacket> {
-    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
+fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool, linktype: u16) -> Option<ParsedPacket> {
+    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone(), linktype) {
         Ok(keys) => keys,
         Err(error) => {
             debug!("Error on parse_keys: {}", error);
@@ -105,7 +105,7 @@ fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool) -> Option<ParsedPacket>
         reverse_key.mac_defaultate();
     }
 
-    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone(), linktype) {
         Ok(result) => result,
         Err(error) => {
             debug!("Error on parse_fluereflow: {}", error);
@@ -283,6 +283,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let interface = find_device(&interface_name)?;
     let mut cap_device = CaptureDevice::new(interface.clone())?;
     let cap = &mut cap_device.capture;
+    let linktype = u16::try_from(cap.get_datalink().0).unwrap_or(1);
 
     let file_dir = "./output";
     fs::create_dir_all(file_dir)?;
@@ -309,7 +310,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
             continue;
         };
         trace!("received packet");
-        let Some(packet) = parse_packet(packet, use_mac) else {
+        let Some(packet) = parse_packet(packet, use_mac, linktype) else {
             continue;
         };
         process_packet(packet, &mut engine, &plugin_manager, &mut records).await?;
