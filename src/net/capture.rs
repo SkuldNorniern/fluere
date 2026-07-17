@@ -1,24 +1,9 @@
-use std::{borrow::Cow, fmt, time::Instant};
+use std::{borrow::Cow, time::Instant};
 
-use crate::net::NetError;
+use crate::error::FluereError;
 
 use log::{debug, info};
 use pcap::{Active, Address, Capture, Device, Error as PcapError};
-
-#[derive(Debug)]
-pub enum DeviceError {
-    DeviceNotFound(String),
-    InvalidDeviceIndex(usize),
-}
-
-impl fmt::Display for DeviceError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            DeviceError::DeviceNotFound(err) => write!(f, "Device not found: {}", err),
-            DeviceError::InvalidDeviceIndex(err) => write!(f, "Invalid device index: {}", err),
-        }
-    }
-}
 
 pub struct CaptureDevice {
     pub name: Cow<'static, str>,
@@ -49,7 +34,7 @@ impl Drop for CaptureDevice {
         info!("Closing capture session for device {}", self.name);
     }
 }
-pub fn find_device(identifier: &str) -> Result<Device, NetError> {
+pub fn find_device(identifier: &str) -> Result<Device, FluereError> {
     let start = Instant::now();
     debug!("Looking for device: {}", identifier);
 
@@ -61,9 +46,7 @@ pub fn find_device(identifier: &str) -> Result<Device, NetError> {
             debug!("Device {} captured in {:?}", device.name, duration);
             return Ok(device.clone());
         } else {
-            return Err(NetError::DeviceError(DeviceError::InvalidDeviceIndex(
-                index,
-            )));
+            return Err(FluereError::InvalidDeviceIndex(index));
         }
     }
 
@@ -75,9 +58,7 @@ pub fn find_device(identifier: &str) -> Result<Device, NetError> {
         }
     }
 
-    Err(NetError::DeviceError(DeviceError::DeviceNotFound(
-        identifier.to_string(),
-    )))
+    Err(FluereError::DeviceNotFound(identifier.to_string()))
 }
 
 fn initialize_capture(device: Device) -> Result<Capture<Active>, PcapError> {
