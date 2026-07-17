@@ -6,7 +6,7 @@ use crate::{
     net::{
         flow_engine::FlowEngine,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
-        types::TcpFlags,
+        types::{Key, TcpFlags},
     },
     types::Args,
     utils::fluere_exporter,
@@ -17,6 +17,64 @@ use indicatif::ProgressBar;
 use log::{debug, info, trace};
 use pcap::Capture;
 use tokio::task;
+
+struct ParsedPacket {
+    key_value: Key,
+    reverse_key: Key,
+    flowdata: FluereRecord,
+    doctets: usize,
+    flags: TcpFlags,
+    packet_time: u64,
+}
+
+fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool) -> Option<ParsedPacket> {
+    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
+        Ok(keys) => keys,
+        Err(_) => return None,
+    };
+    trace!("Parsed keys");
+    if !use_mac {
+        key_value.mac_defaultate();
+        reverse_key.mac_defaultate();
+    }
+
+    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+        Ok(result) => result,
+        Err(error) => {
+            debug!("{}", error);
+            return None;
+        }
+    };
+
+    Some(ParsedPacket {
+        key_value,
+        reverse_key,
+        flowdata,
+        doctets,
+        flags: TcpFlags::new(raw_flags),
+        packet_time: parse_microseconds(
+            packet.header.ts.tv_sec as u64,
+            packet.header.ts.tv_usec as u64,
+        ),
+    })
+}
+
+fn process_packet(packet: ParsedPacket, engine: &mut FlowEngine, records: &mut Vec<FluereRecord>) {
+    if let Some(flow) = engine.offer(
+        packet.key_value,
+        packet.reverse_key,
+        packet.flowdata,
+        packet.doctets,
+        packet.flags,
+        packet.packet_time,
+    ) {
+        trace!("Flow finished");
+        trace!("Flow data: {:?}", flow);
+        records.push(flow);
+    }
+
+    records.extend(engine.sweep_expired(packet.packet_time));
+}
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let _csv_file = arg
@@ -61,46 +119,10 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
 
     while let Ok(packet) = cap.next_packet() {
         trace!("Parsing packet");
-
-        let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
-            Ok(keys) => keys,
-            Err(_) => continue,
+        let Some(packet) = parse_packet(packet, use_mac) else {
+            continue;
         };
-        trace!("Parsed keys");
-        if !use_mac {
-            key_value.mac_defaultate();
-            reverse_key.mac_defaultate();
-        }
-
-        let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
-            Ok(result) => result,
-            Err(e) => {
-                debug!("{}", e);
-                continue;
-            }
-        };
-
-        // Define `packet_time` before any usage
-        let packet_time = parse_microseconds(
-            packet.header.ts.tv_sec as u64,
-            packet.header.ts.tv_usec as u64,
-        );
-
-        let flags = TcpFlags::new(raw_flags);
-        if let Some(flow) = engine.offer(
-            key_value,
-            reverse_key,
-            flowdata,
-            doctets,
-            flags,
-            packet_time,
-        ) {
-            trace!("Flow finished");
-            trace!("Flow data: {:?}", flow);
-            records.push(flow);
-        }
-
-        records.extend(engine.sweep_expired(packet_time));
+        process_packet(packet, &mut engine, &mut records);
     }
     bar.finish();
     info!("Converted in {:?}", start.elapsed());

@@ -3,6 +3,7 @@
 // The data is then exported to a CSV file.
 
 use std::{
+    borrow::Cow,
     fs,
     mem::take,
     time::{Duration, Instant},
@@ -15,7 +16,7 @@ use crate::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
         parser::{parse_fluereflow, parse_keys, parse_microseconds},
-        types::TcpFlags,
+        types::{Key, TcpFlags},
     },
     types::Args,
     utils::{cur_time_file, fluere_exporter},
@@ -32,15 +33,20 @@ use fluereflow::FluereRecord;
 use log::{debug, error, info, trace};
 use tokio::{task, task::JoinHandle};
 
-// This function captures packets from a network interface and converts them into NetFlow data.
-// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
-// The function runs indefinitely, capturing packets and exporting the captured data to a CSV file.
-pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
+struct OnlineArgs {
+    csv_file: String,
+    use_mac: bool,
+    interface_name: String,
+    duration: u64,
+    interval: u64,
+    flow_timeout: u64,
+}
+
+fn extract_online_args(arg: Args) -> Result<OnlineArgs, FluereError> {
     let csv_file = arg
         .files
         .csv
         .required("this should be defaulted to `output` on construction")?;
-    //let enable_ipv6
     let use_mac = arg
         .parameters
         .use_mac
@@ -62,6 +68,208 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
         .parameters
         .sleep_windows
         .required("this should be defaulted to `false`, and now deprecated")?;
+    Ok(OnlineArgs {
+        csv_file,
+        use_mac,
+        interface_name,
+        duration,
+        interval,
+        flow_timeout,
+    })
+}
+
+struct ParsedPacket {
+    key_value: Key,
+    reverse_key: Key,
+    flowdata: FluereRecord,
+    doctets: usize,
+    flags: TcpFlags,
+    packet_time: u64,
+}
+
+struct ExportSchedule {
+    interval: u64,
+    last_export: Instant,
+}
+
+fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool) -> Option<ParsedPacket> {
+    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
+        Ok(keys) => keys,
+        Err(error) => {
+            debug!("Error on parse_keys: {}", error);
+            return None;
+        }
+    };
+    if !use_mac {
+        key_value.mac_defaultate();
+        reverse_key.mac_defaultate();
+    }
+
+    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
+        Ok(result) => result,
+        Err(error) => {
+            debug!("Error on parse_fluereflow: {}", error);
+            return None;
+        }
+    };
+
+    Some(ParsedPacket {
+        key_value,
+        reverse_key,
+        flowdata,
+        doctets,
+        flags: TcpFlags::new(raw_flags),
+        packet_time: parse_microseconds(
+            packet.header.ts.tv_sec as u64,
+            packet.header.ts.tv_usec as u64,
+        ),
+    })
+}
+
+fn next_packet(cap: &mut pcap::Capture<pcap::Active>) -> Option<pcap::Packet<'_>> {
+    match cap.next_packet() {
+        Ok(packet) => Some(packet),
+        Err(error) => {
+            trace!("Error capturing packet: {}", error);
+            None
+        }
+    }
+}
+
+fn duration_reached(start: Instant, duration: u64) -> bool {
+    start.elapsed() >= Duration::from_millis(duration) && duration != 0
+}
+
+async fn process_packet(
+    packet: ParsedPacket,
+    engine: &mut FlowEngine,
+    plugin_manager: &PluginManager,
+    records: &mut Vec<FluereRecord>,
+) -> Result<(), FluereError> {
+    if let Some(flow) = engine.offer(
+        packet.key_value,
+        packet.reverse_key,
+        packet.flowdata,
+        packet.doctets,
+        packet.flags,
+        packet.packet_time,
+    ) {
+        trace!("flow finished");
+        trace!("flow data: {:?}", flow);
+        plugin_manager
+            .process_flow_data(flow)
+            .await
+            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        records.push(flow);
+    }
+
+    for flow in engine.sweep_expired(packet.packet_time) {
+        trace!("flow expired");
+        plugin_manager
+            .process_flow_data(flow)
+            .await
+            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        records.push(flow);
+    }
+
+    Ok(())
+}
+
+fn rotate_export(
+    records: &mut Vec<FluereRecord>,
+    file: fs::File,
+    file_path: &str,
+    csv_file: &str,
+    file_dir: &str,
+    export_tasks: &mut Vec<JoinHandle<()>>,
+) -> Result<(Cow<'static, str>, fs::File), FluereError> {
+    let records_to_export = take(records);
+    debug!("Calculating timeout done");
+
+    let file_path_clone = file_path.to_owned();
+    info!("Export {} Started", file_path_clone);
+    export_tasks.push(task::spawn(async move {
+        let exporter = fluere_exporter(records_to_export, file).await;
+        if let Err(err) = exporter {
+            error!("Export error: {}", err);
+        }
+        info!("Export {} Finished", file_path_clone);
+    }));
+
+    info!("running without blocking");
+    let file_path = cur_time_file(csv_file, file_dir, ".csv");
+    let file = fs::File::create(file_path.as_ref())?;
+    Ok((file_path, file))
+}
+
+fn export_if_due(
+    records: &mut Vec<FluereRecord>,
+    file: fs::File,
+    file_path: Cow<'static, str>,
+    csv_file: &str,
+    file_dir: &str,
+    schedule: &mut ExportSchedule,
+    export_tasks: &mut Vec<JoinHandle<()>>,
+) -> Result<(Cow<'static, str>, fs::File), FluereError> {
+    if schedule.last_export.elapsed() >= Duration::from_millis(schedule.interval)
+        && schedule.interval != 0
+    {
+        let export = rotate_export(records, file, &file_path, csv_file, file_dir, export_tasks)?;
+        schedule.last_export = Instant::now();
+        return Ok(export);
+    }
+    Ok((file_path, file))
+}
+
+async fn drain_engine(
+    engine: &mut FlowEngine,
+    plugin_manager: &PluginManager,
+    records: &mut Vec<FluereRecord>,
+) -> Result<(), FluereError> {
+    for flow in engine.drain() {
+        plugin_manager
+            .process_flow_data(flow)
+            .await
+            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        records.push(flow);
+    }
+    Ok(())
+}
+
+async fn await_capture_tasks(tasks: Vec<JoinHandle<Result<(), FluereError>>>) {
+    for task in tasks {
+        let _ = task.await;
+    }
+}
+
+fn spawn_final_export(records: &mut Vec<FluereRecord>, file: fs::File) -> JoinHandle<()> {
+    let records_to_export = take(records);
+    task::spawn(async {
+        let exporter = fluere_exporter(records_to_export, file).await;
+        if let Err(err) = exporter {
+            error!("Export error: {}", err);
+        }
+    })
+}
+
+async fn await_export_tasks(export_tasks: Vec<JoinHandle<()>>) {
+    for task in export_tasks {
+        let _ = task.await;
+    }
+}
+
+// This function captures packets from a network interface and converts them into NetFlow data.
+// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
+// The function runs indefinitely, capturing packets and exporting the captured data to a CSV file.
+pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
+    let OnlineArgs {
+        csv_file,
+        use_mac,
+        interface_name,
+        duration,
+        interval,
+        flow_timeout,
+    } = extract_online_args(arg)?;
     let config = Config::new();
     let plugin_manager =
         PluginManager::new().map_err(|error| FluereError::Plugin(error.to_string()))?;
@@ -80,7 +288,10 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
-    let mut last_export = Instant::now();
+    let mut export_schedule = ExportSchedule {
+        interval,
+        last_export: Instant::now(),
+    };
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
     // FIX:TASK: there is a possibility of a permission error
     // | need to check, if it is a permission error and handle it
@@ -94,122 +305,40 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let mut export_tasks = vec![];
 
     loop {
-        match cap.next_packet() {
-            Err(e) => {
-                trace!("Error capturing packet: {}", e);
-                continue;
-            }
-            Ok(packet) => {
-                trace!("received packet");
+        let Some(packet) = next_packet(cap) else {
+            continue;
+        };
+        trace!("received packet");
+        let Some(packet) = parse_packet(packet, use_mac) else {
+            continue;
+        };
+        process_packet(packet, &mut engine, &plugin_manager, &mut records).await?;
 
-                let (mut key_value, mut reverse_key) = match parse_keys(packet.clone()) {
-                    Ok(keys) => keys,
-                    Err(e) => {
-                        debug!("Error on parse_keys: {}", e);
-                        continue;
-                    }
-                };
-                if !use_mac {
-                    key_value.mac_defaultate();
-                    reverse_key.mac_defaultate();
-                }
+        // Export flows if the interval has been reached
+        (file_path, file) = export_if_due(
+            &mut records,
+            file,
+            file_path,
+            &csv_file,
+            file_dir,
+            &mut export_schedule,
+            &mut export_tasks,
+        )?;
 
-                let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone()) {
-                    Ok(result) => result,
-                    Err(e) => {
-                        debug!("Error on parse_fluereflow: {}", e);
-                        continue;
-                    }
-                };
-
-                let flags = TcpFlags::new(raw_flags);
-                //pushing packet in to active_flows if it is not present
-                let packet_time = parse_microseconds(
-                    packet.header.ts.tv_sec as u64,
-                    packet.header.ts.tv_usec as u64,
-                );
-
-                if let Some(flow) = engine.offer(
-                    key_value,
-                    reverse_key,
-                    flowdata,
-                    doctets,
-                    flags,
-                    packet_time,
-                ) {
-                    trace!("flow finished");
-                    trace!("flow data: {:?}", flow);
-                    plugin_manager
-                        .process_flow_data(flow)
-                        .await
-                        .map_err(|error| FluereError::Plugin(error.to_string()))?;
-                    records.push(flow);
-                }
-
-                for flow in engine.sweep_expired(packet_time) {
-                    trace!("flow expired");
-                    plugin_manager
-                        .process_flow_data(flow)
-                        .await
-                        .map_err(|error| FluereError::Plugin(error.to_string()))?;
-                    records.push(flow);
-                }
-
-                // Export flows if the interval has been reached
-                if last_export.elapsed() >= Duration::from_millis(interval) && interval != 0 {
-                    // No need to handle expired flows here, as we now handle them with flow_expirations
-                    // Proceed with exporting the current records
-                    let records_to_export = take(&mut records);
-                    debug!("Calculating timeout done");
-
-                    let file_path_clone = file_path.clone();
-                    info!("Export {} Started", file_path_clone);
-                    export_tasks.push(task::spawn(async move {
-                        let exporter = fluere_exporter(records_to_export, file).await;
-                        if let Err(err) = exporter {
-                            error!("Export error: {}", err);
-                        }
-                        info!("Export {} Finished", file_path_clone);
-                    }));
-
-                    info!("running without blocking");
-                    file_path = cur_time_file(&csv_file, file_dir, ".csv");
-                    file = fs::File::create(file_path.as_ref())?;
-                    last_export = Instant::now();
-                }
-
-                // Check if the duration has been reached
-                if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
-                    break;
-                }
-            }
+        // Check if the duration has been reached
+        if duration_reached(start, duration) {
+            break;
         }
     }
 
     debug!("Captured in {:?}", start.elapsed());
-    for flow in engine.drain() {
-        plugin_manager
-            .process_flow_data(flow)
-            .await
-            .map_err(|error| FluereError::Plugin(error.to_string()))?;
-        records.push(flow);
-    }
-    for task in tasks {
-        let _ = task.await;
-    }
+    drain_engine(&mut engine, &plugin_manager, &mut records).await?;
+    await_capture_tasks(tasks).await;
 
-    let records_to_export = take(&mut records);
-    export_tasks.push(task::spawn(async {
-        let exporter = fluere_exporter(records_to_export, file).await;
-        if let Err(err) = exporter {
-            error!("Export error: {}", err);
-        }
-    }));
+    export_tasks.push(spawn_final_export(&mut records, file));
     plugin_manager.await_completion(plugin_worker).await;
     drop(plugin_manager);
-    for task in export_tasks {
-        let _ = task.await;
-    }
+    await_export_tasks(export_tasks).await;
     // info!("Exporting task excutation result: {:?}", result);
 
     Ok(())
