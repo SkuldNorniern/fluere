@@ -13,7 +13,6 @@ repository = "https://github.com/SkuldNorniern/fluere"
 [dependencies]
 clap = { version = "4.0.32", features = ["cargo"] }
 tokio = { version = "1.40", features = ["full", "macros", "rt-multi-thread"] }
-pnet = { version = "0.35", features = ["std"] }
 
 # using custom forked version of pcap-rs for fixing audits
 # pcap = { version = "1.1.0", git = "https://github.com/SkuldNorniern/pcap", rev = "40f1163" }
