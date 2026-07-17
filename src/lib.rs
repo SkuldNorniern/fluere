@@ -5,7 +5,7 @@ pub mod net;
 pub mod types;
 pub mod utils;
 
-pub use error::FluereError;
+pub use error::{CaptureError, ConfigError, FluereError, ParseError};
 use log::{Level, LevelFilter};
 
 // Move Mode enum and its implementations to lib
@@ -26,7 +26,7 @@ impl TryFrom<&str> for Mode {
             "online" => Ok(Mode::Online),
             "live" => Ok(Mode::Live),
             "pcap" => Ok(Mode::Pcap),
-            _ => Err(FluereError::ConfigError(format!("Invalid mode: {}", s))),
+            _ => Err(ConfigError::Config(format!("Invalid mode: {}", s)).into()),
         }
     }
 }
@@ -77,5 +77,5 @@ pub fn setup_logging(verbose: u8) -> Result<(), FluereError> {
 
     log::set_boxed_logger(Box::new(logger))
         .map(|()| log::set_max_level(filter))
-        .map_err(|e| FluereError::ConfigError(format!("Failed to setup logger: {}", e)))
+        .map_err(|e| ConfigError::Config(format!("Failed to setup logger: {}", e)).into())
 }

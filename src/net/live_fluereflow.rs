@@ -349,7 +349,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     println!("Export {} result: {:?}", file_path, result);
                     }*/
                     file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
-                    file = fs::File::create(file_path.as_ref()).map_err(FluereError::IoError)?;
+                    file = fs::File::create(file_path.as_ref()).map_err(FluereError::Io)?;
                     *last_export_guard = Instant::now();
                     *last_export_unix_time_guard = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)

@@ -200,7 +200,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                         plugin_manager
                             .process_flow_data(*flow)
                             .await
-                            .map_err(|e| FluereError::PluginError(e.to_string()))?;
+                            .map_err(|e| FluereError::Plugin(e.to_string()))?;
                         records.push(*flow);
 
                         active_flow.remove(flow_key);
@@ -230,7 +230,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                                 plugin_manager
                                     .process_flow_data(flow)
                                     .await
-                                    .map_err(|e| FluereError::PluginError(e.to_string()))?;
+                                    .map_err(|e| FluereError::Plugin(e.to_string()))?;
                                 records.push(flow);
                             }
                         }
@@ -276,7 +276,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
                 plugin_manager
                     .process_flow_data(flow)
                     .await
-                    .map_err(|e| FluereError::PluginError(e.to_string()))?;
+                    .map_err(|e| FluereError::Plugin(e.to_string()))?;
                 records.push(flow);
             }
         }
@@ -287,7 +287,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
         plugin_manager
             .process_flow_data(*flow)
             .await
-            .map_err(|e| FluereError::PluginError(e.to_string()))?;
+            .map_err(|e| FluereError::Plugin(e.to_string()))?;
         records.push(*flow);
     }
     for task in tasks {
