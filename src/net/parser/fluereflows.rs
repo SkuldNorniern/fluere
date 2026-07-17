@@ -1,155 +1,34 @@
-use pcap;
+use std::net::{IpAddr, Ipv4Addr};
 
 use crate::error::ParseError;
 use crate::net::parser::raw::RawProtocolHeader;
-use crate::net::parser::{dscp_to_tos, parse_flags, parse_microseconds, parse_ports};
+use crate::net::parser::{dscp_to_tos, parse_flags, parse_microseconds};
 
 use fluereflow::FluereRecord;
 use log::trace;
-use pnet::packet::{
-    Packet, PacketSize,
-    arp::ArpPacket,
-    ethernet::{EtherTypes, EthernetPacket},
-    ip::IpNextHeaderProtocols,
-    ipv4::Ipv4Packet,
-    ipv6::Ipv6Packet,
-    udp::UdpPacket,
-};
+use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket, StopLayer, TransportSegment};
+use paccel::layer::datalink::arp::ArpPacket;
+use paccel::layer::network::{ipv4::Ipv4Header, ipv6::Ipv6Header};
 
-const VXLAN_HEADER: [u8; 8] = [0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00];
+type FlowRecord = (usize, [u8; 9], FluereRecord);
 
-fn decapsulate_vxlan(payload: &[u8]) -> Option<Vec<u8>> {
-    if payload.starts_with(&VXLAN_HEADER) {
-        //println!("Decapsulating VXLAN");
-        Some(payload[VXLAN_HEADER.len()..].to_vec())
-    } else {
-        None
+/// Return the deepest packet decoded by paccel.
+///
+/// Flow records intentionally describe the innermost traffic for every tunnel
+/// paccel understands, so VXLAN, GRE, GENEVE, MPLS, and IP-in-IP flows use the
+/// real inner IP and transport fields rather than their encapsulating headers.
+fn innermost(parsed: &ParsedPacket) -> &ParsedPacket {
+    match parsed.inner.as_deref() {
+        Some(inner) => innermost(inner),
+        None => parsed,
     }
 }
 
-/// Extract the UDP payload beneath an IPv6/IPv4 L3 header (if any). Returns
-/// `Err(InvalidPacket)` if the ethertype implies an L3 header that fails to
-/// parse; `Ok(None)` for ethertypes with no UDP-bearing L3 (or L3 that isn't
-/// UDP), matching the prior two-pass is_udp/udp_payload behavior (where a
-/// failed `UdpPacket::new` meant `is_udp == false`, not an error).
-fn extract_udp_payload(
-    ethertype: pnet::packet::ethernet::EtherType,
-    payload: &[u8],
-) -> Result<Option<Vec<u8>>, ParseError> {
-    let inner_payload: Vec<u8> = match ethertype {
-        EtherTypes::Ipv6 => Ipv6Packet::new(payload)
-            .ok_or(ParseError::InvalidPacket)?
-            .payload()
-            .to_vec(),
-        EtherTypes::Ipv4 => Ipv4Packet::new(payload)
-            .ok_or(ParseError::InvalidPacket)?
-            .payload()
-            .to_vec(),
-        _ => return Ok(None),
-    };
-    Ok(UdpPacket::new(&inner_payload).map(|udp| {
-        trace!("UDP payload length: {}", udp.payload().len());
-        udp.payload().to_vec()
-    }))
-}
-
-/// If the frame carries a VXLAN-encapsulated inner Ethernet frame, return its
-/// raw bytes; otherwise `Ok(None)`.
-fn maybe_vxlan_payload(
-    ethertype: pnet::packet::ethernet::EtherType,
-    payload: &[u8],
-) -> Result<Option<Vec<u8>>, ParseError> {
-    let Some(udp_payload) = extract_udp_payload(ethertype, payload)? else {
-        return Ok(None);
-    };
-    Ok(decapsulate_vxlan(&udp_payload))
-}
-
-/// Dispatch to the correct per-ethertype record extractor.
-fn dispatch_fluereflow(
-    ethernet_packet: &EthernetPacket,
-    time: u64,
-) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
-    match ethernet_packet.get_ethertype() {
-        EtherTypes::Ipv4 => {
-            let i = Ipv4Packet::new(ethernet_packet.payload()).ok_or_else(|| {
-                trace!("Failed to parse IPv4 packet");
-                ParseError::InvalidPacket
-            })?;
-            ipv4_packet(time, i)
-        }
-        EtherTypes::Ipv6 => {
-            let i = Ipv6Packet::new(ethernet_packet.payload()).ok_or_else(|| {
-                trace!("Failed to parse IPv6 packet");
-                ParseError::InvalidPacket
-            })?;
-            ipv6_packet(time, i)
-        }
-        EtherTypes::Arp => {
-            let i = ArpPacket::new(ethernet_packet.payload()).ok_or_else(|| {
-                trace!("Failed to parse ARP packet");
-                ParseError::InvalidPacket
-            })?;
-            arp_packet(time, i)
-        }
-        ethertype => fallback_fluereflow(ethernet_packet, ethertype, time),
-    }
-}
-
-/// Fallback for ethertypes with no dedicated arm: try the raw protocol-agnostic
-/// parser via ethertype.
-fn fallback_fluereflow(
-    ethernet_packet: &EthernetPacket,
-    ethertype: pnet::packet::ethernet::EtherType,
-    time: u64,
-) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
-    trace!("Attempting fallback parsing for EtherType: {}", ethertype);
-    let Some(raw_header) = RawProtocolHeader::from_ethertype(ethernet_packet.packet(), ethertype.0)
-    else {
-        trace!("Unknown EtherType: {}", ethertype);
-        return Err(ParseError::UnknownEtherType(ethertype.to_string()));
-    };
-
-    let flags = raw_header.flags.map_or([0; 9], |f| parse_flags(f, &[]));
-    Ok((
-        raw_header.length as usize,
-        flags,
-        FluereRecord::new(
-            raw_header
-                .src_ip
-                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
-            raw_header
-                .dst_ip
-                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
-            0,
-            0,
-            time,
-            time,
-            raw_header.src_port,
-            raw_header.dst_port,
-            raw_header.length as u32,
-            raw_header.length as u32,
-            raw_header.ttl.unwrap_or(0),
-            raw_header.ttl.unwrap_or(0),
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            raw_header.protocol,
-            0,
-        ),
-    ))
-}
-
+/// Parse one captured frame into a flow record.
+///
+/// Byte accounting intentionally uses the full top-level captured frame length
+/// everywhere, including tunneled traffic. This consistently includes link and
+/// tunnel overhead instead of mixing captured lengths with IP-declared lengths.
 pub fn parse_fluereflow(
     packet: pcap::Packet,
 ) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
@@ -158,221 +37,445 @@ pub fn parse_fluereflow(
         return Err(ParseError::EmptyPacket);
     }
 
-    let ethernet_packet_unpack = EthernetPacket::new(packet.data).ok_or(ParseError::EmptyPacket)?;
-
-    let decapsulated_data = maybe_vxlan_payload(
-        ethernet_packet_unpack.get_ethertype(),
-        ethernet_packet_unpack.payload(),
-    )?;
-
-    let ethernet_packet = match &decapsulated_data {
-        Some(data) => match EthernetPacket::new(data) {
-            None => ethernet_packet_unpack, // Fall back to original packet if decapsulation fails
-            Some(e) => e,
-        },
-        None => ethernet_packet_unpack,
+    let config = ParseConfig {
+        stop_after: StopLayer::Transport,
+        ..Default::default()
     };
-
+    let parsed = BuiltinPacketParser::parse_with_config(packet.data, config)
+        .map_err(|_| ParseError::InvalidPacket)?;
     let time = parse_microseconds(
         packet.header.ts.tv_sec as u64,
         packet.header.ts.tv_usec as u64,
     );
+    let doctets = packet.data.len();
+    let inner = innermost(&parsed);
 
-    dispatch_fluereflow(&ethernet_packet, time)
+    if let Some(arp) = inner.arp.as_ref() {
+        return Ok(arp_record(arp, doctets, time));
+    }
+    if let Some(ipv4) = inner.ipv4.as_ref() {
+        return Ok(ipv4_record(ipv4, inner.transport.as_ref(), doctets, time));
+    }
+    if let Some(ipv6) = inner.ipv6.as_ref() {
+        return Ok(ipv6_record(ipv6, inner.transport.as_ref(), doctets, time));
+    }
+
+    raw_fallback_record(&parsed, packet.data, doctets, time)
 }
 
-fn arp_packet(time: u64, packet: ArpPacket) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
-    let src_ip = packet.get_sender_proto_addr();
-    let dst_ip = packet.get_target_proto_addr();
-
-    // ports parsing
-    let src_port = 0;
-    let dst_port = 0;
-    // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
-    let flags = parse_flags(4, packet.payload());
-
-    //	Autonomous system number of the source and destination, either origin or peer
-    let doctets = packet.packet_size();
-
-    Ok((
+fn arp_record(arp: &ArpPacket, doctets: usize, time: u64) -> FlowRecord {
+    let flags = [0; 9];
+    (
         doctets,
         flags,
-        FluereRecord::new(
-            std::net::IpAddr::V4(src_ip),
-            std::net::IpAddr::V4(dst_ip),
-            0,
-            0,
-            time,
-            time,
-            src_port,
-            dst_port,
-            packet.packet_size() as u32,
-            packet.packet_size() as u32,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
+        new_record(
+            IpAddr::V4(arp.sender_protocol_addr),
+            IpAddr::V4(arp.target_protocol_addr),
             0,
             0,
             0,
             4,
             0,
+            doctets,
+            time,
         ),
-    ))
+    )
 }
 
-fn ipv4_packet(
+fn ipv4_record(
+    ipv4: &Ipv4Header,
+    transport: Option<&TransportSegment>,
+    doctets: usize,
     time: u64,
-    packet: Ipv4Packet,
-) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
-    let protocol = packet.get_next_level_protocol().0;
-    let src_ip = packet.get_source();
-    let dst_ip = packet.get_destination();
-
-    // Special handling for DNS over UDP
-    if packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp
-        && let Some(udp) = UdpPacket::new(packet.payload())
-        && (udp.get_destination() == 53 || udp.get_source() == 53)
+) -> FlowRecord {
+    if let Some(TransportSegment::Udp(udp)) = transport
+        && (udp.source_port == 53 || udp.destination_port == 53)
     {
-        return Ok((
-            packet.packet_size(),
-            [0; 9], // DNS doesn't use TCP flags
-            FluereRecord::new(
-                std::net::IpAddr::V4(src_ip),
-                std::net::IpAddr::V4(dst_ip),
+        let flags = [0; 9];
+        return (
+            doctets,
+            flags,
+            new_record(
+                IpAddr::V4(ipv4.source),
+                IpAddr::V4(ipv4.destination),
+                udp.source_port,
+                udp.destination_port,
+                ipv4.ttl,
+                17,
                 0,
-                0,
+                doctets,
                 time,
-                time,
-                udp.get_source(),
-                udp.get_destination(),
-                udp.packet_size() as u32,
-                udp.packet_size() as u32,
-                packet.get_ttl(),
-                packet.get_ttl(),
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                17, // UDP
-                0,  // No TOS for DNS
             ),
-        ));
+        );
     }
 
-    // Continue with normal packet processing...
-    let (src_port, dst_port) = parse_ports(protocol, packet.payload()).unwrap_or((0, 0));
+    let (src_port, dst_port, flags) = ports_and_flags(transport);
+    let tos = dscp_to_tos(ipv4.dscp).unwrap_or(0);
+    (
+        doctets,
+        flags,
+        new_record(
+            IpAddr::V4(ipv4.source),
+            IpAddr::V4(ipv4.destination),
+            src_port,
+            dst_port,
+            ipv4.ttl,
+            ipv4.protocol,
+            tos,
+            doctets,
+            time,
+        ),
+    )
+}
 
-    // TCP flags
-    let flags = parse_flags(protocol, packet.payload());
+fn ipv6_record(
+    ipv6: &Ipv6Header,
+    transport: Option<&TransportSegment>,
+    doctets: usize,
+    time: u64,
+) -> FlowRecord {
+    let (src_port, dst_port, flags) = ports_and_flags(transport);
+    let tos = dscp_to_tos(ipv6.traffic_class >> 2).unwrap_or_default();
+    // Preserve the historical record shape: IPv6 hop_limit was not mapped to TTL.
+    (
+        doctets,
+        flags,
+        new_record(
+            IpAddr::V6(ipv6.source),
+            IpAddr::V6(ipv6.destination),
+            src_port,
+            dst_port,
+            0,
+            ipv6.next_header,
+            tos,
+            doctets,
+            time,
+        ),
+    )
+}
 
-    let doctets = packet.packet_size();
-    let tos_convert_result = dscp_to_tos(packet.get_dscp());
-    let tos = tos_convert_result.unwrap_or(0);
+fn ports_and_flags(transport: Option<&TransportSegment>) -> (u16, u16, [u8; 9]) {
+    match transport {
+        Some(TransportSegment::Tcp(tcp)) => (
+            tcp.source_port,
+            tcp.destination_port,
+            [
+                flag_byte(tcp.flags.fin),
+                flag_byte(tcp.flags.syn),
+                flag_byte(tcp.flags.rst),
+                flag_byte(tcp.flags.psh),
+                flag_byte(tcp.flags.ack),
+                flag_byte(tcp.flags.urg),
+                flag_byte(tcp.flags.ece),
+                flag_byte(tcp.flags.cwr),
+                flag_byte(tcp.flags.ns),
+            ],
+        ),
+        Some(TransportSegment::Udp(udp)) => (udp.source_port, udp.destination_port, [0; 9]),
+        None => (0, 0, [0; 9]),
+    }
+}
+
+const fn flag_byte(flag: bool) -> u8 {
+    if flag { 1 } else { 0 }
+}
+
+/// Fallback for ethertypes without a dedicated paccel decode.
+fn raw_fallback_record(
+    parsed: &ParsedPacket,
+    packet_data: &[u8],
+    doctets: usize,
+    time: u64,
+) -> Result<FlowRecord, ParseError> {
+    let ethernet = parsed
+        .ethernet
+        .as_ref()
+        .ok_or_else(|| ParseError::UnknownEtherType("missing Ethernet frame".to_owned()))?;
+    trace!(
+        "Attempting fallback parsing for EtherType: {}",
+        ethernet.ethertype
+    );
+    let l3_payload = packet_data
+        .get(ethernet.payload_offset..)
+        .ok_or_else(|| ParseError::UnknownEtherType(ethernet.ethertype.to_string()))?;
+    let raw_header = RawProtocolHeader::from_ethertype(l3_payload, ethernet.ethertype)
+        .ok_or_else(|| ParseError::UnknownEtherType(ethernet.ethertype.to_string()))?;
+    let flags = raw_header.flags.map_or([0; 9], |f| parse_flags(f, &[]));
 
     Ok((
         doctets,
         flags,
-        FluereRecord::new(
-            std::net::IpAddr::V4(src_ip),
-            std::net::IpAddr::V4(dst_ip),
+        new_record(
+            raw_header
+                .src_ip
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            raw_header
+                .dst_ip
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            raw_header.src_port,
+            raw_header.dst_port,
+            raw_header.ttl.unwrap_or(0),
+            raw_header.protocol,
             0,
-            0,
+            doctets,
             time,
-            time,
-            src_port,
-            dst_port,
-            packet.get_total_length() as u32,
-            packet.get_total_length() as u32,
-            packet.get_ttl(),
-            packet.get_ttl(),
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            protocol,
-            tos,
         ),
     ))
 }
 
-fn ipv6_packet(
+#[allow(clippy::too_many_arguments)]
+fn new_record(
+    source: IpAddr,
+    destination: IpAddr,
+    src_port: u16,
+    dst_port: u16,
+    ttl: u8,
+    protocol: u8,
+    tos: u8,
+    doctets: usize,
     time: u64,
-    packet: Ipv6Packet,
-) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
-    let protocol = packet.get_next_header().0;
-    let src_ip = packet.get_source();
-    let dst_ip = packet.get_destination();
-
-    // ports parsing
-    let (src_port, dst_port) = parse_ports(protocol, packet.payload())?;
-    // TCP flags Fin Syn Rst Psh Ack Urg Ece Cwr Ns
-    let flags = parse_flags(protocol, packet.payload());
-
-    //	Autonomous system number of the source and destination, either origin or peer
-    let doctets = packet.packet_size();
-    //first six bits in the 8-bit Traffic Class field
-    let dscp = packet.get_traffic_class() >> 2;
-    let tos_convert_result = dscp_to_tos(dscp);
-    let tos = tos_convert_result.unwrap_or_default();
-
-    Ok((
+) -> FluereRecord {
+    FluereRecord::new(
+        source,
+        destination,
+        0,
         doctets,
-        flags,
-        FluereRecord::new(
-            std::net::IpAddr::V6(src_ip),
-            std::net::IpAddr::V6(dst_ip),
+        time,
+        time,
+        src_port,
+        dst_port,
+        doctets as u32,
+        doctets as u32,
+        ttl,
+        ttl,
+        0,
+        0,
+        doctets,
+        doctets,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        protocol,
+        tos,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pcap::{Packet, PacketHeader};
+
+    const SRC_MAC: [u8; 6] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
+    const DST_MAC: [u8; 6] = [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
+
+    fn parse_frame(frame: &[u8]) -> Result<FlowRecord, ParseError> {
+        let header = PacketHeader {
+            ts: libc::timeval {
+                tv_sec: 1,
+                tv_usec: 2,
+            },
+            caplen: frame.len() as u32,
+            len: frame.len() as u32,
+        };
+        parse_fluereflow(Packet::new(&header, frame))
+    }
+
+    fn ethernet_frame(ethertype: u16, payload: &[u8]) -> Vec<u8> {
+        let mut frame = Vec::with_capacity(14 + payload.len());
+        frame.extend_from_slice(&DST_MAC);
+        frame.extend_from_slice(&SRC_MAC);
+        frame.extend_from_slice(&ethertype.to_be_bytes());
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    fn ipv4_packet(
+        protocol: u8,
+        ttl: u8,
+        dscp: u8,
+        source: [u8; 4],
+        destination: [u8; 4],
+        l4: &[u8],
+    ) -> Vec<u8> {
+        let total_length = (20 + l4.len()) as u16;
+        let mut packet = Vec::with_capacity(usize::from(total_length));
+        packet.extend_from_slice(&[
+            0x45,
+            dscp << 2,
+            total_length.to_be_bytes()[0],
+            total_length.to_be_bytes()[1],
+        ]);
+        packet.extend_from_slice(&[0, 1, 0, 0, ttl, protocol, 0, 0]);
+        packet.extend_from_slice(&source);
+        packet.extend_from_slice(&destination);
+        packet.extend_from_slice(l4);
+        packet
+    }
+
+    fn ipv6_packet(
+        traffic_class: u8,
+        next_header: u8,
+        source: [u8; 16],
+        destination: [u8; 16],
+        l4: &[u8],
+    ) -> Vec<u8> {
+        let payload_length = l4.len() as u16;
+        let mut packet = Vec::with_capacity(40 + l4.len());
+        packet.extend_from_slice(&[
+            0x60 | (traffic_class >> 4),
+            traffic_class << 4,
             0,
             0,
-            time,
-            time,
-            src_port,
-            dst_port,
-            packet.get_payload_length() as u32,
-            packet.get_payload_length() as u32,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            protocol,
-            tos,
-        ),
-    ))
+            payload_length.to_be_bytes()[0],
+            payload_length.to_be_bytes()[1],
+            next_header,
+            55,
+        ]);
+        packet.extend_from_slice(&source);
+        packet.extend_from_slice(&destination);
+        packet.extend_from_slice(l4);
+        packet
+    }
+
+    fn tcp_segment(source_port: u16, destination_port: u16, flags: u8) -> Vec<u8> {
+        let mut tcp = vec![0; 20];
+        tcp[0..2].copy_from_slice(&source_port.to_be_bytes());
+        tcp[2..4].copy_from_slice(&destination_port.to_be_bytes());
+        tcp[12] = 0x50;
+        tcp[13] = flags;
+        tcp
+    }
+
+    fn udp_datagram(source_port: u16, destination_port: u16, payload: &[u8]) -> Vec<u8> {
+        let length = (8 + payload.len()) as u16;
+        let mut udp = Vec::with_capacity(usize::from(length));
+        udp.extend_from_slice(&source_port.to_be_bytes());
+        udp.extend_from_slice(&destination_port.to_be_bytes());
+        udp.extend_from_slice(&length.to_be_bytes());
+        udp.extend_from_slice(&[0, 0]);
+        udp.extend_from_slice(payload);
+        udp
+    }
+
+    fn assert_plain_tcp_fields(record: &FluereRecord) {
+        assert_eq!(record.source, IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)));
+        assert_eq!(
+            record.destination,
+            IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2))
+        );
+        assert_eq!((record.src_port, record.dst_port), (12_345, 443));
+        assert_eq!((record.min_ttl, record.max_ttl), (42, 42));
+        assert_eq!(record.tos, dscp_to_tos(10).unwrap_or(0));
+        assert_eq!(record.prot, 6);
+    }
+
+    fn assert_plain_tcp_counts(record: &FluereRecord, frame_len: usize) {
+        assert_eq!(record.syn_cnt, 0);
+        assert_eq!(record.d_octets, frame_len);
+        assert_eq!(
+            (record.min_pkt, record.max_pkt),
+            (frame_len as u32, frame_len as u32)
+        );
+        assert_eq!((record.in_bytes, record.out_bytes), (frame_len, frame_len));
+    }
+
+    #[test]
+    fn extracts_plain_ipv4_tcp_record() {
+        let tcp = tcp_segment(12_345, 443, 0x02);
+        let ipv4 = ipv4_packet(6, 42, 10, [192, 0, 2, 1], [198, 51, 100, 2], &tcp);
+        let frame = ethernet_frame(0x0800, &ipv4);
+        let (doctets, flags, record) = parse_frame(&frame).expect("valid IPv4 TCP frame");
+
+        assert_eq!(doctets, frame.len());
+        assert_eq!(flags, [0, 1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_plain_tcp_fields(&record);
+        assert_plain_tcp_counts(&record, frame.len());
+    }
+
+    #[test]
+    fn preserves_ipv4_dns_shape() {
+        let udp = udp_datagram(53, 40_000, &[]);
+        let ipv4 = ipv4_packet(17, 61, 12, [10, 0, 0, 1], [10, 0, 0, 2], &udp);
+        let (_, flags, record) =
+            parse_frame(&ethernet_frame(0x0800, &ipv4)).expect("valid DNS frame");
+
+        assert_eq!((record.src_port, record.dst_port), (53, 40_000));
+        assert_eq!((record.min_ttl, record.max_ttl), (61, 61));
+        assert_eq!(flags, [0; 9]);
+        assert_eq!(record.prot, 17);
+        assert_eq!(record.tos, 0);
+    }
+
+    #[test]
+    fn extracts_ipv6_udp_and_preserves_zero_ttl() {
+        let source = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        let destination = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+        let traffic_class = 40;
+        let udp = udp_datagram(5353, 40_001, &[]);
+        let ipv6 = ipv6_packet(traffic_class, 17, source, destination, &udp);
+        let (_, flags, record) =
+            parse_frame(&ethernet_frame(0x86dd, &ipv6)).expect("valid IPv6 UDP frame");
+
+        assert_eq!(record.source, IpAddr::from(source));
+        assert_eq!(record.destination, IpAddr::from(destination));
+        assert_eq!((record.src_port, record.dst_port), (5353, 40_001));
+        assert_eq!((record.min_ttl, record.max_ttl), (0, 0));
+        assert_eq!(record.prot, 17);
+        assert_eq!(
+            record.tos,
+            dscp_to_tos(traffic_class >> 2).unwrap_or_default()
+        );
+        assert_eq!(flags, [0; 9]);
+    }
+
+    #[test]
+    fn extracts_arp_with_fluere_protocol_convention() {
+        let mut arp = Vec::with_capacity(28);
+        arp.extend_from_slice(&[0, 1, 0x08, 0, 6, 4, 0, 1]);
+        arp.extend_from_slice(&SRC_MAC);
+        arp.extend_from_slice(&[10, 0, 0, 1]);
+        arp.extend_from_slice(&[0; 6]);
+        arp.extend_from_slice(&[10, 0, 0, 2]);
+        let (_, flags, record) =
+            parse_frame(&ethernet_frame(0x0806, &arp)).expect("valid ARP frame");
+
+        assert_eq!(record.source, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)));
+        assert_eq!(record.destination, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)));
+        assert_eq!((record.src_port, record.dst_port), (0, 0));
+        assert_eq!(record.prot, 4);
+        assert_eq!(flags, [0; 9]);
+    }
+
+    #[test]
+    fn extracts_innermost_tcp_from_vxlan() {
+        let tcp = tcp_segment(23_456, 8443, 0x02);
+        let inner_ip = ipv4_packet(6, 37, 8, [10, 1, 0, 1], [10, 2, 0, 2], &tcp);
+        let inner_frame = ethernet_frame(0x0800, &inner_ip);
+        let mut vxlan = vec![0x08, 0, 0, 0, 0, 0, 100, 0];
+        vxlan.extend_from_slice(&inner_frame);
+        let outer_udp = udp_datagram(40_000, 4789, &vxlan);
+        let outer_ip = ipv4_packet(17, 64, 0, [192, 0, 2, 1], [198, 51, 100, 2], &outer_udp);
+        let frame = ethernet_frame(0x0800, &outer_ip);
+        let (doctets, flags, record) = parse_frame(&frame).expect("valid VXLAN tunnel");
+
+        assert_eq!(record.source, IpAddr::V4(Ipv4Addr::new(10, 1, 0, 1)));
+        assert_eq!(record.destination, IpAddr::V4(Ipv4Addr::new(10, 2, 0, 2)));
+        assert_eq!((record.src_port, record.dst_port), (23_456, 8443));
+        assert_eq!((record.min_ttl, record.max_ttl), (37, 37));
+        assert_eq!(record.prot, 6);
+        assert_eq!(flags, [0, 1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(doctets, frame.len());
+        assert_eq!(record.d_octets, frame.len());
+    }
+
+    #[test]
+    fn rejects_empty_packet() {
+        assert!(matches!(parse_frame(&[]), Err(ParseError::EmptyPacket)));
+    }
 }
