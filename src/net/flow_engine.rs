@@ -26,7 +26,7 @@ impl FlowEngine {
         &mut self,
         key: Key,
         reverse: Key,
-        record: FluereRecord,
+        mut record: FluereRecord,
         doctets: usize,
         flags: TcpFlags,
         packet_time: u64,
@@ -36,9 +36,7 @@ impl FlowEngine {
             None => match self.active.get(&reverse) {
                 Some(_) => true,
                 None => {
-                    if record.prot == 6 && flags.syn == 0 {
-                        return None;
-                    }
+                    record.mid_stream = record.prot == 6 && flags.syn == 0;
 
                     let expiration = self.expiration_for(packet_time);
                     self.active.insert(key, record);
@@ -184,6 +182,7 @@ mod tests {
             0,
             protocol,
             0,
+            false,
         )
     }
 
@@ -192,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn drops_new_tcp_flow_without_syn() {
+    fn opens_new_tcp_flow_without_syn_and_flags_mid_stream() {
         let (key, reverse) = keys(6);
         let mut engine = FlowEngine::new(10);
 
@@ -201,7 +200,17 @@ mod tests {
                 .offer(key, reverse, record(6, 1), 60, flags(0, 0, 0), 1)
                 .is_none()
         );
-        assert_eq!(engine.active_count(), 0);
+        assert_eq!(engine.active_count(), 1);
+        assert!(engine.active().get(&key).unwrap().mid_stream);
+    }
+
+    #[test]
+    fn new_tcp_flow_with_syn_is_not_mid_stream() {
+        let (key, reverse) = keys(6);
+        let mut engine = FlowEngine::new(10);
+
+        engine.offer(key, reverse, record(6, 1), 60, flags(1, 0, 0), 1);
+        assert!(!engine.active().get(&key).unwrap().mid_stream);
     }
 
     #[test]
