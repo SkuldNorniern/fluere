@@ -18,7 +18,7 @@ git2 = { version = "0.18.3", default-features = false, features = ["https", "ven
 tokio = { version = "1.36", features = ["full","macros", "rt-multi-thread"] }
 fluere-config = { version = "0.2.0", path = "../fluere-config" }
 #fluere-plugin-trait = { path = "../fluere-plugin-trait" }
-fluereflow = { version = "0.3.2", path = "../fluereflow" }
+fluereflow = { version = "0.4.0", path = "../fluereflow" }
 dirs = "5.0.1"
 mlua = { version = "0.9.6", features = ["lua54", "vendored","async","send"] }
 inksac = "0.4.0"
