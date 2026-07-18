@@ -57,9 +57,13 @@ pub struct FluereRecord {
     pub ns_cnt: u32,
     pub prot: u8,
     pub tos: u8,
+    /// true if flow opened without observing the TCP SYN (capture started mid-stream).
+    /// Always false for non-TCP protocols.
+    pub mid_stream: bool,
 }
 
 impl FluereRecord {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         source: IpAddr,
         destination: IpAddr,
@@ -88,6 +92,7 @@ impl FluereRecord {
         ns_cnt: u32,
         prot: u8,
         tos: u8,
+        mid_stream: bool,
     ) -> FluereRecord {
         FluereRecord {
             source,
@@ -117,6 +122,7 @@ impl FluereRecord {
             ns_cnt,
             prot,
             tos,
+            mid_stream,
         }
     }
     pub fn to_vec(&self) -> Vec<String> {
@@ -148,6 +154,7 @@ impl FluereRecord {
             self.ns_cnt.to_string(),
             self.prot.to_string(),
             self.tos.to_string(),
+            u8::from(self.mid_stream).to_string(),
         ]
     }
 }
