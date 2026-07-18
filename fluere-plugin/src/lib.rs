@@ -258,6 +258,7 @@ impl PluginManager {
                         "ns_cnt",
                         "prot",
                         "tos",
+                        "mid_stream",
                     ]
                     .iter()
                     .enumerate()

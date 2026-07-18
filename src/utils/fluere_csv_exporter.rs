@@ -35,6 +35,7 @@ pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(
         "cwr_cnt",
         "ns_cnt",
         "tos",
+        "mid_stream",
     ])
     .map_err(|e| {
         error!("Failed to write CSV header: {}", e);
@@ -70,6 +71,7 @@ pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(
             &flow.cwr_cnt.to_string(),
             &flow.ns_cnt.to_string(),
             &flow.tos.to_string(),
+            &u8::from(flow.mid_stream).to_string(),
         ])
         .map_err(|e| {
             error!("Failed to write CSV record: {}", e);
