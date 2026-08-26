@@ -112,7 +112,7 @@ fn ipv4_record(
     }
 
     let (src_port, dst_port, flags) = ports_and_flags(transport);
-    let tos = dscp_to_tos(ipv4.dscp).unwrap_or(0);
+    let tos = dscp_to_tos(ipv4.dscp);
     (
         doctets,
         flags,
@@ -137,7 +137,7 @@ fn ipv6_record(
     time: u64,
 ) -> FlowRecord {
     let (src_port, dst_port, flags) = ports_and_flags(transport);
-    let tos = dscp_to_tos(ipv6.traffic_class >> 2).unwrap_or_default();
+    let tos = dscp_to_tos(ipv6.traffic_class >> 2);
     // Preserve the historical record shape: IPv6 hop_limit was not mapped to TTL.
     // `resolved_next_header` skips any extension header chain, so the record
     // carries the transport protocol rather than the first extension header.
@@ -385,7 +385,7 @@ mod tests {
         );
         assert_eq!((record.src_port, record.dst_port), (12_345, 443));
         assert_eq!((record.min_ttl, record.max_ttl), (42, 42));
-        assert_eq!(record.tos, dscp_to_tos(10).unwrap_or(0));
+        assert_eq!(record.tos, dscp_to_tos(10));
         assert_eq!(record.prot, 6);
     }
 
@@ -461,10 +461,7 @@ mod tests {
         assert_eq!((record.src_port, record.dst_port), (5353, 40_001));
         assert_eq!((record.min_ttl, record.max_ttl), (0, 0));
         assert_eq!(record.prot, 17);
-        assert_eq!(
-            record.tos,
-            dscp_to_tos(traffic_class >> 2).unwrap_or_default()
-        );
+        assert_eq!(record.tos, dscp_to_tos(traffic_class >> 2));
         assert_eq!(flags, [0; 9]);
     }
 
