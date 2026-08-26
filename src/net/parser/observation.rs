@@ -4,7 +4,8 @@ use crate::error::ParseError;
 use crate::net::types::{Key, TcpFlags};
 use fluereflow::FluereRecord;
 
-use super::fluereflows::{packet_time, record_from_parsed, wire_length};
+use super::fluereflows::{innermost, packet_time, record_from_parsed, wire_length};
+use super::fragments::{FragmentTracker, Ipv4Fragment};
 use super::keys::keys_from_parsed;
 
 /// Everything one captured frame contributes to a flow.
@@ -37,6 +38,7 @@ pub fn observe(
     packet: Packet<'_>,
     use_mac: bool,
     linktype: u16,
+    fragments: &mut FragmentTracker,
 ) -> Result<PacketObservation, ParseError> {
     if packet.is_empty() {
         return Err(ParseError::EmptyPacket);
@@ -54,21 +56,28 @@ pub fn observe(
     let (doctets, raw_flags, record) =
         record_from_parsed(&parsed, packet.data, wire_length(&packet), packet_time)?;
 
-    Ok(PacketObservation {
+    let mut observation = PacketObservation {
         key,
         reverse_key,
         record,
         doctets,
         flags: TcpFlags::new(raw_flags),
         packet_time,
-    })
+    };
+
+    // A later fragment has no transport header of its own, so it inherits the
+    // endpoints its first fragment reported.
+    let fragment = innermost(&parsed).ipv4.as_ref().and_then(Ipv4Fragment::of);
+    fragments.resolve(&mut observation, fragment.as_ref());
+
+    Ok(observation)
 }
 
 #[cfg(test)]
 mod tests {
     use pcap::PacketHeader;
 
-    use super::{PacketObservation, observe};
+    use super::{FragmentTracker, PacketObservation, observe};
     use crate::net::parser::{parse_fluereflow, parse_keys};
 
     const SRC_MAC: [u8; 6] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
@@ -110,7 +119,13 @@ mod tests {
         let frame = tcp_frame();
         let header = header(&frame);
 
-        let observation = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
+        let observation = observe(
+            pcap::Packet::new(&header, &frame),
+            true,
+            1,
+            &mut FragmentTracker::new(),
+        )
+        .expect("observed");
 
         let (key, reverse_key) =
             parse_keys(pcap::Packet::new(&header, &frame), 1).expect("keys parse");
@@ -130,8 +145,20 @@ mod tests {
         let frame = tcp_frame();
         let header = header(&frame);
 
-        let with_mac = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
-        let without = observe(pcap::Packet::new(&header, &frame), false, 1).expect("observed");
+        let with_mac = observe(
+            pcap::Packet::new(&header, &frame),
+            true,
+            1,
+            &mut FragmentTracker::new(),
+        )
+        .expect("observed");
+        let without = observe(
+            pcap::Packet::new(&header, &frame),
+            false,
+            1,
+            &mut FragmentTracker::new(),
+        )
+        .expect("observed");
 
         assert_ne!(with_mac.key, without.key);
         assert_eq!(without.key.src_mac.0, [0; 6]);
@@ -169,7 +196,13 @@ mod tests {
 
     fn observed(frame: &[u8]) -> PacketObservation {
         let header = header(frame);
-        observe(pcap::Packet::new(&header, frame), true, 1).expect("observed")
+        observe(
+            pcap::Packet::new(&header, frame),
+            true,
+            1,
+            &mut FragmentTracker::new(),
+        )
+        .expect("observed")
     }
 
     /// An ICMP echo request and its reply are the two directions of one
@@ -231,7 +264,13 @@ mod tests {
         frame.extend_from_slice(&[0; 8]); // verification tag + checksum
 
         let header = header(&frame);
-        let observation = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
+        let observation = observe(
+            pcap::Packet::new(&header, &frame),
+            true,
+            1,
+            &mut FragmentTracker::new(),
+        )
+        .expect("observed");
 
         assert_eq!(observation.record.prot, 132);
         assert_eq!(
@@ -247,6 +286,14 @@ mod tests {
     #[test]
     fn an_empty_packet_is_rejected() {
         let header = header(&[]);
-        assert!(observe(pcap::Packet::new(&header, &[]), true, 1).is_err());
+        assert!(
+            observe(
+                pcap::Packet::new(&header, &[]),
+                true,
+                1,
+                &mut FragmentTracker::new()
+            )
+            .is_err()
+        );
     }
 }

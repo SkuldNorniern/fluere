@@ -13,8 +13,10 @@ use crate::{
     FluereError,
     error::OptionExt,
     net::{
-        CaptureDevice, find_device, flow_engine::FlowEngine, observe_packet,
-        parser::PacketObservation,
+        CaptureDevice, find_device,
+        flow_engine::FlowEngine,
+        observe_packet,
+        parser::{FragmentTracker, PacketObservation},
     },
     types::Args,
     utils::{cur_time_file, fluere_exporter},
@@ -246,12 +248,14 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let tasks: Vec<JoinHandle<Result<(), FluereError>>> = vec![];
     let mut export_tasks = vec![];
 
+    let mut fragments = FragmentTracker::new();
+
     loop {
         let Some(packet) = next_packet(cap) else {
             continue;
         };
         trace!("received packet");
-        let Some(observation) = observe_packet(packet, use_mac, linktype) else {
+        let Some(observation) = observe_packet(packet, use_mac, linktype, &mut fragments) else {
             continue;
         };
         process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
