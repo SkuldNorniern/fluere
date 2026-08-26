@@ -1,98 +1,247 @@
-use std::{default::Default, env, fs, path::Path, path::PathBuf};
-
-use crate::Config;
+use std::{env, fs, path::Path, path::PathBuf};
 
 use dirs::config_dir;
 
+use crate::error::ConfigError;
+use crate::{tav, Config};
+
 #[cfg(feature = "log")]
-use log::{debug, error, warn};
+use log::{debug, warn};
+
+/// Config file names Fluere looks for, in preference order. Tavra first: it is
+/// the format new installs get written in, and TOML stays readable for anyone
+/// who already has one.
+const CONFIG_FILES: [&str; 2] = ["fluere.tav", "fluere.toml"];
+
+/// The format a config file is written in, decided by its extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Format {
+    Tavra,
+    Toml,
+}
+
+impl Format {
+    fn of(path: &Path) -> Result<Self, ConfigError> {
+        match path.extension().and_then(|extension| extension.to_str()) {
+            Some("tav") => Ok(Format::Tavra),
+            Some("toml") => Ok(Format::Toml),
+            _ => Err(ConfigError::UnknownFormat(path.to_path_buf())),
+        }
+    }
+}
+
+/// Report a configuration problem without stopping the caller.
+macro_rules! config_warn {
+    ($($arg:tt)*) => {{
+        #[cfg(feature = "log")]
+        warn!($($arg)*);
+        #[cfg(not(feature = "log"))]
+        eprintln!($($arg)*);
+    }};
+}
 
 impl Config {
+    /// Load the user's configuration, falling back to the default on any
+    /// problem. A missing, unreadable, or malformed config never stops Fluere
+    /// from running: it is reported and the defaults are used.
     pub fn new() -> Self {
-        let path_base = home_config_path();
-
-        let path_file = path_base.join(Path::new("fluere.toml"));
-
-        #[cfg(feature = "log")]
-        debug!("Using config file from: {:?}", path_file);
-        #[cfg(not(feature = "log"))]
-        println!("Using config file from: {:?}", path_file);
-        if !path_base.exists() {
-            match fs::create_dir_all(&path_base) {
-                Ok(_) => {
-                    #[cfg(feature = "log")]
-                    debug!("Created directory at {:?}", path_base);
-                }
-                Err(e) => {
-                    #[cfg(feature = "log")]
-                    error!("Failed to create directory at {:?}: {}", path_base, e);
-                    #[cfg(not(feature = "log"))]
-                    eprintln!("Failed to create directory at {:?}: {}", path_base, e);
-
-                    return Config::default();
-                }
-            }
-        }
-
-        if !path_file.exists() {
-            Self::save(None, path_file.to_str().unwrap().to_string()).unwrap();
-        }
-
-        match Self::load(path_file.to_str().unwrap().to_string()) {
-            Ok(config) => {
-                #[cfg(feature = "log")]
-                debug!("Loaded configuration from: {:?}", path_file);
-
-                config
-            }
-            Err(_) => {
-                #[cfg(feature = "log")]
-                warn!("failed to load configuration, using default config");
-                #[cfg(not(feature = "log"))]
-                println!("failed to load configuration, using default config");
+        match Self::load_from_config_dir() {
+            Ok(config) => config,
+            Err(error) => {
+                config_warn!("Using the default configuration: {}", error);
                 Config::default()
             }
         }
     }
 
-    pub fn load(path: String) -> Result<Self, std::io::Error> {
-        let path = Path::new(&path);
-        let contents = fs::read_to_string(path)?;
-        let config = toml::from_str(&contents).expect("failed to parse config");
-        Ok(config)
+    /// Find the config file in the user's config directory, creating a default
+    /// one if none of the supported names exist yet.
+    fn load_from_config_dir() -> Result<Self, ConfigError> {
+        Self::load_from_dir(&home_config_path()?)
     }
 
-    pub fn save(content: Option<Config>, path: String) -> Result<(), std::io::Error> {
-        let path = Path::new(&path);
-        let contents = match content {
-            Some(config) => toml::to_string(&config).unwrap(),
-            None => toml::to_string(&Config::default()).unwrap(),
+    /// Load the config out of `directory`, writing a default one if none of the
+    /// supported file names is present.
+    pub fn load_from_dir(directory: &Path) -> Result<Self, ConfigError> {
+        if !directory.exists() {
+            fs::create_dir_all(directory)?;
+            #[cfg(feature = "log")]
+            debug!("Created config directory at {}", directory.display());
+        }
+
+        for name in CONFIG_FILES {
+            let path = directory.join(name);
+            if path.exists() {
+                #[cfg(feature = "log")]
+                debug!("Using config file from: {}", path.display());
+
+                return Self::load(&path);
+            }
+        }
+
+        // Nothing there yet: write the defaults so the file is available to edit.
+        let path = directory.join(CONFIG_FILES[0]);
+        #[cfg(feature = "log")]
+        debug!("Writing a default config to {}", path.display());
+
+        Self::save(None, &path)?;
+        Self::load(&path)
+    }
+
+    /// Read a config file, choosing the parser from its extension.
+    pub fn load(path: &Path) -> Result<Self, ConfigError> {
+        let contents = fs::read_to_string(path)?;
+
+        match Format::of(path)? {
+            Format::Tavra => tav::from_str(&contents),
+            Format::Toml => {
+                toml::from_str(&contents).map_err(|error| ConfigError::Toml(error.to_string()))
+            }
+        }
+    }
+
+    /// Write `content` (or the defaults) to `path`, choosing the format from
+    /// its extension.
+    pub fn save(content: Option<Config>, path: &Path) -> Result<(), ConfigError> {
+        let config = content.unwrap_or_default();
+
+        let contents = match Format::of(path)? {
+            Format::Tavra => tav::to_string(&config),
+            Format::Toml => {
+                toml::to_string(&config).map_err(|error| ConfigError::Toml(error.to_string()))?
+            }
         };
+
         fs::write(path, contents)?;
         Ok(())
     }
 }
 
-fn home_config_path() -> PathBuf {
-    // Check for the SUDO_USER environment variable
-    let sudo_user = env::var("SUDO_USER");
-
-    let path_base = match sudo_user {
-        Ok(user) => {
-            // on macOS just return the config_dir()
-            if env::consts::OS == "macos" {
-                config_dir().expect("Could not determine the home directory")
-            } else {
-                // If SUDO_USER is set, construct the path using the user's home directory
-                let user_home = format!("/home/{}", user);
-                Path::new(&user_home).join(".config")
-            }
+/// The directory Fluere keeps its config in.
+///
+/// Under `sudo` this resolves the invoking user's directory rather than root's,
+/// so a privileged capture still reads the config the user actually edits.
+fn home_config_path() -> Result<PathBuf, ConfigError> {
+    let base = match env::var("SUDO_USER") {
+        // macOS home directories are not under /home, so the usual lookup is
+        // already correct there.
+        Ok(user) if env::consts::OS != "macos" => {
+            Path::new(&format!("/home/{}", user)).join(".config")
         }
-        Err(_) => {
-            // If not running under sudo, just use the config_dir function as before
-            config_dir().expect("Could not determine the home directory")
-        }
+        _ => config_dir().ok_or(ConfigError::NoConfigDirectory)?,
     };
 
-    path_base.join("fluere")
+    Ok(base.join("fluere"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::types::Plugin;
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "fluere-config-test-{}-{}",
+                tag,
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&path);
+            TempDir(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn sample() -> Config {
+        let mut config = Config::default();
+        config.plugins.insert(
+            "owner/plugin".to_string(),
+            Plugin {
+                enabled: true,
+                path: Some("/plugins/here".to_string()),
+                extra_arguments: None,
+            },
+        );
+        config
+    }
+
+    #[test]
+    fn a_first_run_writes_a_default_tavra_config() {
+        let dir = TempDir::new("first-run");
+
+        let config = Config::load_from_dir(&dir.0).expect("first run succeeds");
+
+        assert!(config.plugins.is_empty());
+        assert!(
+            dir.0.join("fluere.tav").exists(),
+            "a new install should get a .tav config"
+        );
+    }
+
+    #[test]
+    fn an_existing_tavra_config_is_loaded() {
+        let dir = TempDir::new("load-tav");
+        fs::create_dir_all(&dir.0).expect("temp dir");
+        Config::save(Some(sample()), &dir.0.join("fluere.tav")).expect("save");
+
+        let config = Config::load_from_dir(&dir.0).expect("load");
+        assert_eq!(config.plugins.len(), 1);
+        assert!(config.plugins["owner/plugin"].enabled);
+    }
+
+    #[test]
+    fn an_existing_toml_config_still_works() {
+        let dir = TempDir::new("load-toml");
+        fs::create_dir_all(&dir.0).expect("temp dir");
+        Config::save(Some(sample()), &dir.0.join("fluere.toml")).expect("save");
+
+        let config = Config::load_from_dir(&dir.0).expect("load");
+        assert_eq!(
+            config.plugins["owner/plugin"].path.as_deref(),
+            Some("/plugins/here")
+        );
+        assert!(
+            !dir.0.join("fluere.tav").exists(),
+            "an existing TOML config must not be replaced"
+        );
+    }
+
+    #[test]
+    fn tavra_wins_when_both_files_exist() {
+        let dir = TempDir::new("both");
+        fs::create_dir_all(&dir.0).expect("temp dir");
+
+        Config::save(Some(sample()), &dir.0.join("fluere.tav")).expect("save tav");
+        Config::save(Some(Config::default()), &dir.0.join("fluere.toml")).expect("save toml");
+
+        let config = Config::load_from_dir(&dir.0).expect("load");
+        assert_eq!(config.plugins.len(), 1, "the .tav file should be preferred");
+    }
+
+    #[test]
+    fn a_malformed_config_is_an_error_not_a_panic() {
+        let dir = TempDir::new("malformed");
+        fs::create_dir_all(&dir.0).expect("temp dir");
+        fs::write(dir.0.join("fluere.tav"), "plugins = {{{").expect("write");
+
+        assert!(Config::load_from_dir(&dir.0).is_err());
+    }
+
+    #[test]
+    fn an_unknown_extension_is_rejected() {
+        let path = PathBuf::from("/tmp/fluere.yaml");
+        assert!(matches!(
+            Config::save(None, &path),
+            Err(ConfigError::UnknownFormat(_))
+        ));
+    }
 }
