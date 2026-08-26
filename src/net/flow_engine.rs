@@ -196,6 +196,12 @@ impl FlowEngine {
     /// events for a packet: the flow is updated first, then anything that has
     /// idled out is swept, and both sets of finished flows come back together.
     pub fn accept(&mut self, observation: PacketObservation) -> AcceptOutcome {
+        // Expire first. A flow that went idle past its timeout is finished
+        // before this packet is looked at, so traffic resuming on the same
+        // tuple opens a new flow instead of reviving the old one and reporting
+        // a single flow spanning the silence.
+        let expired = self.sweep_expired(observation.packet_time);
+
         let was_active = self.active.contains_key(&observation.key)
             || self.active.contains_key(&observation.reverse_key);
 
@@ -207,15 +213,14 @@ impl FlowEngine {
             observation.flags,
             observation.packet_time,
         );
-        let expired = self.sweep_expired(observation.packet_time);
         let opened_flow = !was_active && self.active.contains_key(&observation.key);
 
         let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
+        completed.extend(expired);
         if let Some((flow, reason)) = finished {
             trace!("flow ended: {:?}", reason);
             completed.push(flow);
         }
-        completed.extend(expired);
 
         AcceptOutcome {
             completed,
@@ -705,9 +710,10 @@ mod tests {
             "only one half of the TCP connection has closed"
         );
 
-        // Far enough ahead that the UDP flow has idled out, and carrying the
-        // FIN that closes the other half of the TCP connection.
-        let outcome = engine.accept(observe_frame(&tcp_frame(false, 0x11), 30_000));
+        // Past the UDP flow's deadline but inside the TCP flow's, and carrying
+        // the FIN that closes the other half of the connection: one packet
+        // ends two flows, for two different reasons.
+        let outcome = engine.accept(observe_frame(&tcp_frame(false, 0x11), 12_000));
         assert_eq!(
             outcome.completed.len(),
             2,
