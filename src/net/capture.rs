@@ -16,11 +16,7 @@ impl CaptureDevice {
     pub fn new(device: Device) -> Result<CaptureDevice, CaptureError> {
         let capture = initialize_capture(device.clone())?;
         let name: Cow<'static, str> = Cow::Owned(device.name);
-        let description = match device.desc {
-            Some(description) => description,
-            None => String::new(),
-        };
-        let desc: Cow<'static, str> = Cow::Owned(description);
+        let desc: Cow<'static, str> = Cow::Owned(device.desc.unwrap_or_default());
         debug!("Using device: {}", name);
         debug!("Device description: {}", desc);
         debug!("Addresses: {:?}", device.addresses);
