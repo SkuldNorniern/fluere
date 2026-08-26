@@ -136,38 +136,39 @@ fn vlan_of(parsed: &ParsedPacket) -> VlanTags {
         })
 }
 
-/// The tunnel a packet arrived inside, taken from the outermost headers.
+/// The encapsulation a packet arrived inside, if any.
 ///
-/// `None` when the packet was not tunnelled. The kind and segment identifier
-/// come from whichever tunnel header paccel decoded; the addresses are the
-/// outermost ones, which are the tunnel's own endpoints.
+/// Detected from whichever tunnel header paccel decoded rather than from the
+/// presence of an inner packet: MPLS and PPPoE carry IP directly, so they have
+/// no inner packet and no addresses of their own, but they still separate
+/// traffic that would otherwise collide.
 fn encapsulation_of(parsed: &ParsedPacket) -> Option<Encapsulation> {
-    // No inner packet means nothing was encapsulated.
-    parsed.inner.as_ref()?;
-
-    let (outer_src, outer_dst) = outer_addresses(parsed)?;
-
-    let (kind, vni) = if let Some(vxlan) = parsed.vxlan.as_ref() {
-        (EncapKind::Vxlan, vxlan.vni)
+    let (kind, id, over_ip) = if let Some(vxlan) = parsed.vxlan.as_ref() {
+        (EncapKind::Vxlan, vxlan.vni, true)
     } else if let Some(geneve) = parsed.geneve.as_ref() {
-        (EncapKind::Geneve, geneve.vni)
-    } else if parsed.gre.is_some() {
-        (EncapKind::Gre, 0)
+        (EncapKind::Geneve, geneve.vni, true)
+    } else if let Some(gre) = parsed.gre.as_ref() {
+        // RFC 2890 keys distinguish tunnels sharing a pair of endpoints.
+        (EncapKind::Gre, gre.key.unwrap_or(0), true)
     } else if let Some(mpls) = parsed.mpls.as_ref() {
         // The outermost label is the one the carrier switched on.
         let label = mpls.labels.first().map_or(0, |label| label.label);
-        (EncapKind::Mpls, label)
-    } else if parsed.ipv4.is_some() || parsed.ipv6.is_some() {
-        (EncapKind::IpInIp, 0)
+        (EncapKind::Mpls, label, false)
+    } else if let Some(pppoe) = parsed.pppoe.as_ref() {
+        (EncapKind::Pppoe, u32::from(pppoe.session_id), false)
+    } else if parsed.inner.is_some() {
+        // IP carried directly inside IP, with no tunnel header between them.
+        (EncapKind::IpInIp, 0, true)
     } else {
-        (EncapKind::Other, 0)
+        return None;
     };
 
     Some(Encapsulation {
         kind,
-        outer_src,
-        outer_dst,
-        vni,
+        // Only an IP-based tunnel has endpoints of its own. For the others the
+        // addresses on the packet are the carried traffic, not the carrier.
+        outer: over_ip.then(|| outer_addresses(parsed)).flatten(),
+        id,
     })
 }
 
