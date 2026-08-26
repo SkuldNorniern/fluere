@@ -68,7 +68,7 @@ pub fn observe(
 mod tests {
     use pcap::PacketHeader;
 
-    use super::observe;
+    use super::{PacketObservation, observe};
     use crate::net::parser::{parse_fluereflow, parse_keys};
 
     const SRC_MAC: [u8; 6] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
@@ -139,35 +139,75 @@ mod tests {
         assert_eq!(without.reverse_key.src_mac.0, [0; 6]);
     }
 
-    /// The flow key and the flow record must report the same endpoints. They
-    /// derive them separately, and ICMPv6 is where they used to disagree: the
-    /// key carried the type and code while the record reported 0/0, so an echo
-    /// exchange produced two rows that looked identical.
-    #[test]
-    fn the_record_reports_the_same_endpoints_as_the_key() {
+    fn ipv4_icmp(src: [u8; 4], dst: [u8; 4], icmp_type: u8) -> Vec<u8> {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&DST_MAC);
+        frame.extend_from_slice(&SRC_MAC);
+        frame.extend_from_slice(&0x0800u16.to_be_bytes());
+        frame.extend_from_slice(&[0x45, 0x00]);
+        frame.extend_from_slice(&(20u16 + 8).to_be_bytes());
+        frame.extend_from_slice(&[0, 1, 0, 0, 64, 1, 0, 0]);
+        frame.extend_from_slice(&src);
+        frame.extend_from_slice(&dst);
+        frame.extend_from_slice(&[icmp_type, 0, 0, 0, 0, 0, 0, 0]);
+        frame
+    }
+
+    fn ipv6_icmp(src_last: u8, dst_last: u8, icmp_type: u8) -> Vec<u8> {
         let mut frame = Vec::new();
         frame.extend_from_slice(&DST_MAC);
         frame.extend_from_slice(&SRC_MAC);
         frame.extend_from_slice(&0x86DDu16.to_be_bytes());
-
-        // IPv6 header, next header 58 (ICMPv6), 8-byte payload.
         frame.extend_from_slice(&[0x60, 0, 0, 0, 0, 8, 58, 64]);
-        frame.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-        frame.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]);
-        // Echo request: type 128, code 0.
-        frame.extend_from_slice(&[128, 0, 0, 0, 0, 0, 0, 0]);
+        for last in [src_last, dst_last] {
+            frame.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            frame.push(last);
+        }
+        frame.extend_from_slice(&[icmp_type, 0, 0, 0, 0, 0, 0, 0]);
+        frame
+    }
 
-        let header = header(&frame);
-        let observation = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
+    fn observed(frame: &[u8]) -> PacketObservation {
+        let header = header(frame);
+        observe(pcap::Packet::new(&header, frame), true, 1).expect("observed")
+    }
 
-        assert_eq!(observation.record.prot, 58);
+    /// An ICMP echo request and its reply are the two directions of one
+    /// exchange, so they must key as each other's reverse. Type and code
+    /// identify the direction, not an endpoint, so they cannot live in the port
+    /// slots: the reverse key swaps those, which would stop the two matching.
+    #[test]
+    fn an_icmp_echo_exchange_is_one_flow() {
+        let a = [192, 0, 2, 1];
+        let b = [198, 51, 100, 2];
+
+        let request = observed(&ipv4_icmp(a, b, 8));
+        let reply = observed(&ipv4_icmp(b, a, 0));
+
+        assert_eq!(request.key.src_port, 0, "no endpoint to report");
+        assert_eq!(request.key.dst_port, 0);
         assert_eq!(
-            (observation.record.src_port, observation.record.dst_port),
-            (observation.key.src_port, observation.key.dst_port),
-            "record endpoints must match the key"
+            request.reverse_key.src_ip, reply.key.src_ip,
+            "the reply must match the request's reverse key"
         );
-        assert_eq!(observation.key.src_port, 128, "ICMPv6 type");
-        assert_eq!(observation.key.dst_port, 0, "ICMPv6 code");
+        assert_eq!(request.reverse_key.dst_ip, reply.key.dst_ip);
+        assert_eq!(request.reverse_key.src_port, reply.key.src_port);
+        assert_eq!(request.reverse_key.dst_port, reply.key.dst_port);
+        assert_eq!(request.reverse_key.protocol, reply.key.protocol);
+    }
+
+    /// Both families group the same way.
+    #[test]
+    fn an_icmpv6_echo_exchange_is_one_flow() {
+        let request = observed(&ipv6_icmp(1, 2, 128));
+        let reply = observed(&ipv6_icmp(2, 1, 129));
+
+        assert_eq!(request.record.prot, 58);
+        assert_eq!((request.key.src_port, request.key.dst_port), (0, 0));
+        assert_eq!(request.reverse_key.src_ip, reply.key.src_ip);
+        assert_eq!(request.reverse_key.dst_ip, reply.key.dst_ip);
+        assert_eq!(request.reverse_key.src_port, reply.key.src_port);
+        assert_eq!(request.reverse_key.dst_port, reply.key.dst_port);
     }
 
     /// SCTP carries ports like TCP and UDP do, but paccel reports them on
@@ -198,35 +238,6 @@ mod tests {
             (observation.key.src_port, observation.key.dst_port),
             (50_005, 38_412)
         );
-        assert_eq!(
-            (observation.record.src_port, observation.record.dst_port),
-            (observation.key.src_port, observation.key.dst_port)
-        );
-    }
-
-    /// Both ICMP families report type and code the same way, so an echo
-    /// exchange is grouped identically whichever address family it uses.
-    #[test]
-    fn icmpv4_reports_type_and_code_like_icmpv6() {
-        let mut frame = Vec::new();
-        frame.extend_from_slice(&DST_MAC);
-        frame.extend_from_slice(&SRC_MAC);
-        frame.extend_from_slice(&0x0800u16.to_be_bytes());
-
-        // IPv4, protocol 1 (ICMP), 8-byte echo request header.
-        frame.extend_from_slice(&[0x45, 0x00]);
-        frame.extend_from_slice(&(20u16 + 8).to_be_bytes());
-        frame.extend_from_slice(&[0, 1, 0, 0, 64, 1, 0, 0]);
-        frame.extend_from_slice(&[192, 0, 2, 1]);
-        frame.extend_from_slice(&[198, 51, 100, 2]);
-        frame.extend_from_slice(&[8, 0, 0, 0, 0, 0, 0, 0]); // type 8, code 0
-
-        let header = header(&frame);
-        let observation = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
-
-        assert_eq!(observation.record.prot, 1);
-        assert_eq!(observation.key.src_port, 8, "ICMP type");
-        assert_eq!(observation.key.dst_port, 0, "ICMP code");
         assert_eq!(
             (observation.record.src_port, observation.record.dst_port),
             (observation.key.src_port, observation.key.dst_port)
