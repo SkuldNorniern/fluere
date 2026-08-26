@@ -321,6 +321,85 @@ mod tests {
         );
     }
 
+    /// A VXLAN frame carrying `inner`, on segment `vni`, between the given
+    /// outer endpoints.
+    fn vxlan(outer_dst_last: u8, vni: u32) -> Vec<u8> {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&DST_MAC);
+        frame.extend_from_slice(&SRC_MAC);
+        frame.extend_from_slice(&0x0800u16.to_be_bytes());
+
+        // Outer IPv4 + UDP to the VXLAN port.
+        let inner_len = 8 + 14 + 20 + 20; // vxlan + eth + ip + tcp
+        frame.extend_from_slice(&[0x45, 0x00]);
+        frame.extend_from_slice(&((20 + 8 + inner_len) as u16).to_be_bytes());
+        frame.extend_from_slice(&[0, 1, 0, 0, 64, 17, 0, 0]);
+        frame.extend_from_slice(&[203, 0, 113, 1]);
+        frame.extend_from_slice(&[203, 0, 113, outer_dst_last]);
+        frame.extend_from_slice(&50_000u16.to_be_bytes());
+        frame.extend_from_slice(&4789u16.to_be_bytes());
+        frame.extend_from_slice(&((8 + inner_len) as u16).to_be_bytes());
+        frame.extend_from_slice(&[0, 0]);
+
+        // VXLAN header: flags, reserved, VNI, reserved.
+        frame.extend_from_slice(&[0x08, 0, 0, 0]);
+        frame.extend_from_slice(&vni.to_be_bytes()[1..]);
+        frame.push(0);
+
+        // Inner Ethernet + IPv4 + TCP, identical for every tenant.
+        frame.extend_from_slice(&DST_MAC);
+        frame.extend_from_slice(&SRC_MAC);
+        frame.extend_from_slice(&0x0800u16.to_be_bytes());
+        frame.extend_from_slice(&[0x45, 0x00]);
+        frame.extend_from_slice(&40u16.to_be_bytes());
+        frame.extend_from_slice(&[0, 1, 0, 0, 32, 6, 0, 0]);
+        frame.extend_from_slice(&[10, 1, 0, 1]);
+        frame.extend_from_slice(&[10, 2, 0, 2]);
+        frame.extend_from_slice(&41_001u16.to_be_bytes());
+        frame.extend_from_slice(&9_000u16.to_be_bytes());
+        frame.extend_from_slice(&[0; 8]);
+        frame.extend_from_slice(&[0x50, 0x02, 0x20, 0x00, 0, 0, 0, 0]);
+        frame
+    }
+
+    /// Tenants on separate VXLAN segments reuse the same private ranges, so
+    /// their inner five-tuples collide. Keying on the inner addresses alone
+    /// would put two tenants' traffic in one record.
+    #[test]
+    fn tenants_on_different_segments_do_not_share_a_flow() {
+        let tenant_a = observed(&vxlan(2, 100));
+        let tenant_b = observed(&vxlan(2, 200));
+
+        assert_eq!(tenant_a.key.src_ip, tenant_b.key.src_ip, "same inner tuple");
+        assert_eq!(tenant_a.key.src_port, tenant_b.key.src_port);
+        assert_ne!(tenant_a.key, tenant_b.key, "but different flows");
+
+        let encap = tenant_a.key.encapsulation.expect("tunnel recorded");
+        assert_eq!(encap.kind.as_str(), "vxlan");
+        assert_eq!(encap.vni, 100);
+    }
+
+    /// Different tunnel endpoints separate flows even on the same segment.
+    #[test]
+    fn the_same_segment_through_different_tunnels_stays_separate() {
+        let one = observed(&vxlan(2, 100));
+        let other = observed(&vxlan(9, 100));
+
+        assert_ne!(one.key, other.key);
+        assert_ne!(
+            one.key.encapsulation.expect("tunnel").outer_dst,
+            other.key.encapsulation.expect("tunnel").outer_dst
+        );
+    }
+
+    /// Untunnelled traffic carries no encapsulation, so nothing changes for it.
+    #[test]
+    fn plain_traffic_has_no_encapsulation() {
+        let frame = tcp_frame();
+        let observation = observed(&frame);
+        assert!(observation.key.encapsulation.is_none());
+    }
+
     #[test]
     fn an_empty_packet_is_rejected() {
         let header = header(&[]);

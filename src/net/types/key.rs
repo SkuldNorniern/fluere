@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use crate::net::types::MacAddress;
+use crate::net::types::{Encapsulation, MacAddress};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Key {
@@ -11,6 +11,12 @@ pub struct Key {
     pub protocol: u8,
     pub src_mac: MacAddress,
     pub dst_mac: MacAddress,
+    /// The tunnel this flow arrived inside, when it arrived inside one.
+    ///
+    /// Part of flow identity because inner addresses alone do not identify a
+    /// flow: overlapping private ranges in different tunnels would otherwise
+    /// share one record.
+    pub encapsulation: Option<Encapsulation>,
 }
 impl Key {
     pub fn mac_defaultate(&mut self) {
