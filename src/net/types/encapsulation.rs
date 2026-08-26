@@ -7,6 +7,7 @@ pub enum EncapKind {
     Geneve,
     Gre,
     Mpls,
+    Pppoe,
     /// IP directly inside IP, with no tunnel header of its own.
     IpInIp,
     /// A tunnel paccel decoded through but that is none of the above.
@@ -20,6 +21,7 @@ impl EncapKind {
             EncapKind::Geneve => "geneve",
             EncapKind::Gre => "gre",
             EncapKind::Mpls => "mpls",
+            EncapKind::Pppoe => "pppoe",
             EncapKind::IpInIp => "ipinip",
             EncapKind::Other => "tunnel",
         }
@@ -36,9 +38,13 @@ impl EncapKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Encapsulation {
     pub kind: EncapKind,
-    /// Outermost addresses, which identify the tunnel endpoints.
-    pub outer_src: IpAddr,
-    pub outer_dst: IpAddr,
-    /// Segment identifier, for tunnels that carry one. Zero otherwise.
-    pub vni: u32,
+    /// The tunnel's own endpoints, for tunnels that run over IP.
+    ///
+    /// `None` for encapsulations that sit below IP and so have no addresses of
+    /// their own, such as MPLS and PPPoE.
+    pub outer: Option<(IpAddr, IpAddr)>,
+    /// What distinguishes this encapsulation from another of the same kind
+    /// between the same endpoints: a VXLAN or Geneve VNI, a GRE key, an MPLS
+    /// label, a PPPoE session. Zero when the encapsulation has no such field.
+    pub id: u32,
 }

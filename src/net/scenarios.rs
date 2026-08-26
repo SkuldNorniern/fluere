@@ -125,6 +125,36 @@ pub fn sctp(source_port: u16, destination_port: u16) -> Vec<u8> {
     header
 }
 
+/// A GRE header carrying `protocol`, optionally with an RFC 2890 key.
+pub fn gre(protocol: u16, key: Option<u32>) -> Vec<u8> {
+    let mut header = Vec::with_capacity(8);
+    let flags: u16 = if key.is_some() { 0x2000 } else { 0 };
+    header.extend_from_slice(&flags.to_be_bytes());
+    header.extend_from_slice(&protocol.to_be_bytes());
+    if let Some(key) = key {
+        header.extend_from_slice(&key.to_be_bytes());
+    }
+    header
+}
+
+/// A single-label MPLS shim, bottom of stack.
+pub fn mpls(label: u32) -> Vec<u8> {
+    let word = (label << 12) | (1 << 8) | 64; // label, bottom-of-stack, TTL
+    word.to_be_bytes().to_vec()
+}
+
+/// A PPPoE session header carrying IPv4 over PPP.
+pub fn pppoe(session_id: u16, payload: &[u8]) -> Vec<u8> {
+    let ppp_len = (payload.len() + 2) as u16;
+    let mut header = Vec::with_capacity(8 + payload.len());
+    header.extend_from_slice(&[0x11, 0x00]); // version/type, session data
+    header.extend_from_slice(&session_id.to_be_bytes());
+    header.extend_from_slice(&ppp_len.to_be_bytes());
+    header.extend_from_slice(&0x0021u16.to_be_bytes()); // PPP: IPv4
+    header.extend_from_slice(payload);
+    header
+}
+
 /// Wrap an inner Ethernet frame in a VXLAN header, ready to be a UDP payload.
 pub fn vxlan(vni: u32, inner_frame: &[u8]) -> Vec<u8> {
     let mut header = Vec::with_capacity(8 + inner_frame.len());
@@ -584,6 +614,76 @@ mod tests {
             ),
             (1, 1)
         );
+    }
+
+    /// Two GRE tunnels can share a pair of endpoints and be told apart only by
+    /// their RFC 2890 key.
+    #[test]
+    fn gre_tunnels_are_separated_by_their_key() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_001, 9_000, SYN),
+        );
+
+        for key in [0x1111, 0x2222] {
+            let mut payload = gre(0x0800, Some(key));
+            payload.extend_from_slice(&inner);
+            capture.push(&v4(47, 64, [203, 0, 113, 1], [203, 0, 113, 2], &payload));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+        assert_eq!(flows.count(|r| r.src_port == 41_001), 2, "two tunnels");
+    }
+
+    /// MPLS sits below IP and has no addresses of its own, but the label still
+    /// separates traffic that would otherwise collide.
+    #[test]
+    fn mpls_labels_separate_traffic() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_004, 9_000, SYN),
+        );
+
+        for label in [1_000, 2_000] {
+            let mut payload = mpls(label);
+            payload.extend_from_slice(&inner);
+            capture.push(&ethernet(0x8847, &payload));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+        assert_eq!(flows.count(|r| r.src_port == 41_004), 2, "two label paths");
+    }
+
+    /// Subscribers on one access network share addresses and are told apart
+    /// only by their PPPoE session.
+    #[test]
+    fn pppoe_sessions_separate_subscribers() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_005, 9_000, SYN),
+        );
+
+        for session in [1, 2] {
+            capture.push(&ethernet(0x8864, &pppoe(session, &inner)));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+        assert_eq!(flows.count(|r| r.src_port == 41_005), 2, "two subscribers");
     }
 
     /// IPsec associations are one-way and identified by their SPI, not by ports.
