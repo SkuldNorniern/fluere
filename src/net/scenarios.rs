@@ -21,6 +21,22 @@ const DST_MAC: [u8; 6] = [0xbb; 6];
 
 // ---------------------------------------------------------------- builders
 
+/// An Ethernet frame carrying a stack of VLAN tags, outermost first.
+pub fn vlan_ethernet(tags: &[u16], ethertype: u16, payload: &[u8]) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(14 + 4 * tags.len() + payload.len());
+    frame.extend_from_slice(&DST_MAC);
+    frame.extend_from_slice(&SRC_MAC);
+
+    for tag in tags {
+        frame.extend_from_slice(&0x8100u16.to_be_bytes());
+        frame.extend_from_slice(&tag.to_be_bytes());
+    }
+
+    frame.extend_from_slice(&ethertype.to_be_bytes());
+    frame.extend_from_slice(payload);
+    frame
+}
+
 pub fn ethernet(ethertype: u16, payload: &[u8]) -> Vec<u8> {
     let mut frame = Vec::with_capacity(14 + payload.len());
     frame.extend_from_slice(&DST_MAC);
@@ -464,6 +480,109 @@ mod tests {
             flows.count(|r| r.src_port == 41_001),
             2,
             "two tenants with the same inner tuple must not share a record"
+        );
+    }
+
+    /// A VLAN is its own broadcast domain, so two segments reuse addresses
+    /// freely. Without the tag in the key their traffic shares one record.
+    #[test]
+    fn vlan_segments_stay_apart() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            64,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_001, 9_000, SYN),
+        );
+
+        capture
+            .push(&vlan_ethernet(&[100], 0x0800, &inner))
+            .push(&vlan_ethernet(&[200], 0x0800, &inner));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|r| r.src_port == 41_001),
+            2,
+            "two segments with the same inner tuple must not share a record"
+        );
+    }
+
+    /// A tagged frame and an untagged one are different segments too.
+    #[test]
+    fn tagged_and_untagged_traffic_stay_apart() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            64,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_002, 9_000, SYN),
+        );
+
+        capture
+            .push(&vlan_ethernet(&[100], 0x0800, &inner))
+            .push(&ethernet(0x0800, &inner));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+        assert_eq!(flows.count(|r| r.src_port == 41_002), 2);
+    }
+
+    /// Stacked tags identify a service and a customer separately.
+    #[test]
+    fn qinq_inner_tags_separate_customers() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            64,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_003, 9_000, SYN),
+        );
+
+        capture
+            .push(&vlan_ethernet(&[10, 20], 0x0800, &inner))
+            .push(&vlan_ethernet(&[10, 30], 0x0800, &inner));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+        assert_eq!(
+            flows.count(|r| r.src_port == 41_003),
+            2,
+            "same outer tag, different customer"
+        );
+    }
+
+    /// Return traffic comes back on the same segment, so the tag is not
+    /// reversed with the addresses.
+    #[test]
+    fn a_conversation_on_one_vlan_is_one_flow() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .push(&vlan_ethernet(
+                &[100],
+                0x0800,
+                &ipv4(6, 64, A, B, &tcp(40_010, 443, SYN)),
+            ))
+            .push(&vlan_ethernet(
+                &[100],
+                0x0800,
+                &ipv4(6, 64, B, A, &tcp(443, 40_010, SYN_ACK)),
+            ));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.len(), 1);
+        assert_eq!(
+            (
+                flows.only(|r| r.prot == 6).out_pkts,
+                flows.only(|r| r.prot == 6).in_pkts
+            ),
+            (1, 1)
         );
     }
 

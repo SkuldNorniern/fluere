@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use crate::net::types::{Encapsulation, MacAddress};
+use crate::net::types::{Encapsulation, MacAddress, VlanTags};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Key {
@@ -11,6 +11,11 @@ pub struct Key {
     pub protocol: u8,
     pub src_mac: MacAddress,
     pub dst_mac: MacAddress,
+    /// The VLAN segment this flow arrived on. Untagged frames carry none.
+    ///
+    /// Part of flow identity because a VLAN is its own broadcast domain, and
+    /// separate domains reuse addresses freely.
+    pub vlan: VlanTags,
     /// The tunnel this flow arrived inside, when it arrived inside one.
     ///
     /// Part of flow identity because inner addresses alone do not identify a
