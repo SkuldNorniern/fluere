@@ -26,9 +26,13 @@ fn innermost(parsed: &ParsedPacket) -> &ParsedPacket {
 
 /// Parse one captured frame into a flow record.
 ///
-/// Byte accounting intentionally uses the full top-level captured frame length
+/// Byte accounting intentionally uses the full top-level frame length
 /// everywhere, including tunneled traffic. This consistently includes link and
-/// tunnel overhead instead of mixing captured lengths with IP-declared lengths.
+/// tunnel overhead instead of mixing frame lengths with IP-declared lengths.
+///
+/// The length is taken from the capture header's original wire length, not from
+/// the bytes actually captured: with a snaplen shorter than the frame the two
+/// differ, and counting captured bytes would silently under-report traffic.
 pub fn parse_fluereflow(
     packet: pcap::Packet,
     linktype: u16,
@@ -49,7 +53,14 @@ pub fn parse_fluereflow(
         packet.header.ts.tv_sec as u64,
         packet.header.ts.tv_usec as u64,
     );
-    let doctets = packet.data.len();
+    // `header.len` is the length on the wire; `data` is only what the snaplen
+    // let through. Sources that do not report a wire length send 0, so fall
+    // back to what was captured.
+    let doctets = if packet.header.len > 0 {
+        packet.header.len as usize
+    } else {
+        packet.data.len()
+    };
     let inner = innermost(&parsed);
 
     if let Some(arp) = inner.arp.as_ref() {
@@ -507,6 +518,31 @@ mod tests {
             (record.min_pkt, record.max_pkt),
             (frame.len() as u32, frame.len() as u32)
         );
+    }
+
+    #[test]
+    fn byte_accounting_uses_wire_length_not_captured_length() {
+        let tcp = tcp_segment(12_345, 443, 0x02);
+        let ipv4 = ipv4_packet(6, 42, 10, [192, 0, 2, 1], [198, 51, 100, 2], &tcp);
+        let frame = ethernet_frame(0x0800, &ipv4);
+
+        // A short snaplen delivered the headers but cut a 200-byte payload off,
+        // so the capture header still reports the full length seen on the wire.
+        let wire_len = frame.len() + 200;
+        let header = PacketHeader {
+            ts: libc::timeval {
+                tv_sec: 1,
+                tv_usec: 2,
+            },
+            caplen: frame.len() as u32,
+            len: wire_len as u32,
+        };
+
+        let (doctets, _, record) = parse_fluereflow(Packet::new(&header, &frame), 1)
+            .expect("a truncated frame still yields a record");
+
+        assert_eq!(doctets, wire_len);
+        assert_eq!(record.min_pkt as usize, wire_len);
     }
 
     #[test]
