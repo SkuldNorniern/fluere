@@ -204,6 +204,35 @@ mod tests {
         );
     }
 
+    /// Both ICMP families report type and code the same way, so an echo
+    /// exchange is grouped identically whichever address family it uses.
+    #[test]
+    fn icmpv4_reports_type_and_code_like_icmpv6() {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&DST_MAC);
+        frame.extend_from_slice(&SRC_MAC);
+        frame.extend_from_slice(&0x0800u16.to_be_bytes());
+
+        // IPv4, protocol 1 (ICMP), 8-byte echo request header.
+        frame.extend_from_slice(&[0x45, 0x00]);
+        frame.extend_from_slice(&(20u16 + 8).to_be_bytes());
+        frame.extend_from_slice(&[0, 1, 0, 0, 64, 1, 0, 0]);
+        frame.extend_from_slice(&[192, 0, 2, 1]);
+        frame.extend_from_slice(&[198, 51, 100, 2]);
+        frame.extend_from_slice(&[8, 0, 0, 0, 0, 0, 0, 0]); // type 8, code 0
+
+        let header = header(&frame);
+        let observation = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
+
+        assert_eq!(observation.record.prot, 1);
+        assert_eq!(observation.key.src_port, 8, "ICMP type");
+        assert_eq!(observation.key.dst_port, 0, "ICMP code");
+        assert_eq!(
+            (observation.record.src_port, observation.record.dst_port),
+            (observation.key.src_port, observation.key.dst_port)
+        );
+    }
+
     #[test]
     fn an_empty_packet_is_rejected() {
         let header = header(&[]);
