@@ -71,6 +71,7 @@ pub enum FluereError {
     Parse(ParseError),
     Capture(CaptureError),
     Config(ConfigError),
+    Export(csv::Error),
     Plugin(String),
 }
 
@@ -81,6 +82,7 @@ impl fmt::Display for FluereError {
             Self::Parse(error) => error.fmt(f),
             Self::Capture(error) => error.fmt(f),
             Self::Config(error) => error.fmt(f),
+            Self::Export(error) => write!(f, "Export error: {}", error),
             Self::Plugin(error) => write!(f, "Plugin error: {}", error),
         }
     }
@@ -107,6 +109,12 @@ impl From<CaptureError> for FluereError {
 impl From<ConfigError> for FluereError {
     fn from(error: ConfigError) -> Self {
         Self::Config(error)
+    }
+}
+
+impl From<csv::Error> for FluereError {
+    fn from(error: csv::Error) -> Self {
+        Self::Export(error)
     }
 }
 
