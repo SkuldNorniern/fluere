@@ -13,8 +13,8 @@ pub struct CaptureDevice {
 }
 
 impl CaptureDevice {
-    pub fn new(device: Device) -> Result<CaptureDevice, CaptureError> {
-        let capture = initialize_capture(device.clone())?;
+    pub fn new(device: Device, snaplen: u64) -> Result<CaptureDevice, CaptureError> {
+        let capture = initialize_capture(device.clone(), snaplen)?;
         let name: Cow<'static, str> = Cow::Owned(device.name);
         let desc: Cow<'static, str> = Cow::Owned(device.desc.unwrap_or_default());
         debug!("Using device: {}", name);
@@ -61,14 +61,24 @@ pub fn find_device(identifier: &str) -> Result<Device, CaptureError> {
     Err(CaptureError::DeviceNotFound(identifier.to_string()))
 }
 
-fn initialize_capture(device: Device) -> Result<Capture<Active>, CaptureError> {
-    info!("Opening capture session for device {}", device.name);
+/// Open a live capture on `device`.
+///
+/// `snaplen` is how many bytes of each packet are handed to the parser. Byte
+/// accounting still uses the wire length reported by the capture header, but a
+/// short snaplen truncates the payload paccel needs to reach inner tunnel
+/// headers, so the full-frame default is the right one for flow analysis.
+fn initialize_capture(device: Device, snaplen: u64) -> Result<Capture<Active>, CaptureError> {
+    info!(
+        "Opening capture session for device {} with snaplen {}",
+        device.name, snaplen
+    );
+    // libpcap takes a signed length; anything past i32::MAX is nonsense, and 0
+    // would capture no bytes at all, so clamp into the range it accepts.
+    let snaplen = snaplen.clamp(1, i32::MAX as u64) as i32;
+
     Capture::from_device(device)?
         .promisc(true)
-        // FEAT:TASK: set snaplen as a Flag from the CLI
-        // Capture whole frames: a short snaplen truncates the payload paccel
-        // needs to reach inner tunnel headers.
-        .snaplen(65535)
+        .snaplen(snaplen)
         .timeout(60000)
         .immediate_mode(true)
         .open()
