@@ -102,10 +102,9 @@ pub fn cli_template() -> Command {
                 )
                 .arg(
                     Arg::new("csv")
-                        .help("Title of the exported csv file")
+                        .help("Title of the exported csv file (default: <pcap name>_converted)")
                         .short('c')
-                        .long("csv")
-                        .default_value("output"),
+                        .long("csv"),
                 )
                 .arg(
                     Arg::new("timeout")
@@ -359,12 +358,14 @@ fn parse_offline_args(args: &clap::ArgMatches) -> Result<Args, ConfigError> {
     let use_mac = args.get_flag("useMACaddress");
     let _use_ipv6 = args.get_flag("use_ipv6");
     let file = required_string(args, "file", "File not specified")?;
-    let csv = required_string(args, "csv", "CSV file not specified")?;
+    // Left unset when the user did not pass -c, so offline can fall back to a
+    // name derived from the capture file.
+    let csv = args.get_one::<String>("csv").cloned();
     let timeout = required_value(args, "timeout", "Timeout argument missing")?;
 
     Ok(Args::new(
         None,
-        Files::new(Some(csv), Some(file), None),
+        Files::new(csv, Some(file), None),
         Parameters::new(Some(use_mac), Some(timeout), None, None, None),
         // Some(verbose),
     ))
