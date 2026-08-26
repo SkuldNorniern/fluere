@@ -17,6 +17,18 @@ pub struct Logger {
     pub file: Option<File>,
 }
 
+/// Platform default location for the log file.
+fn default_log_path() -> PathBuf {
+    PathBuf::from(
+        #[cfg(target_os = "windows")]
+        "C:\\Program Files\\fluere\\fluere.log",
+        #[cfg(target_os = "macos")]
+        "/Library/Logs/fluere/fluere.log",
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        "/var/log/fluere/fluere.log",
+    )
+}
+
 impl Logger {
     pub fn new(
         file_path: Option<PathBuf>,
@@ -24,46 +36,50 @@ impl Logger {
         write_to_std: Option<Logstdout>,
         write_to_file: bool,
     ) -> Self {
-        let mut path = file_path;
-        if path.is_none() {
-            path = Some(PathBuf::from(
-                #[cfg(target_os = "linux")]
-                "/var/log/fluere/fluere.log",
-                #[cfg(target_os = "windows")]
-                "C:\\Program Files\\fluere\\fluere.log",
-                #[cfg(target_os = "macos")]
-                "/Library/Logs/fluere/fluere.log",
-                #[cfg(target_os = "freebsd")]
-                "/var/log/fluere/fluere.log",
-                #[cfg(not(any(
-                    target_os = "linux",
-                    target_os = "windows",
-                    target_os = "macos",
-                    target_os = "freebsd"
-                )))]
-                "/var/log/fluere/fluere.log",
-            ));
-        }
-        let mut file = None;
+        let file = if write_to_file {
+            Self::open_log_file(file_path)
+        } else {
+            None
+        };
 
-        // check if there is a file at the path and create it if it doesn't exist
-        if let Some(path_ref) = path.as_ref()
-            && let Some(parent) = path_ref.parent()
-        {
-            std::fs::create_dir_all(parent).expect("Failed to create log directory");
-        }
-
-        if write_to_file {
-            file = Some(
-                File::create(path.as_ref().expect("Log path not set"))
-                    .expect("Failed to create log file"),
-            );
-        }
         Logger {
-            write_to_file: false,
+            write_to_file: file.is_some(),
             write_to_std,
             severity: severity.unwrap_or(Level::Info),
             file,
+        }
+    }
+
+    /// Open the log file, creating its directory if it does not exist.
+    ///
+    /// Logging must never take the process down, so every failure here falls
+    /// back to stderr-only logging. The directory is touched only when file
+    /// logging was actually asked for: the default path lives under a system
+    /// log directory that an unprivileged run cannot create.
+    fn open_log_file(file_path: Option<PathBuf>) -> Option<File> {
+        let path = file_path.unwrap_or_else(default_log_path);
+
+        if let Some(parent) = path.parent()
+            && let Err(error) = std::fs::create_dir_all(parent)
+        {
+            eprintln!(
+                "fluere: cannot create log directory {}: {}. Logging to stderr only.",
+                parent.display(),
+                error
+            );
+            return None;
+        }
+
+        match File::create(&path) {
+            Ok(file) => Some(file),
+            Err(error) => {
+                eprintln!(
+                    "fluere: cannot create log file {}: {}. Logging to stderr only.",
+                    path.display(),
+                    error
+                );
+                None
+            }
         }
     }
 
@@ -104,7 +120,8 @@ impl Log for Logger {
         if self.write_to_file
             && let Some(mut file_ref) = self.file.as_ref()
         {
-            writeln!(file_ref, "{}", formatted_message).expect("Failed to write to log file");
+            // A logger cannot report its own failure to log; drop the error.
+            let _ = writeln!(file_ref, "{}", formatted_message);
         }
     }
 
