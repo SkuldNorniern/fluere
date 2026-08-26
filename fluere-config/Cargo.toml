@@ -1,6 +1,6 @@
 [package]
 name = "fluere-config"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 readme = "README.md"
 description = "Configuration manager for Fluere."
@@ -13,6 +13,7 @@ repository = "https://github.com/SkuldNorniern/fluere"
 dirs = "5.0.1"
 serde = { version = "1.0.193", features = ["derive"]}
 toml = "0.8.8"
+tavra = "0.1.0"
 log = { version = "0.4.21", features = ["std"], optional = true }
 
 [lib]
@@ -21,3 +22,7 @@ name = "fluere_config"
 
 [features]
 log = ["dep:log"]
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
