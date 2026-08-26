@@ -2,6 +2,13 @@ use std::collections::{BTreeMap, HashMap};
 
 use log::trace;
 
+/// Widest expiry bucket, in microseconds. Coarse on purpose: flows falling due
+/// within the same second share one queue entry instead of each taking their
+/// own. A flow can idle out up to one bucket late, which is immaterial against
+/// a timeout measured in minutes. Short timeouts narrow the bucket to match, so
+/// the delay is never a large fraction of the timeout itself.
+const MAX_BUCKET: u64 = 1_000_000;
+
 use crate::net::flows::update_flow;
 use crate::net::parser::PacketObservation;
 use crate::net::types::{Key, TcpFlags};
@@ -33,14 +40,20 @@ struct FlowState {
     forward_fin: bool,
     /// FIN seen travelling the other way.
     reverse_fin: bool,
+    /// The deadline this flow currently has an entry queued for. A queued
+    /// entry that disagrees with this is a leftover from an earlier round and
+    /// is dropped when the sweep reaches it, so a flow never has more than one
+    /// live entry.
+    scheduled: u64,
 }
 
 impl FlowState {
-    fn new(record: FluereRecord) -> Self {
+    fn new(record: FluereRecord, scheduled: u64) -> Self {
         FlowState {
             record,
             forward_fin: false,
             reverse_fin: false,
+            scheduled,
         }
     }
 
@@ -63,23 +76,32 @@ pub struct AcceptOutcome {
 
 pub struct FlowEngine {
     active: HashMap<Key, FlowState>,
-    expirations: BTreeMap<u64, Vec<Key>>,
-    current_expirations: HashMap<Key, u64>,
-    /// Idle timeout in milliseconds, or `None` when the caller asked for no
+    /// Flows due to be checked, bucketed by second. A flow is queued once when
+    /// it opens and then only ever re-queued by a sweep, so packets do no
+    /// expiration bookkeeping at all and this holds at most one live entry per
+    /// active flow.
+    due: BTreeMap<u64, Vec<Key>>,
+    /// Idle timeout in microseconds, or `None` when the caller asked for no
     /// timeout at all. Flows in a no-timeout engine leave only through TCP
     /// termination or `drain`.
-    flow_timeout: Option<u64>,
+    timeout: Option<u64>,
+    /// Width of one bucket in `due`, in microseconds.
+    bucket: u64,
 }
 
 impl FlowEngine {
     /// `flow_timeout` is an idle timeout in milliseconds; zero means flows
     /// never expire on their own, matching what the CLI documents.
     pub fn new(flow_timeout: u64) -> Self {
+        let timeout = (flow_timeout > 0).then_some(flow_timeout * 1_000);
+
         Self {
             active: HashMap::new(),
-            expirations: BTreeMap::new(),
-            current_expirations: HashMap::new(),
-            flow_timeout: (flow_timeout > 0).then_some(flow_timeout),
+            due: BTreeMap::new(),
+            timeout,
+            // Never coarser than the timeout, so the rounding delay stays a
+            // small fraction of it however short the timeout is.
+            bucket: timeout.unwrap_or(MAX_BUCKET).clamp(1, MAX_BUCKET),
         }
     }
 
@@ -117,8 +139,10 @@ impl FlowEngine {
                     // No SYN on the first packet means the capture started
                     // partway through an existing connection.
                     record.mid_stream = record.prot == 6 && flags.syn == 0;
-                    self.active.insert(key, FlowState::new(record));
-                    self.schedule_expiration(key, packet_time);
+
+                    let deadline = self.deadline_from(packet_time);
+                    self.active.insert(key, FlowState::new(record, deadline));
+                    self.enqueue(key, deadline);
                     false
                 }
             },
@@ -158,10 +182,9 @@ impl FlowEngine {
             None
         };
 
-        self.schedule_expiration(flow_key, packet_time);
-
+        // Nothing to update here: `record.last` is the authoritative deadline
+        // and the sweep reads it directly, so a packet costs no bookkeeping.
         let reason = reason?;
-        self.current_expirations.remove(&flow_key);
         self.active
             .remove(&flow_key)
             .map(|state| (state.record, reason))
@@ -201,35 +224,60 @@ impl FlowEngine {
     }
 
     pub fn sweep_expired(&mut self, current_time: u64) -> Vec<FluereRecord> {
-        let expired_times: Vec<u64> = self
-            .expirations
-            .range(..=current_time)
-            .map(|(&expiration, _)| expiration)
+        let Some(timeout) = self.timeout else {
+            return Vec::new();
+        };
+
+        let current_bucket = current_time / self.bucket;
+        let due_buckets: Vec<u64> = self
+            .due
+            .range(..=current_bucket)
+            .map(|(&at, _)| at)
             .collect();
         let mut expired = Vec::new();
+        // Collected rather than inserted inline, so re-queued flows are never
+        // revisited by the sweep that queued them.
+        let mut due_again: Vec<(u64, Key)> = Vec::new();
 
-        for expiration in expired_times {
-            if let Some(keys) = self.expirations.remove(&expiration) {
-                for key in keys {
-                    if self.current_expirations.get(&key) != Some(&expiration) {
-                        continue;
-                    }
+        for bucket in due_buckets {
+            let Some(keys) = self.due.remove(&bucket) else {
+                continue;
+            };
 
-                    self.current_expirations.remove(&key);
+            for key in keys {
+                let Some(state) = self.active.get_mut(&key) else {
+                    // The flow already left through a FIN, a RST, or a drain.
+                    continue;
+                };
+                if state.scheduled / self.bucket != bucket {
+                    // A leftover entry from before this flow was re-queued.
+                    continue;
+                }
+
+                let deadline = state.record.last + timeout;
+                if deadline <= current_time {
                     if let Some(state) = self.active.remove(&key) {
                         trace!("flow ended: {:?}", FlowEndReason::IdleTimeout);
                         expired.push(state.record);
                     }
+                } else {
+                    // Touched since it was queued, so it lives on until its
+                    // real deadline.
+                    state.scheduled = deadline;
+                    due_again.push((deadline / self.bucket, key));
                 }
             }
+        }
+
+        for (bucket, key) in due_again {
+            self.due.entry(bucket).or_default().push(key);
         }
 
         expired
     }
 
     pub fn drain(&mut self) -> Vec<FluereRecord> {
-        self.expirations.clear();
-        self.current_expirations.clear();
+        self.due.clear();
         self.active
             .drain()
             .map(|(_, state)| {
@@ -253,15 +301,28 @@ impl FlowEngine {
         self.active.len()
     }
 
-    /// Queue `key` to expire one idle timeout after `packet_time`. Does
-    /// nothing when the engine was built without a timeout.
-    fn schedule_expiration(&mut self, key: Key, packet_time: u64) {
-        let Some(timeout) = self.flow_timeout else {
+    /// Number of entries queued for expiry. The whole point of the bucketed
+    /// design is that this tracks active flows, not packets seen.
+    #[cfg(test)]
+    fn queued_count(&self) -> usize {
+        self.due.values().map(Vec::len).sum()
+    }
+
+    /// When a flow last seen at `packet_time` would idle out.
+    fn deadline_from(&self, packet_time: u64) -> u64 {
+        packet_time + self.timeout.unwrap_or(0)
+    }
+
+    /// Queue `key` to be checked once its deadline comes round. Does nothing
+    /// when the engine was built without a timeout.
+    fn enqueue(&mut self, key: Key, deadline: u64) {
+        if self.timeout.is_none() {
             return;
-        };
-        let expiration = packet_time + timeout * 1_000;
-        self.expirations.entry(expiration).or_default().push(key);
-        self.current_expirations.insert(key, expiration);
+        }
+        self.due
+            .entry(deadline / self.bucket)
+            .or_default()
+            .push(key);
     }
 }
 
@@ -644,6 +705,59 @@ mod tests {
             2,
             "the closed connection and the idled-out flow both come back"
         );
+        assert_eq!(engine.active_count(), 0);
+    }
+
+    #[test]
+    fn expiry_bookkeeping_tracks_flows_not_packets() {
+        let (key, reverse) = keys(17);
+        let mut engine = FlowEngine::new(10);
+
+        // One flow, a thousand packets. The old design queued an entry per
+        // packet and only dropped them once the clock walked past.
+        for packet in 0..1_000u64 {
+            engine.offer(key, reverse, record(17, packet), 60, flags(0, 0, 0), packet);
+        }
+
+        assert_eq!(engine.active_count(), 1);
+        assert_eq!(
+            engine.queued_count(),
+            1,
+            "a flow keeps one queue entry however many packets it sees"
+        );
+    }
+
+    #[test]
+    fn a_flow_touched_before_its_deadline_is_requeued_not_expired() {
+        let (key, reverse) = keys(17);
+        let mut engine = FlowEngine::new(10);
+
+        engine.offer(key, reverse, record(17, 1_000), 60, flags(0, 0, 0), 1_000);
+        engine.offer(key, reverse, record(17, 9_000), 60, flags(0, 0, 0), 9_000);
+
+        // Past the original deadline, but the flow was touched at 9_000.
+        assert!(engine.sweep_expired(12_000).is_empty());
+        assert_eq!(engine.active_count(), 1);
+        assert_eq!(engine.queued_count(), 1, "re-queued exactly once");
+
+        // Past the deadline that the later packet set.
+        assert_eq!(engine.sweep_expired(19_000).len(), 1);
+        assert_eq!(engine.active_count(), 0);
+    }
+
+    #[test]
+    fn a_closed_flow_leaves_no_entry_behind() {
+        let (key, reverse) = keys(6);
+        let mut engine = FlowEngine::new(10);
+
+        engine.offer(key, reverse, record(6, 1), 60, flags(1, 0, 0), 1);
+        engine
+            .offer(reverse, key, record(6, 2), 60, flags(0, 0, 1), 2)
+            .expect("RST closes the flow");
+
+        // The queue entry outlives the flow; the sweep drops it on lookup.
+        assert!(engine.sweep_expired(1_000_000).is_empty());
+        assert_eq!(engine.queued_count(), 0);
         assert_eq!(engine.active_count(), 0);
     }
 
