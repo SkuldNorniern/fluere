@@ -17,11 +17,15 @@ use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket, StopLayer};
 
 /// Ports fluere reports for protocols that carry none of their own.
 ///
-/// ICMP puts its type and code in the port slots, SCTP reports the ports paccel
-/// does not surface through `TransportSegment`, and a GRE tunnel whose inner
-/// flow could not be decoded reports its inner protocol type. Both the flow key
-/// and the flow record read this, so a flow cannot be keyed one way and
-/// reported another.
+/// SCTP reports the ports paccel does not surface through `TransportSegment`,
+/// and a GRE tunnel whose inner flow could not be decoded reports its inner
+/// protocol type. Both the flow key and the flow record read this, so a flow
+/// cannot be keyed one way and reported another.
+///
+/// ICMP is deliberately absent. Its type and code identify a direction rather
+/// than an endpoint, so putting them here would make an echo request and its
+/// reply two flows instead of the two directions of one. They belong in a typed
+/// endpoint field, which the record does not have yet.
 fn pseudo_ports(parsed: &ParsedPacket, protocol: u8) -> Option<(u16, u16)> {
     match protocol {
         // SCTP has real ports; they just do not arrive through
@@ -30,16 +34,6 @@ fn pseudo_ports(parsed: &ParsedPacket, protocol: u8) -> Option<(u16, u16)> {
             .sctp
             .as_ref()
             .map(|sctp| (sctp.source_port, sctp.destination_port)),
-        // ICMP has no ports; both families report type and code in their place
-        // so an echo request and its reply stay distinguishable.
-        1 => parsed
-            .icmp
-            .as_ref()
-            .map(|icmp| (u16::from(icmp.icmp_type), u16::from(icmp.icmp_code))),
-        58 => parsed
-            .icmpv6
-            .as_ref()
-            .map(|icmpv6| (u16::from(icmpv6.icmp_type), u16::from(icmpv6.icmp_code))),
         // Only meaningful when there is no decoded inner flow; a decoded
         // tunnel reports the inner protocol instead.
         47 => parsed.gre.as_ref().map(|gre| (gre.protocol_type, 0)),

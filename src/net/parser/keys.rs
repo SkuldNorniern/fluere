@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn uses_icmpv6_type_and_code_as_pseudo_ports() {
+    fn icmpv6_reports_no_endpoints() {
         let source = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
         let destination = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
         let icmpv6 = [128, 0, 0, 0, 0, 1, 0, 1];
@@ -273,7 +273,10 @@ mod tests {
 
         assert_eq!(key.src_ip, IpAddr::from(source));
         assert_eq!(key.dst_ip, IpAddr::from(destination));
-        assert_eq!((key.src_port, key.dst_port, key.protocol), (128, 0, 58));
+        // Type and code say which direction this is, not which endpoint, so
+        // they stay out of the port slots: the reverse key swaps those, and an
+        // echo reply has to match the request's reverse key.
+        assert_eq!((key.src_port, key.dst_port, key.protocol), (0, 0, 58));
     }
 
     #[test]
