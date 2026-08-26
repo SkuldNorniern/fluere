@@ -3,7 +3,11 @@ use std::{fs, path::Path, time::Instant};
 use crate::{
     FluereError,
     error::OptionExt,
-    net::{flow_engine::FlowEngine, observe_packet, parser::PacketObservation},
+    net::{
+        flow_engine::FlowEngine,
+        observe_packet,
+        parser::{FragmentTracker, PacketObservation},
+    },
     types::Args,
     utils::fluere_exporter,
 };
@@ -102,10 +106,11 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     info!("Converting file: {}", file_name);
 
     let bar = ProgressBar::new_spinner();
+    let mut fragments = FragmentTracker::new();
 
     while let Ok(packet) = cap.next_packet() {
         trace!("Parsing packet");
-        let Some(observation) = observe_packet(packet, use_mac, linktype) else {
+        let Some(observation) = observe_packet(packet, use_mac, linktype, &mut fragments) else {
             continue;
         };
         process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;

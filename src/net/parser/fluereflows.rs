@@ -17,7 +17,7 @@ type FlowRecord = (usize, [u8; 9], FluereRecord);
 /// Flow records intentionally describe the innermost traffic for every tunnel
 /// paccel understands, so VXLAN, GRE, GENEVE, MPLS, and IP-in-IP flows use the
 /// real inner IP and transport fields rather than their encapsulating headers.
-fn innermost(parsed: &ParsedPacket) -> &ParsedPacket {
+pub(super) fn innermost(parsed: &ParsedPacket) -> &ParsedPacket {
     match parsed.inner.as_deref() {
         Some(inner) => innermost(inner),
         None => parsed,

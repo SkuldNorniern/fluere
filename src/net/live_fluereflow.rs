@@ -8,7 +8,7 @@ use crate::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
         observe_packet,
-        parser::{PacketObservation, microseconds_to_timestamp},
+        parser::{FragmentTracker, PacketObservation, microseconds_to_timestamp},
         types::Key,
     },
     types::Args,
@@ -302,13 +302,16 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
     let exit_key_task = tokio::spawn(listen_for_exit_keys());
     let mut export_tasks = vec![];
 
+    let mut fragments = FragmentTracker::new();
+
     let capture_result: Result<(), FluereError> = async {
         loop {
             let Some(packet) = next_packet(cap) else {
                 continue;
             };
             trace!("received packet");
-            let Some(observation) = observe_packet(packet, use_mac, linktype) else {
+            let Some(observation) = observe_packet(packet, use_mac, linktype, &mut fragments)
+            else {
                 continue;
             };
             process_packet(
