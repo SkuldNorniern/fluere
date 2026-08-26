@@ -9,8 +9,9 @@ use crate::downloader::DownloadError;
 /// running capture down with it.
 #[derive(Debug)]
 pub enum PluginError {
-    /// The Lua runtime rejected a script or a call into one.
-    Lua(mlua::Error),
+    /// A plugin runtime rejected a script or a call into one. Kept as text so
+    /// the error type does not grow a variant per supported language.
+    Runtime(String),
     /// Reading a plugin, or locating the plugin cache, failed.
     Io(std::io::Error),
     /// Fetching a plugin from its repository failed.
@@ -22,7 +23,7 @@ pub enum PluginError {
 impl fmt::Display for PluginError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Lua(error) => write!(f, "Lua error: {}", error),
+            Self::Runtime(error) => write!(f, "Plugin runtime error: {}", error),
             Self::Io(error) => write!(f, "IO error: {}", error),
             Self::Download(error) => write!(f, "Plugin download error: {}", error),
             Self::WorkerStopped => write!(f, "Plugin worker is no longer running"),
@@ -32,9 +33,10 @@ impl fmt::Display for PluginError {
 
 impl std::error::Error for PluginError {}
 
+#[cfg(feature = "lua")]
 impl From<mlua::Error> for PluginError {
     fn from(error: mlua::Error) -> Self {
-        Self::Lua(error)
+        Self::Runtime(error.to_string())
     }
 }
 

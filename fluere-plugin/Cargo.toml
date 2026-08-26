@@ -1,6 +1,6 @@
 [package]
 name = "fluere_plugin"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 description = "Plugin API for Fluere."
@@ -20,7 +20,7 @@ fluere-config = { version = "0.3.0", path = "../fluere-config" }
 #fluere-plugin-trait = { path = "../fluere-plugin-trait" }
 fluereflow = { version = "0.5.0", path = "../fluereflow" }
 dirs = "5.0.1"
-mlua = { version = "0.9.6", features = ["lua54", "vendored","async","send"] }
+mlua = { version = "0.9.6", features = ["lua54", "vendored","async","send"], optional = true }
 inksac = "0.4.0"
 
 log = { version = "0.4.21", features = ["std"], optional = true }
@@ -30,7 +30,12 @@ name = "fluere_plugin"
 
 
 [features]
+default = ["lua"]
 log = ["dep:log"]
+
+# Plugin runtimes. Building with none of these keeps the plugin manager but
+# compiles out every interpreter, so no vendored C toolchain is needed.
+lua = ["dep:mlua"]
 
 [lints.clippy]
 unwrap_used = "deny"
