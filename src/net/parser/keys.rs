@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use crate::error::ParseError;
-use crate::net::types::{EncapKind, Encapsulation, Key, MacAddress};
+use crate::net::types::{EncapKind, Encapsulation, Key, MacAddress, VlanTags};
 
 use log::trace;
 use paccel::engine::ParsedPacket;
@@ -31,6 +31,7 @@ pub(super) fn keys_from_parsed(
     let (src_mac, dst_mac) = mac_addresses(parsed);
     let (src_ip, dst_ip, src_port, dst_port, protocol) = extract_flow_tuple(parsed, packet_data)?;
     let encapsulation = encapsulation_of(parsed);
+    let vlan = vlan_of(parsed);
 
     trace!(
         "Parsed keys: src_ip={:?} dst_ip={:?} src_port={:?} dst_port={:?} protocol={:?} src_mac={:?} dst_mac={:?}",
@@ -44,6 +45,7 @@ pub(super) fn keys_from_parsed(
         protocol,
         src_mac,
         dst_mac,
+        vlan,
         encapsulation,
     ))
 }
@@ -121,6 +123,19 @@ fn raw_fallback_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<FlowT
     ))
 }
 
+/// The VLAN segment a packet arrived on.
+///
+/// Taken from the outermost Ethernet header: an inner frame inside a tunnel is
+/// already separated by the tunnel itself.
+fn vlan_of(parsed: &ParsedPacket) -> VlanTags {
+    parsed
+        .ethernet
+        .as_ref()
+        .map_or_else(VlanTags::default, |ethernet| {
+            VlanTags::from_stack(&ethernet.vlan_tags)
+        })
+}
+
 /// The tunnel a packet arrived inside, taken from the outermost headers.
 ///
 /// `None` when the packet was not tunnelled. The kind and segment identifier
@@ -177,6 +192,7 @@ fn build_key_pair(
     protocol: u8,
     src_mac: MacAddress,
     dst_mac: MacAddress,
+    vlan: VlanTags,
     encapsulation: Option<Encapsulation>,
 ) -> (Key, Key) {
     let key_value = Key {
@@ -187,6 +203,7 @@ fn build_key_pair(
         protocol,
         src_mac,
         dst_mac,
+        vlan,
         encapsulation,
     };
     // The tunnel is not reversed with the inner addresses: the return traffic
@@ -199,6 +216,9 @@ fn build_key_pair(
         protocol,
         src_mac: dst_mac,
         dst_mac: src_mac,
+        // Return traffic comes back on the same segment and through the same
+        // tunnel, so neither is reversed with the addresses.
+        vlan,
         encapsulation,
     };
     (key_value, key_reverse_value)

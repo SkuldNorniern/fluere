@@ -339,7 +339,7 @@ mod tests {
 
     use super::*;
     use crate::net::parser::{parse_fluereflow, parse_keys};
-    use crate::net::types::MacAddress;
+    use crate::net::types::{MacAddress, VlanTags};
 
     fn keys(protocol: u8) -> (Key, Key) {
         let key = Key {
@@ -350,6 +350,7 @@ mod tests {
             protocol,
             src_mac: MacAddress::new([0; 6]),
             dst_mac: MacAddress::new([1; 6]),
+            vlan: VlanTags::default(),
             encapsulation: None,
         };
         let reverse = Key {
@@ -360,6 +361,7 @@ mod tests {
             protocol,
             src_mac: key.dst_mac,
             dst_mac: key.src_mac,
+            vlan: key.vlan,
             encapsulation: None,
         };
         (key, reverse)
