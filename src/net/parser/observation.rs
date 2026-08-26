@@ -139,6 +139,37 @@ mod tests {
         assert_eq!(without.reverse_key.src_mac.0, [0; 6]);
     }
 
+    /// The flow key and the flow record must report the same endpoints. They
+    /// derive them separately, and ICMPv6 is where they used to disagree: the
+    /// key carried the type and code while the record reported 0/0, so an echo
+    /// exchange produced two rows that looked identical.
+    #[test]
+    fn the_record_reports_the_same_endpoints_as_the_key() {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&DST_MAC);
+        frame.extend_from_slice(&SRC_MAC);
+        frame.extend_from_slice(&0x86DDu16.to_be_bytes());
+
+        // IPv6 header, next header 58 (ICMPv6), 8-byte payload.
+        frame.extend_from_slice(&[0x60, 0, 0, 0, 0, 8, 58, 64]);
+        frame.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        frame.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]);
+        // Echo request: type 128, code 0.
+        frame.extend_from_slice(&[128, 0, 0, 0, 0, 0, 0, 0]);
+
+        let header = header(&frame);
+        let observation = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
+
+        assert_eq!(observation.record.prot, 58);
+        assert_eq!(
+            (observation.record.src_port, observation.record.dst_port),
+            (observation.key.src_port, observation.key.dst_port),
+            "record endpoints must match the key"
+        );
+        assert_eq!(observation.key.src_port, 128, "ICMPv6 type");
+        assert_eq!(observation.key.dst_port, 0, "ICMPv6 code");
+    }
+
     #[test]
     fn an_empty_packet_is_rejected() {
         let header = header(&[]);

@@ -89,10 +89,10 @@ pub(super) fn record_from_parsed(
         return Ok(arp_record(arp, doctets, time));
     }
     if let Some(ipv4) = inner.ipv4.as_ref() {
-        return Ok(ipv4_record(ipv4, inner.transport.as_ref(), doctets, time));
+        return Ok(ipv4_record(ipv4, inner, doctets, time));
     }
     if let Some(ipv6) = inner.ipv6.as_ref() {
-        return Ok(ipv6_record(ipv6, inner.transport.as_ref(), doctets, time));
+        return Ok(ipv6_record(ipv6, inner, doctets, time));
     }
 
     raw_fallback_record(parsed, packet_data, doctets, time)
@@ -117,13 +117,8 @@ fn arp_record(arp: &ArpPacket, doctets: usize, time: u64) -> FlowRecord {
     )
 }
 
-fn ipv4_record(
-    ipv4: &Ipv4Header,
-    transport: Option<&TransportSegment>,
-    doctets: usize,
-    time: u64,
-) -> FlowRecord {
-    if let Some(TransportSegment::Udp(udp)) = transport
+fn ipv4_record(ipv4: &Ipv4Header, parsed: &ParsedPacket, doctets: usize, time: u64) -> FlowRecord {
+    if let Some(TransportSegment::Udp(udp)) = parsed.transport.as_ref()
         && (udp.source_port == 53 || udp.destination_port == 53)
     {
         let flags = [0; 9];
@@ -144,7 +139,7 @@ fn ipv4_record(
         );
     }
 
-    let (src_port, dst_port, flags) = ports_and_flags(transport);
+    let (src_port, dst_port, flags) = ports_and_flags(parsed, ipv4.protocol);
     let tos = dscp_to_tos(ipv4.dscp);
     (
         doctets,
@@ -163,13 +158,8 @@ fn ipv4_record(
     )
 }
 
-fn ipv6_record(
-    ipv6: &Ipv6Header,
-    transport: Option<&TransportSegment>,
-    doctets: usize,
-    time: u64,
-) -> FlowRecord {
-    let (src_port, dst_port, flags) = ports_and_flags(transport);
+fn ipv6_record(ipv6: &Ipv6Header, parsed: &ParsedPacket, doctets: usize, time: u64) -> FlowRecord {
+    let (src_port, dst_port, flags) = ports_and_flags(parsed, ipv6.resolved_next_header);
     let tos = dscp_to_tos(ipv6.traffic_class >> 2);
     // Preserve the historical record shape: IPv6 hop_limit was not mapped to TTL.
     // `resolved_next_header` skips any extension header chain, so the record
@@ -191,8 +181,13 @@ fn ipv6_record(
     )
 }
 
-fn ports_and_flags(transport: Option<&TransportSegment>) -> (u16, u16, [u8; 9]) {
-    match transport {
+/// Ports and TCP flag bits for one packet.
+///
+/// Falls back to the pseudo-ports the flow key uses for protocols with no
+/// transport of their own, so the record reports the same endpoints the flow
+/// was keyed on.
+fn ports_and_flags(parsed: &ParsedPacket, protocol: u8) -> (u16, u16, [u8; 9]) {
+    match parsed.transport.as_ref() {
         Some(TransportSegment::Tcp(tcp)) => (
             tcp.source_port,
             tcp.destination_port,
@@ -209,7 +204,10 @@ fn ports_and_flags(transport: Option<&TransportSegment>) -> (u16, u16, [u8; 9]) 
             ],
         ),
         Some(TransportSegment::Udp(udp)) => (udp.source_port, udp.destination_port, [0; 9]),
-        None => (0, 0, [0; 9]),
+        _ => {
+            let (src_port, dst_port) = super::pseudo_ports(parsed, protocol).unwrap_or((0, 0));
+            (src_port, dst_port, [0; 9])
+        }
     }
 }
 

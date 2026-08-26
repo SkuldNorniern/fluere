@@ -77,22 +77,8 @@ fn flow_tuple_with_overrides(
     parsed: &ParsedPacket,
     flow_key: paccel::engine::FlowKey,
 ) -> FlowTuple {
-    let mut src_port = flow_key.src_port;
-    let mut dst_port = flow_key.dst_port;
-
-    if flow_key.protocol == 58
-        && let Some(icmpv6) = parsed.icmpv6.as_ref()
-    {
-        src_port = u16::from(icmpv6.icmp_type);
-        dst_port = u16::from(icmpv6.icmp_code);
-    } else if flow_key.protocol == 47
-        && let Some(gre) = parsed.gre.as_ref()
-    {
-        // Preserve fluere's historical GRE pseudo-port only when paccel could
-        // not decode an inner flow. A decoded tunnel has a different protocol.
-        src_port = gre.protocol_type;
-        dst_port = 0;
-    }
+    let (src_port, dst_port) = super::pseudo_ports(parsed, flow_key.protocol)
+        .unwrap_or((flow_key.src_port, flow_key.dst_port));
 
     (
         flow_key.src_ip,
