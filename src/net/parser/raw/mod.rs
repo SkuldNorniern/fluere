@@ -1,43 +1,31 @@
 use std::net::{IpAddr, Ipv4Addr};
 
-use log::{debug, trace, warn};
+use log::{trace, warn};
 
-use paccel::engine::{BuiltinPacketParser, TransportSegment};
-use paccel::packet::{Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
+use paccel::engine::{BuiltinPacketParser, ParsedPacket, TransportSegment};
 
-#[derive(Debug)]
+/// `LINKTYPE_RAW`: no link-layer header, the frame starts at the IP header.
+const LINKTYPE_RAW: u16 = 101;
+
+/// Minimal L3/L4 tuple recovered from a frame that paccel's normal path could
+/// not turn into a flow key. Only the fields the flow builders read are kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RawProtocolHeader {
     pub src_ip: Option<IpAddr>,
     pub dst_ip: Option<IpAddr>,
     pub src_port: u16,
     pub dst_port: u16,
     pub protocol: u8,
-    pub length: u16,
-    pub payload: Option<Vec<u8>>,
-    pub raw_packet: Option<Vec<u8>>,
-    pub ethertype: Option<u16>,
-    pub flags: Option<u8>,
-    pub version: Option<u8>,
-    pub next_header: Option<u8>,
-    pub sequence: Option<u32>,
-    pub spi: Option<u32>,
-    pub qrv: Option<u8>,
-    pub qqic: Option<u8>,
     pub ttl: Option<u8>,
-    pub src_network: Option<u32>,
-    pub dst_network: Option<u32>,
-    pub checksum: Option<u16>,
 }
 
 impl RawProtocolHeader {
-    pub fn new(
+    fn new(
         src_ip: Option<IpAddr>,
         dst_ip: Option<IpAddr>,
         src_port: u16,
         dst_port: u16,
         protocol: u8,
-        length: u16,
-        payload: Option<Vec<u8>>,
     ) -> Self {
         Self {
             src_ip,
@@ -45,126 +33,39 @@ impl RawProtocolHeader {
             src_port,
             dst_port,
             protocol,
-            length,
-            payload,
-            raw_packet: None,
-            ethertype: None,
-            flags: None,
-            version: None,
-            next_header: None,
-            sequence: None,
-            spi: None,
             ttl: None,
-            qrv: None,
-            qqic: None,
-            src_network: None,
-            dst_network: None,
-            checksum: None,
         }
     }
 
-    pub fn with_src_ip(mut self, src_ip: IpAddr) -> Self {
-        self.src_ip = Some(src_ip);
-        self
-    }
-    pub fn with_dst_ip(mut self, dst_ip: IpAddr) -> Self {
-        self.dst_ip = Some(dst_ip);
-        self
-    }
-    pub fn with_src_port(mut self, src_port: u16) -> Self {
-        self.src_port = src_port;
-        self
-    }
-    pub fn with_dst_port(mut self, dst_port: u16) -> Self {
-        self.dst_port = dst_port;
-        self
-    }
-    pub fn with_raw_packet(mut self, packet: Vec<u8>) -> Self {
-        self.raw_packet = Some(packet);
-        self
-    }
-    pub fn with_next_header(mut self, next_header: u8) -> Self {
-        self.next_header = Some(next_header);
-        self
-    }
-    pub fn with_sequence(mut self, sequence: u32) -> Self {
-        self.sequence = Some(sequence);
-        self
-    }
-    pub fn with_spi(mut self, spi: u32) -> Self {
-        self.spi = Some(spi);
-        self
-    }
-    pub fn with_ethertype(mut self, ethertype: u16) -> Self {
-        self.ethertype = Some(ethertype);
-        self
-    }
-    pub fn with_flags(mut self, flags: u8) -> Self {
-        self.flags = Some(flags);
-        self
-    }
-    pub fn with_version(mut self, version: u8) -> Self {
-        self.version = Some(version);
-        self
-    }
-    pub fn with_qrv(mut self, qrv: u8) -> Self {
-        self.qrv = Some(qrv);
-        self
-    }
-    pub fn with_qqic(mut self, qqic: u8) -> Self {
-        self.qqic = Some(qqic);
-        self
-    }
-    pub fn with_ttl(mut self, ttl: u8) -> Self {
+    fn with_ttl(mut self, ttl: u8) -> Self {
         self.ttl = Some(ttl);
         self
     }
-    pub fn with_src_network(mut self, network: u32) -> Self {
-        self.src_network = Some(network);
-        self
-    }
-    pub fn with_dst_network(mut self, network: u32) -> Self {
-        self.dst_network = Some(network);
-        self
-    }
-    pub fn with_checksum(mut self, checksum: u16) -> Self {
-        self.checksum = Some(checksum);
-        self
+
+    /// Ports of the transport segment paccel decoded, `(0, 0)` when there is
+    /// none (non-TCP/UDP, or a header too truncated to decode).
+    fn transport_ports(parsed: &ParsedPacket) -> (u16, u16) {
+        match &parsed.transport {
+            Some(TransportSegment::Tcp(tcp)) => (tcp.source_port, tcp.destination_port),
+            Some(TransportSegment::Udp(udp)) => (udp.source_port, udp.destination_port),
+            _ => (0, 0),
+        }
     }
 
-    fn build_ethernet_frame(payload: &[u8], ethertype: u16) -> Vec<u8> {
-        let mut frame = Vec::with_capacity(14 + payload.len());
-        frame.extend_from_slice(&[0u8; 12]);
-        frame.extend_from_slice(&ethertype.to_be_bytes());
-        frame.extend_from_slice(payload);
-        frame
-    }
-
-    fn parsed_to_header(
-        parsed: &paccel::engine::ParsedPacket,
-        length: u16,
-        payload: Option<Vec<u8>>,
-    ) -> Option<Self> {
+    /// Project a paccel parse onto the tuple, preferring ARP, then IPv4, then
+    /// IPv6. Returns `None` when the parse reached no network layer at all.
+    fn from_parsed(parsed: &ParsedPacket) -> Option<Self> {
         if let Some(arp) = &parsed.arp {
-            return Some(
-                Self::new(
-                    Some(IpAddr::V4(arp.sender_protocol_addr)),
-                    Some(IpAddr::V4(arp.target_protocol_addr)),
-                    0,
-                    0,
-                    4,
-                    length,
-                    payload,
-                )
-                .with_ethertype(0x0806),
-            );
+            return Some(Self::new(
+                Some(IpAddr::V4(arp.sender_protocol_addr)),
+                Some(IpAddr::V4(arp.target_protocol_addr)),
+                0,
+                0,
+                4,
+            ));
         }
         if let Some(ipv4) = &parsed.ipv4 {
-            let (src_port, dst_port) = match &parsed.transport {
-                Some(TransportSegment::Tcp(t)) => (t.source_port, t.destination_port),
-                Some(TransportSegment::Udp(u)) => (u.source_port, u.destination_port),
-                _ => (0, 0),
-            };
+            let (src_port, dst_port) = Self::transport_ports(parsed);
             return Some(
                 Self::new(
                     Some(IpAddr::V4(ipv4.source)),
@@ -172,67 +73,35 @@ impl RawProtocolHeader {
                     src_port,
                     dst_port,
                     ipv4.protocol,
-                    length,
-                    payload,
                 )
-                .with_ttl(ipv4.ttl)
-                .with_ethertype(0x0800),
+                .with_ttl(ipv4.ttl),
             );
         }
         if let Some(ipv6) = &parsed.ipv6 {
-            let (src_port, dst_port) = match &parsed.transport {
-                Some(TransportSegment::Tcp(t)) => (t.source_port, t.destination_port),
-                Some(TransportSegment::Udp(u)) => (u.source_port, u.destination_port),
-                _ => (0, 0),
-            };
-            return Some(
-                Self::new(
-                    Some(IpAddr::V6(ipv6.source)),
-                    Some(IpAddr::V6(ipv6.destination)),
-                    src_port,
-                    dst_port,
-                    ipv6.next_header,
-                    length,
-                    payload,
-                )
-                .with_ethertype(0x86DD),
-            );
+            let (src_port, dst_port) = Self::transport_ports(parsed);
+            // Historical record shape: IPv6 hop_limit is not mapped to TTL.
+            return Some(Self::new(
+                Some(IpAddr::V6(ipv6.source)),
+                Some(IpAddr::V6(ipv6.destination)),
+                src_port,
+                dst_port,
+                ipv6.resolved_next_header,
+            ));
         }
         None
     }
 
-    /// Extract (src_port, dst_port) from an L4 payload for the protocols we
-    /// understand (TCP/UDP), falling back to reading the first 4 bytes as
-    /// raw big-endian port fields when the dedicated parser can't validate
-    /// the packet, and `(0, 0)` for anything else / too-short buffers.
-    fn extract_l4_ports(proto: u8, l4: &[u8]) -> (u16, u16) {
-        let raw_ports = || {
-            if l4.len() >= 4 {
-                Some((
-                    u16::from_be_bytes([l4[0], l4[1]]),
-                    u16::from_be_bytes([l4[2], l4[3]]),
-                ))
-            } else {
-                None
-            }
-        };
-        match proto {
-            6 => TcpPacket::new(l4)
-                .map(|t| (t.source_port(), t.destination_port()))
-                .or_else(raw_ports)
-                .unwrap_or((0, 0)),
-            17 => UdpPacket::new(l4)
-                .map(|u| (u.source_port(), u.destination_port()))
-                .or_else(raw_ports)
-                .unwrap_or((0, 0)),
-            _ => (0, 0),
-        }
+    /// Parse `payload` as a bare IP packet (no link-layer header) through
+    /// paccel, which covers IPv4, IPv6, extension-header chains and tunnels.
+    fn try_ip(payload: &[u8]) -> Option<Self> {
+        let parsed = BuiltinPacketParser::parse_with_linktype(payload, LINKTYPE_RAW).ok()?;
+        Self::from_parsed(&parsed)
     }
 
-    /// Sniff a bare (non-Ethernet-framed) IPv4 header directly out of
-    /// `payload`, independent of whether `Ipv4Packet::new` would accept it —
-    /// used as a best-effort fallback source for src/dst IP and L4 ports.
-    fn sniff_outer_ipv4(payload: &[u8]) -> Option<(IpAddr, IpAddr, u16, u16, u8)> {
+    /// Sniff an IPv4 header out of `payload` even when paccel rejects the
+    /// packet (bad total length, truncated body). Best-effort source of
+    /// src/dst IP, protocol and the leading L4 port pair.
+    fn sniff_outer_ipv4(payload: &[u8]) -> Option<Self> {
         if payload.len() < 20 || (payload[0] >> 4) != 4 {
             return None;
         }
@@ -253,227 +122,79 @@ impl RawProtocolHeader {
             payload[18],
             payload[19],
         ));
-        let proto = payload[9];
-        let (sp, dp) = if hdr_len + 4 <= payload.len() {
-            let t = &payload[hdr_len..];
-            (
-                u16::from_be_bytes([t[0], t[1]]),
-                u16::from_be_bytes([t[2], t[3]]),
-            )
-        } else {
-            (0, 0)
+        let (src_port, dst_port) = match payload.get(hdr_len..hdr_len + 4) {
+            Some(l4) => (
+                u16::from_be_bytes([l4[0], l4[1]]),
+                u16::from_be_bytes([l4[2], l4[3]]),
+            ),
+            None => (0, 0),
         };
-        Some((src, dst, sp, dp, proto))
+        Some(Self::new(Some(src), Some(dst), src_port, dst_port, payload[9]).with_ttl(payload[8]))
     }
 
-    /// Try parsing `payload` as a bare IPv6 packet.
-    fn try_ipv6(payload: &[u8]) -> Option<Self> {
-        if payload.is_empty() || (payload[0] >> 4) != 6 {
-            return None;
-        }
-        let ipv6 = Ipv6Packet::new(payload)?;
-        let proto = ipv6.next_header();
-        let (src_port, dst_port) = Self::extract_l4_ports(proto, ipv6.payload());
-        Some(Self::new(
-            Some(IpAddr::V6(ipv6.source())),
-            Some(IpAddr::V6(ipv6.destination())),
-            src_port,
-            dst_port,
-            proto,
-            payload.len() as u16,
-            Some(payload.to_vec()),
-        ))
-    }
-
-    /// Try parsing `payload` as a bare IPv4 packet.
-    fn try_ipv4(payload: &[u8]) -> Option<Self> {
-        let ipv4 = Ipv4Packet::new(payload)?;
-        let proto = ipv4.protocol();
-        let (src_port, dst_port) = Self::extract_l4_ports(proto, ipv4.payload());
-        Some(
-            Self::new(
-                Some(IpAddr::V4(ipv4.source())),
-                Some(IpAddr::V4(ipv4.destination())),
-                src_port,
-                dst_port,
-                proto,
-                payload.len() as u16,
-                Some(payload.to_vec()),
-            )
-            .with_ttl(64),
-        )
-    }
-
-    /// Last-resort probe: does `payload` parse as a bare TCP or UDP segment
-    /// with no IP header at all?
-    fn try_l4_only(payload: &[u8]) -> Option<Self> {
-        if let Some(tcp) = TcpPacket::new(payload) {
-            debug!("Parsed as TCP via paccel");
-            return Some(Self::new(
-                None,
-                None,
-                tcp.source_port(),
-                tcp.destination_port(),
-                6,
-                payload.len() as u16,
-                Some(payload.to_vec()),
-            ));
-        }
-        if let Some(udp) = UdpPacket::new(payload) {
-            debug!("Parsed as UDP via paccel");
-            return Some(Self::new(
-                None,
-                None,
-                udp.source_port(),
-                udp.destination_port(),
-                17,
-                payload.len() as u16,
-                Some(payload.to_vec()),
-            ));
-        }
-        None
-    }
-
-    /// Decode the leading bytes of `payload` as raw big-endian ports (with a
-    /// couple of known-VPN-pattern protocol hints handled specially), then
-    /// backfill any still-missing src/dst IP or port from `outer_ipv4`.
-    /// Decode leading ports (+ the remaining payload slice) for the generic
-    /// fallback path, special-casing a couple of known VPN patterns.
-    fn decode_hint_ports(payload: &[u8], protocol_hint: u8) -> (u16, u16, Vec<u8>) {
-        match protocol_hint {
-            0xb9 => {
-                let (s, d) = if payload.len() >= 4 {
-                    (
-                        u16::from_be_bytes([payload[0], payload[1]]),
-                        u16::from_be_bytes([payload[2], payload[3]]),
-                    )
-                } else {
-                    (0, 0)
-                };
-                (s, d, payload.get(4..).unwrap_or(&[]).to_vec())
-            }
-            0x36 => {
-                let (s, d) = if payload.len() >= 2 {
-                    (payload[0] as u16, payload[1] as u16)
-                } else {
-                    (0, 0)
-                };
-                (s, d, payload.get(2..).unwrap_or(&[]).to_vec())
-            }
-            _ => {
-                let s = u16::from_be_bytes([payload[0], payload[1]]);
-                let d = u16::from_be_bytes([payload[2], payload[3]]);
-                (s, d, payload.to_vec())
-            }
-        }
-    }
-
-    /// Fill in any src/dst IP or port the header is still missing (0/None)
-    /// from a previously sniffed outer IPv4 header.
-    fn backfill_from_outer_ipv4(
-        mut header: Self,
-        outer_ipv4: Option<(IpAddr, IpAddr, u16, u16, u8)>,
-    ) -> Self {
-        let Some((src_ip, dst_ip, s, d, _)) = outer_ipv4 else {
-            return header;
-        };
-        if header.src_ip.is_none() {
-            header = header.with_src_ip(src_ip);
-        }
-        if header.dst_ip.is_none() {
-            header = header.with_dst_ip(dst_ip);
-        }
-        if header.src_port == 0 {
-            header = header.with_src_port(s);
-        }
-        if header.dst_port == 0 {
-            header = header.with_dst_port(d);
-        }
-        header
-    }
-
-    fn generic_fallback(
-        payload: &[u8],
-        protocol_hint: u8,
-        outer_ipv4: Option<(IpAddr, IpAddr, u16, u16, u8)>,
-    ) -> Option<Self> {
+    /// Last-resort port decode for a payload with no recoverable IP header,
+    /// special-casing a couple of known VPN encapsulation patterns.
+    fn generic_fallback(payload: &[u8], protocol_hint: u8) -> Option<Self> {
         if payload.len() < 4 {
             warn!("Payload too short for generic analysis");
             return None;
         }
-
-        let (sp, dp, payload_vec) = Self::decode_hint_ports(payload, protocol_hint);
-        let header = Self::new(
-            None,
-            None,
-            sp,
-            dp,
-            protocol_hint,
-            payload.len() as u16,
-            Some(payload_vec),
-        );
-        Some(Self::backfill_from_outer_ipv4(header, outer_ipv4))
+        let (src_port, dst_port) = match protocol_hint {
+            // Ports carried as a 16-bit big-endian pair after the hint byte.
+            0xb9 => (
+                u16::from_be_bytes([payload[0], payload[1]]),
+                u16::from_be_bytes([payload[2], payload[3]]),
+            ),
+            // Single-byte port fields.
+            0x36 => (u16::from(payload[0]), u16::from(payload[1])),
+            _ => (
+                u16::from_be_bytes([payload[0], payload[1]]),
+                u16::from_be_bytes([payload[2], payload[3]]),
+            ),
+        };
+        Some(Self::new(None, None, src_port, dst_port, protocol_hint))
     }
 
+    /// Recover a tuple from a payload with no link-layer header, using
+    /// `protocol_hint` only when no IP header can be found.
     pub fn from_raw_packet(payload: &[u8], protocol_hint: u8) -> Option<Self> {
         trace!(
             "Attempting raw packet parsing with protocol hint: {}",
             protocol_hint
         );
 
-        let outer_ipv4 = Self::sniff_outer_ipv4(payload);
-
-        if let Some(header) = Self::try_ipv6(payload) {
-            return Some(header);
-        }
-
-        if let Some(header) = Self::try_ipv4(payload) {
-            return Some(header);
-        }
-
-        if let Some((src_ip, dst_ip, src_port, dst_port, actual_protocol)) = outer_ipv4 {
-            return Some(Self::new(
-                Some(src_ip),
-                Some(dst_ip),
-                src_port,
-                dst_port,
-                actual_protocol,
-                payload.len() as u16,
-                Some(payload.to_vec()),
-            ));
-        }
-
-        if let Some(header) = Self::try_l4_only(payload) {
-            return Some(header);
-        }
-
-        Self::generic_fallback(payload, protocol_hint, outer_ipv4)
+        Self::try_ip(payload)
+            .or_else(|| Self::sniff_outer_ipv4(payload))
+            .or_else(|| Self::generic_fallback(payload, protocol_hint))
     }
 
+    /// Recover a tuple from an Ethernet payload of the given EtherType.
     pub fn from_ethertype(payload: &[u8], ethertype: u16) -> Option<Self> {
         trace!(
             "Attempting to parse raw protocol from EtherType: 0x{:04x}",
             ethertype
         );
 
-        if matches!(ethertype, 0x0806 | 0x0800 | 0x86DD) {
-            let frame = Self::build_ethernet_frame(payload, ethertype);
-            if let Ok(parsed) = BuiltinPacketParser::parse(&frame) {
-                if let Some(header) =
-                    Self::parsed_to_header(&parsed, payload.len() as u16, Some(payload.to_vec()))
-                {
-                    debug!("Parsed via paccel");
-                    return Some(header);
-                }
+        match ethertype {
+            // ARP has no IP header, so it needs its Ethernet framing back.
+            0x0806 => {
+                let frame = build_ethernet_frame(payload, ethertype);
+                let parsed = BuiltinPacketParser::parse(&frame).ok()?;
+                Self::from_parsed(&parsed)
             }
+            _ => Self::from_raw_packet(payload, ethertype as u8),
         }
-
-        if ethertype == 0x0800 && payload.len() >= 20 {
-            return Self::from_raw_packet(payload, payload[9]);
-        }
-
-        Self::from_raw_packet(payload, ethertype as u8)
     }
+}
+
+/// Wrap `payload` in a zero-addressed Ethernet header so parsers that expect a
+/// link layer can see it.
+fn build_ethernet_frame(payload: &[u8], ethertype: u16) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(14 + payload.len());
+    frame.extend_from_slice(&[0u8; 12]);
+    frame.extend_from_slice(&ethertype.to_be_bytes());
+    frame.extend_from_slice(payload);
+    frame
 }
 
 #[cfg(test)]
@@ -481,219 +202,182 @@ mod tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-    #[test]
-    fn test_raw_protocol_header_builder() {
-        let header = RawProtocolHeader::new(
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))),
-            80,
-            443,
-            6,
-            64,
-            Some(b"test payload".to_vec()),
-        )
-        .with_flags(0x18)
-        .with_ttl(64)
-        .with_version(4)
-        .with_checksum(0x1234);
-
-        assert_eq!(header.src_port, 80);
-        assert_eq!(header.dst_port, 443);
-        assert_eq!(header.protocol, 6);
-        assert_eq!(header.flags, Some(0x18));
-        assert_eq!(header.ttl, Some(64));
-        assert_eq!(header.version, Some(4));
-        assert_eq!(header.checksum, Some(0x1234));
-    }
+    const SRC_V4: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
+    const DST_V4: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
 
     #[test]
-    fn test_from_raw_packet_valid_ipv4() {
+    fn parses_valid_ipv4_tcp() {
         let packet = [
             0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
             192, 168, 1, 2, 0x00, 0x50, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x00,
         ];
         let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        assert_eq!(
-            header.src_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
-        );
-        assert_eq!(
-            header.dst_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
-        );
-        assert_eq!(header.src_port, 80);
-        assert_eq!(header.dst_port, 443);
+        assert_eq!(header.src_ip, Some(SRC_V4));
+        assert_eq!(header.dst_ip, Some(DST_V4));
+        assert_eq!((header.src_port, header.dst_port), (80, 443));
+        assert_eq!(header.protocol, 6);
+        assert_eq!(header.ttl, Some(64));
+    }
+
+    #[test]
+    fn keeps_ip_header_protocol_over_the_hint() {
+        let packet = [
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x32, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x12, 0x34, 0x56, 0x78,
+        ];
+        let header = RawProtocolHeader::from_raw_packet(&packet, 99).unwrap();
+        assert_eq!(header.protocol, 50);
+        assert_eq!(header.src_ip, Some(SRC_V4));
+    }
+
+    #[test]
+    fn parses_ipv4_header_with_options() {
+        let packet = [
+            0x46, 0x00, 0x00, 0x20, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x01, 0x02, 0x03, 0x04, 0x00, 0x50, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
+        assert_eq!(header.src_ip, Some(SRC_V4));
+        assert_eq!(header.dst_ip, Some(DST_V4));
+        assert_eq!((header.src_port, header.dst_port), (80, 443));
+    }
+
+    #[test]
+    fn keeps_addresses_when_the_l4_header_is_truncated() {
+        let packet = [
+            0x45, 0x00, 0x00, 0x16, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x00, 0x50,
+        ];
+        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
+        assert_eq!((header.src_port, header.dst_port), (0, 0));
+        assert_eq!(header.src_ip, Some(SRC_V4));
+    }
+
+    #[test]
+    fn recovers_addresses_from_an_invalid_total_length() {
+        let packet = [
+            0x45, 0x00, 0xff, 0xff, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2,
+        ];
+        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
+        assert_eq!(header.src_ip, Some(SRC_V4));
         assert_eq!(header.protocol, 6);
     }
 
     #[test]
-    fn test_from_raw_packet_malformed_ipv4() {
+    fn parses_fragmented_ipv4() {
+        let packet = [
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x20, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
+            192, 168, 1, 2, 0x00, 0x50, 0x01, 0xbb,
+        ];
+        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
+        assert_eq!(header.src_ip, Some(SRC_V4));
+        assert_eq!(header.dst_ip, Some(DST_V4));
+        assert_eq!(header.protocol, 6);
+    }
+
+    #[test]
+    fn falls_back_to_the_hint_for_a_malformed_ipv4_header() {
         let packet = [
             0x44, 0x00, 0x00, 0x14, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
             192, 168, 1, 2,
         ];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 6);
-        assert!(header.is_some());
-        let header = header.unwrap();
+        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
         assert_eq!(header.protocol, 6);
     }
 
     #[test]
-    fn test_from_raw_packet_too_short() {
-        let packet = [0x45, 0x00];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 6);
-        assert!(header.is_none());
+    fn detects_bare_ipv6() {
+        let packet = [
+            0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0x85, 0xa3,
+            0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x34, 0x20, 0x01, 0x0d, 0xb8,
+            0x85, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x35, 0x00, 0x35,
+            0x00, 0x35, 0x00, 0x08, 0x00, 0x00,
+        ];
+        let header = RawProtocolHeader::from_raw_packet(&packet, 17).unwrap();
+        assert_eq!(header.protocol, 17);
     }
 
     #[test]
-    fn test_from_raw_packet_netflix_vpn_pattern() {
+    fn decodes_netflix_vpn_port_pattern() {
         let packet = [0x00, 0x50, 0x01, 0xbb, 0xde, 0xad, 0xbe, 0xef];
         let header = RawProtocolHeader::from_raw_packet(&packet, 0xb9).unwrap();
-        assert_eq!(header.src_port, 80);
-        assert_eq!(header.dst_port, 443);
+        assert_eq!((header.src_port, header.dst_port), (80, 443));
         assert_eq!(header.protocol, 0xb9);
-        assert_eq!(header.payload.as_ref().unwrap(), &[0xde, 0xad, 0xbe, 0xef]);
     }
 
     #[test]
-    fn test_from_raw_packet_custom_vpn_pattern() {
+    fn decodes_single_byte_vpn_port_pattern() {
         let packet = [0x50, 0xbb, 0xde, 0xad, 0xbe, 0xef];
         let header = RawProtocolHeader::from_raw_packet(&packet, 0x36).unwrap();
-        assert_eq!(header.src_port, 0x50);
-        assert_eq!(header.dst_port, 0xbb);
+        assert_eq!((header.src_port, header.dst_port), (0x50, 0xbb));
         assert_eq!(header.protocol, 0x36);
-        assert_eq!(header.payload.as_ref().unwrap(), &[0xde, 0xad, 0xbe, 0xef]);
     }
 
     #[test]
-    fn test_from_raw_packet_generic_fallback() {
+    fn decodes_leading_ports_for_an_unknown_protocol() {
         let packet = [0x12, 0x34, 0x56, 0x78, 0xaa, 0xbb, 0xcc, 0xdd];
         let header = RawProtocolHeader::from_raw_packet(&packet, 99).unwrap();
-        assert_eq!(header.src_port, 0x1234);
-        assert_eq!(header.dst_port, 0x5678);
+        assert_eq!((header.src_port, header.dst_port), (0x1234, 0x5678));
         assert_eq!(header.protocol, 99);
-        assert_eq!(header.payload.as_ref().unwrap(), &packet);
     }
 
     #[test]
-    fn test_from_ethertype_ipv4() {
+    fn rejects_an_empty_payload() {
+        assert!(RawProtocolHeader::from_raw_packet(&[], 6).is_none());
+    }
+
+    #[test]
+    fn rejects_a_payload_shorter_than_a_port_pair() {
+        assert!(RawProtocolHeader::from_raw_packet(&[0x45, 0x00], 6).is_none());
+        assert!(RawProtocolHeader::from_ethertype(&[0x12, 0x34, 0x56], 0x88B8).is_none());
+    }
+
+    #[test]
+    fn from_ethertype_parses_ipv4_udp() {
         let packet = [
             0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 192, 168, 1, 1,
             192, 168, 1, 2, 0x00, 0x35, 0x00, 0x35,
         ];
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
-        assert_eq!(
-            header.src_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
-        );
-        assert_eq!(
-            header.dst_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
-        );
+        assert_eq!(header.src_ip, Some(SRC_V4));
+        assert_eq!(header.dst_ip, Some(DST_V4));
         assert_eq!(header.protocol, 17);
     }
 
     #[test]
-    fn test_from_ethertype_unknown() {
-        let packet = [0x12, 0x34, 0x56, 0x78, 0xaa, 0xbb, 0xcc, 0xdd];
-        let header = RawProtocolHeader::from_ethertype(&packet, 0x9999);
-        assert!(header.is_some());
-    }
-
-    #[test]
-    fn test_from_ethertype_ipv4_tcp_port_ordering() {
-        let packet = [
-            0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 0, 2, 1,
-            198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-            0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-
-        let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
-
-        assert_eq!(header.src_port, 4660);
-        assert_eq!(header.dst_port, 80);
-    }
-
-    #[test]
-    fn test_from_ethertype_ipv4_udp_port_ordering() {
-        let packet = [
-            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 192, 0, 2, 1,
-            198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00, 0x00,
-        ];
-
-        let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
-
-        assert_eq!(header.src_port, 4660);
-        assert_eq!(header.dst_port, 80);
-    }
-
-    #[test]
-    fn test_from_raw_packet_truncated_inputs_do_not_panic() {
-        let short_inputs: &[&[u8]] = &[&[], &[0x45], &[0x45, 0x00, 0x00]];
-        for packet in short_inputs {
-            let result = std::panic::catch_unwind(|| RawProtocolHeader::from_raw_packet(packet, 6));
-            assert!(result.is_ok());
-            assert!(result.unwrap().is_none());
-        }
-
-        let truncated_ipv4 = [0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06];
-        assert!(
-            std::panic::catch_unwind(|| { RawProtocolHeader::from_raw_packet(&truncated_ipv4, 6) })
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn test_from_ethertype_truncated_inputs_do_not_panic() {
-        let short_inputs: &[&[u8]] = &[&[], &[0x45], &[0x45, 0x00, 0x00]];
-        for packet in short_inputs {
-            let result =
-                std::panic::catch_unwind(|| RawProtocolHeader::from_ethertype(packet, 0x0800));
-            assert!(result.is_ok());
-            assert!(result.unwrap().is_none());
-        }
-
-        let truncated_ipv4 = [0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06];
-        assert!(
-            std::panic::catch_unwind(|| {
-                RawProtocolHeader::from_ethertype(&truncated_ipv4, 0x0800)
-            })
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn test_from_ethertype_ipv4_tcp_field_assignment() {
+    fn from_ethertype_keeps_ipv4_tcp_field_order() {
         let packet = [
             0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 203, 0, 113,
             10, 192, 0, 2, 20, 0x12, 0x34, 0x00, 0x50, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
-
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
-
-        assert_eq!(
-            header.src_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10)))
-        );
-        assert_eq!(
-            header.dst_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20)))
-        );
+        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))));
+        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20))));
+        assert_eq!((header.src_port, header.dst_port), (4660, 80));
         assert_eq!(header.protocol, 6);
     }
 
     #[test]
-    fn test_from_ethertype_ipv6_udp_fields_and_port_ordering() {
+    fn from_ethertype_keeps_ipv4_udp_field_order() {
+        let packet = [
+            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 192, 0, 2, 1,
+            198, 51, 100, 2, 0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00, 0x00,
+        ];
+        let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
+        assert_eq!((header.src_port, header.dst_port), (4660, 80));
+    }
+
+    #[test]
+    fn from_ethertype_parses_ipv6_udp() {
         let packet = [
             0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x20, 0x01, 0x0d, 0xb8,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x12, 0x34,
             0x00, 0x50, 0x00, 0x08, 0x00, 0x00,
         ];
-
         let header = RawProtocolHeader::from_ethertype(&packet, 0x86DD).unwrap();
-
         assert_eq!(
             header.src_ip,
             Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1)))
@@ -702,147 +386,54 @@ mod tests {
             header.dst_ip,
             Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 2)))
         );
-        assert_eq!(header.src_port, 4660);
-        assert_eq!(header.dst_port, 80);
+        assert_eq!((header.src_port, header.dst_port), (4660, 80));
         assert_eq!(header.protocol, 17);
     }
 
     #[test]
-    fn test_from_ethertype_uncommon_short_payload_does_not_panic() {
-        let packet = [0x12, 0x34, 0x56];
-        let result =
-            std::panic::catch_unwind(|| RawProtocolHeader::from_ethertype(&packet, 0x88B8));
-
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
-    }
-
-    #[test]
-    fn test_ipv4_header_with_options() {
-        let packet = [
-            0x46, 0x00, 0x00, 0x20, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
-            192, 168, 1, 2, 0x01, 0x02, 0x03, 0x04, 0x00, 0x50, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x00,
+    fn from_ethertype_walks_ipv6_extension_headers() {
+        let mut packet = vec![
+            0x60, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x20, 0x01, 0x0d, 0xb8,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
         ];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        assert_eq!(
-            header.src_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
-        );
-        assert_eq!(
-            header.dst_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
-        );
-        assert_eq!(header.src_port, 80);
-        assert_eq!(header.dst_port, 443);
-    }
+        // Hop-by-Hop header (next_header = UDP, one 8-byte block of PadN).
+        packet.extend_from_slice(&[17, 0, 1, 4, 0, 0, 0, 0]);
+        packet.extend_from_slice(&[0x12, 0x34, 0x00, 0x50, 0x00, 0x08, 0x00, 0x00]);
 
-    #[test]
-    fn test_ipv6_version_detection() {
-        let packet = [
-            0x60, 0x00, 0x00, 0x00, 0x00, 0x08, 0x11, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0x85, 0xa3,
-            0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x34, 0x20, 0x01, 0x0d, 0xb8,
-            0x85, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x35, 0x00, 0x35,
-            0x00, 0x35, 0x00, 0x08, 0x00, 0x00,
-        ];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 17);
-        assert!(header.is_some());
-        let header = header.unwrap();
+        let header = RawProtocolHeader::from_ethertype(&packet, 0x86DD).unwrap();
         assert_eq!(header.protocol, 17);
+        assert_eq!((header.src_port, header.dst_port), (4660, 80));
     }
 
     #[test]
-    fn test_port_extraction_edge_cases() {
-        let packet = [
-            0x45, 0x00, 0x00, 0x16, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
-            192, 168, 1, 2, 0x00, 0x50,
-        ];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        assert_eq!(header.src_port, 0);
-        assert_eq!(header.dst_port, 0);
-        assert_eq!(
-            header.src_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
-        );
-    }
+    fn from_ethertype_parses_arp() {
+        let mut packet = vec![0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01];
+        packet.extend_from_slice(&[0xaa; 6]);
+        packet.extend_from_slice(&[10, 0, 0, 1]);
+        packet.extend_from_slice(&[0x00; 6]);
+        packet.extend_from_slice(&[10, 0, 0, 2]);
 
-    #[test]
-    fn test_protocol_preservation() {
-        let packet = [
-            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x40, 0x00, 0x40, 0x32, 0x00, 0x00, 192, 168, 1, 1,
-            192, 168, 1, 2, 0x12, 0x34, 0x56, 0x78,
-        ];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 99).unwrap();
-        assert_eq!(header.protocol, 50);
-        assert_eq!(
-            header.src_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
-        );
-    }
-
-    #[test]
-    fn test_empty_payload() {
-        let packet = [];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 6);
-        assert!(header.is_none());
-    }
-
-    #[test]
-    #[allow(clippy::cognitive_complexity)]
-    fn test_builder_pattern_completeness() {
-        let header = RawProtocolHeader::new(None, None, 0, 0, 0, 0, None)
-            .with_src_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)))
-            .with_dst_ip(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)))
-            .with_src_port(8080)
-            .with_dst_port(9090)
-            .with_ethertype(0x86dd)
-            .with_sequence(12345)
-            .with_spi(67890)
-            .with_qrv(3)
-            .with_qqic(125)
-            .with_src_network(0xaabbccdd)
-            .with_dst_network(0x11223344);
-
+        let header = RawProtocolHeader::from_ethertype(&packet, 0x0806).unwrap();
         assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
-        assert_eq!(
-            header.dst_ip,
-            Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)))
-        );
-        assert_eq!(header.src_port, 8080);
-        assert_eq!(header.dst_port, 9090);
-        assert_eq!(header.ethertype, Some(0x86dd));
-        assert_eq!(header.sequence, Some(12345));
-        assert_eq!(header.spi, Some(67890));
-        assert_eq!(header.qrv, Some(3));
-        assert_eq!(header.qqic, Some(125));
-        assert_eq!(header.src_network, Some(0xaabbccdd));
-        assert_eq!(header.dst_network, Some(0x11223344));
+        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))));
+        assert_eq!(header.protocol, 4);
     }
 
     #[test]
-    fn test_invalid_ipv4_total_length() {
-        let packet = [
-            0x45, 0x00, 0xff, 0xff, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
-            192, 168, 1, 2,
+    fn truncated_inputs_do_not_panic() {
+        let short_inputs: &[&[u8]] = &[
+            &[],
+            &[0x45],
+            &[0x45, 0x00, 0x00],
+            &[0x45, 0x00, 0x00, 0x28, 0x12, 0x34, 0x40, 0x00, 0x40, 0x06],
+            &[0x60, 0x00, 0x00],
         ];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 6);
-        assert!(header.is_some());
-    }
-
-    #[test]
-    fn test_ipv4_fragmented_packet() {
-        let packet = [
-            0x45, 0x00, 0x00, 0x1c, 0x12, 0x34, 0x20, 0x00, 0x40, 0x06, 0x00, 0x00, 192, 168, 1, 1,
-            192, 168, 1, 2, 0x00, 0x50, 0x01, 0xbb,
-        ];
-        let header = RawProtocolHeader::from_raw_packet(&packet, 6).unwrap();
-        assert_eq!(
-            header.src_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
-        );
-        assert_eq!(
-            header.dst_ip,
-            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
-        );
-        assert_eq!(header.protocol, 6);
+        for packet in short_inputs {
+            RawProtocolHeader::from_raw_packet(packet, 6);
+            RawProtocolHeader::from_ethertype(packet, 0x0800);
+            RawProtocolHeader::from_ethertype(packet, 0x86DD);
+            RawProtocolHeader::from_ethertype(packet, 0x0806);
+        }
     }
 }
