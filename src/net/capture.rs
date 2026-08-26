@@ -66,7 +66,9 @@ fn initialize_capture(device: Device) -> Result<Capture<Active>, CaptureError> {
     Capture::from_device(device)?
         .promisc(true)
         // FEAT:TASK: set snaplen as a Flag from the CLI
-        .snaplen(1024)
+        // Capture whole frames: a short snaplen truncates the payload paccel
+        // needs to reach inner tunnel headers.
+        .snaplen(65535)
         .timeout(60000)
         .immediate_mode(true)
         .open()
