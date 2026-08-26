@@ -4,27 +4,32 @@ use crate::error::ParseError;
 use crate::net::types::{Key, MacAddress};
 
 use log::trace;
-use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket, StopLayer};
+use paccel::engine::ParsedPacket;
 
 use super::raw::RawProtocolHeader;
 
 type FlowTuple = (IpAddr, IpAddr, u16, u16, u8);
 
 pub fn parse_keys(packet: pcap::Packet, linktype: u16) -> Result<(Key, Key), ParseError> {
-    trace!("Parsing keys");
     if packet.is_empty() {
         return Err(ParseError::EmptyPacket);
     }
 
-    let config = ParseConfig {
-        stop_after: StopLayer::Transport,
-        ..Default::default()
-    };
-    let parsed =
-        BuiltinPacketParser::parse_with_config_and_linktype(packet.data, config, Some(linktype))
-            .map_err(|_| ParseError::InvalidPacket)?;
-    let (src_mac, dst_mac) = mac_addresses(&parsed);
-    let (src_ip, dst_ip, src_port, dst_port, protocol) = extract_flow_tuple(&parsed, packet.data)?;
+    let parsed = super::parse_frame(packet.data, linktype)?;
+    keys_from_parsed(&parsed, packet.data)
+}
+
+/// Build a flow's forward and reverse key from an already parsed frame.
+///
+/// Split out of [`parse_keys`] so the capture path can decode a frame once and
+/// derive both the keys and the flow record from the same parse.
+pub(super) fn keys_from_parsed(
+    parsed: &ParsedPacket,
+    packet_data: &[u8],
+) -> Result<(Key, Key), ParseError> {
+    trace!("Parsing keys");
+    let (src_mac, dst_mac) = mac_addresses(parsed);
+    let (src_ip, dst_ip, src_port, dst_port, protocol) = extract_flow_tuple(parsed, packet_data)?;
 
     trace!(
         "Parsed keys: src_ip={:?} dst_ip={:?} src_port={:?} dst_port={:?} protocol={:?} src_mac={:?} dst_mac={:?}",

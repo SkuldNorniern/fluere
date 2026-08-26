@@ -13,10 +13,8 @@ use crate::{
     FluereError,
     error::OptionExt,
     net::{
-        CaptureDevice, find_device,
-        flow_engine::FlowEngine,
-        parser::{parse_fluereflow, parse_keys, parse_microseconds},
-        types::{Key, TcpFlags},
+        CaptureDevice, find_device, flow_engine::FlowEngine, observe_packet,
+        parser::PacketObservation,
     },
     types::Args,
     utils::{cur_time_file, fluere_exporter},
@@ -80,52 +78,9 @@ fn extract_online_args(arg: Args) -> Result<OnlineArgs, FluereError> {
     })
 }
 
-struct ParsedPacket {
-    key_value: Key,
-    reverse_key: Key,
-    flowdata: FluereRecord,
-    doctets: usize,
-    flags: TcpFlags,
-    packet_time: u64,
-}
-
 struct ExportSchedule {
     interval: u64,
     last_export: Instant,
-}
-
-fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool, linktype: u16) -> Option<ParsedPacket> {
-    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone(), linktype) {
-        Ok(keys) => keys,
-        Err(error) => {
-            debug!("Error on parse_keys: {}", error);
-            return None;
-        }
-    };
-    if !use_mac {
-        key_value.mac_defaultate();
-        reverse_key.mac_defaultate();
-    }
-
-    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone(), linktype) {
-        Ok(result) => result,
-        Err(error) => {
-            debug!("Error on parse_fluereflow: {}", error);
-            return None;
-        }
-    };
-
-    Some(ParsedPacket {
-        key_value,
-        reverse_key,
-        flowdata,
-        doctets,
-        flags: TcpFlags::new(raw_flags),
-        packet_time: parse_microseconds(
-            packet.header.ts.tv_sec as u64,
-            packet.header.ts.tv_usec as u64,
-        ),
-    })
 }
 
 fn next_packet(cap: &mut pcap::Capture<pcap::Active>) -> Option<pcap::Packet<'_>> {
@@ -143,18 +98,18 @@ fn duration_reached(start: Instant, duration: u64) -> bool {
 }
 
 async fn process_packet(
-    packet: ParsedPacket,
+    observation: PacketObservation,
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
     records: &mut Vec<FluereRecord>,
 ) -> Result<(), FluereError> {
     if let Some(flow) = engine.offer(
-        packet.key_value,
-        packet.reverse_key,
-        packet.flowdata,
-        packet.doctets,
-        packet.flags,
-        packet.packet_time,
+        observation.key,
+        observation.reverse_key,
+        observation.record,
+        observation.doctets,
+        observation.flags,
+        observation.packet_time,
     ) {
         trace!("flow finished");
         trace!("flow data: {:?}", flow);
@@ -165,7 +120,7 @@ async fn process_packet(
         records.push(flow);
     }
 
-    for flow in engine.sweep_expired(packet.packet_time) {
+    for flow in engine.sweep_expired(observation.packet_time) {
         trace!("flow expired");
         plugin_manager
             .process_flow_data(flow)
@@ -313,10 +268,10 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
             continue;
         };
         trace!("received packet");
-        let Some(packet) = parse_packet(packet, use_mac, linktype) else {
+        let Some(observation) = observe_packet(packet, use_mac, linktype) else {
             continue;
         };
-        process_packet(packet, &mut engine, &plugin_manager, &mut records).await?;
+        process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
 
         // Export flows if the interval has been reached
         (file_path, file) = export_if_due(
