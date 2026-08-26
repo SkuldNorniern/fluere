@@ -139,6 +139,8 @@ fn ipv6_record(
     let (src_port, dst_port, flags) = ports_and_flags(transport);
     let tos = dscp_to_tos(ipv6.traffic_class >> 2).unwrap_or_default();
     // Preserve the historical record shape: IPv6 hop_limit was not mapped to TTL.
+    // `resolved_next_header` skips any extension header chain, so the record
+    // carries the transport protocol rather than the first extension header.
     (
         doctets,
         flags,
@@ -148,7 +150,7 @@ fn ipv6_record(
             src_port,
             dst_port,
             0,
-            ipv6.next_header,
+            ipv6.resolved_next_header,
             tos,
             doctets,
             time,
@@ -415,6 +417,21 @@ mod tests {
         assert_eq!(flags, [0; 9]);
         assert_eq!(record.prot, 17);
         assert_eq!(record.tos, 0);
+    }
+
+    #[test]
+    fn ipv6_extension_header_chain_reports_transport_protocol() {
+        let source = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        let destination = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+        // Hop-by-Hop header (next_header = UDP, one 8-byte block of PadN).
+        let mut payload = vec![17, 0, 1, 4, 0, 0, 0, 0];
+        payload.extend_from_slice(&udp_datagram(5353, 40_001, &[]));
+        let ipv6 = ipv6_packet(0, 0, source, destination, &payload);
+        let (_, _, record) =
+            parse_frame(&ethernet_frame(0x86dd, &ipv6)).expect("valid IPv6 HOPOPT UDP frame");
+
+        assert_eq!(record.prot, 17);
+        assert_eq!((record.src_port, record.dst_port), (5353, 40_001));
     }
 
     #[test]
