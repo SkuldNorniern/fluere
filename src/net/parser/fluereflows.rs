@@ -229,6 +229,13 @@ fn raw_fallback_record(
     ))
 }
 
+/// Build the opening state of a flow from its first packet.
+///
+/// Every aggregate counter starts at zero: `FlowEngine::offer` runs
+/// `update_flow` for this same packet right after inserting the record, so
+/// seeding the counters here would count the first packet twice. Only the
+/// per-packet observations (`min_pkt`/`max_pkt`, `min_ttl`/`max_ttl`) carry a
+/// value, since `update_flow` folds them with min/max rather than adding.
 #[allow(clippy::too_many_arguments)]
 fn new_record(
     source: IpAddr,
@@ -244,32 +251,32 @@ fn new_record(
     FluereRecord::new(
         source,
         destination,
-        0,
-        doctets,
+        0, // d_pkts
+        0, // d_octets
         time,
         time,
         src_port,
         dst_port,
-        doctets as u32,
-        doctets as u32,
-        ttl,
-        ttl,
-        0,
-        0,
-        doctets,
-        doctets,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
+        doctets as u32, // min_pkt
+        doctets as u32, // max_pkt
+        ttl,            // min_ttl
+        ttl,            // max_ttl
+        0,              // in_pkts
+        0,              // out_pkts
+        0,              // in_bytes
+        0,              // out_bytes
+        0,              // fin_cnt
+        0,              // syn_cnt
+        0,              // rst_cnt
+        0,              // psh_cnt
+        0,              // ack_cnt
+        0,              // urg_cnt
+        0,              // ece_cnt
+        0,              // cwr_cnt
+        0,              // ns_cnt
         protocol,
         tos,
-        false,
+        false, // mid_stream, decided by FlowEngine::offer
     )
 }
 
@@ -382,14 +389,19 @@ mod tests {
         assert_eq!(record.prot, 6);
     }
 
+    /// The parser emits a flow's opening state, not an aggregated flow, so the
+    /// running counters are still zero here. Only the per-packet size
+    /// observations carry the frame length.
     fn assert_plain_tcp_counts(record: &FluereRecord, frame_len: usize) {
         assert_eq!(record.syn_cnt, 0);
-        assert_eq!(record.d_octets, frame_len);
+        assert_eq!(record.d_pkts, 0);
+        assert_eq!(record.d_octets, 0);
+        assert_eq!((record.in_pkts, record.out_pkts), (0, 0));
+        assert_eq!((record.in_bytes, record.out_bytes), (0, 0));
         assert_eq!(
             (record.min_pkt, record.max_pkt),
             (frame_len as u32, frame_len as u32)
         );
-        assert_eq!((record.in_bytes, record.out_bytes), (frame_len, frame_len));
     }
 
     #[test]
@@ -493,7 +505,11 @@ mod tests {
         assert_eq!(record.prot, 6);
         assert_eq!(flags, [0, 1, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(doctets, frame.len());
-        assert_eq!(record.d_octets, frame.len());
+        assert_eq!(record.d_octets, 0);
+        assert_eq!(
+            (record.min_pkt, record.max_pkt),
+            (frame.len() as u32, frame.len() as u32)
+        );
     }
 
     #[test]

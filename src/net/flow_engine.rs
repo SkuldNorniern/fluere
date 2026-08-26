@@ -128,7 +128,10 @@ impl FlowEngine {
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
+    use pcap::{Packet, PacketHeader};
+
     use super::*;
+    use crate::net::parser::{parse_fluereflow, parse_keys};
     use crate::net::types::MacAddress;
 
     fn keys(protocol: u8) -> (Key, Key) {
@@ -245,6 +248,131 @@ mod tests {
         assert_eq!(finished.fin_cnt, 1);
         assert_eq!(engine.active_count(), 0);
         assert!(engine.sweep_expired(20_000).is_empty());
+    }
+
+    /// Build an Ethernet + IPv4 + TCP frame for one direction of a flow.
+    /// The reverse direction swaps MAC addresses, IP addresses and ports so it
+    /// hashes to the reverse `Key` rather than opening a second flow.
+    fn tcp_frame(forward: bool, tcp_flags: u8) -> Vec<u8> {
+        let (src_mac, dst_mac) = ([0xaau8; 6], [0xbbu8; 6]);
+        let (src_ip, dst_ip) = ([192u8, 0, 2, 1], [198u8, 51, 100, 2]);
+        let (src_port, dst_port) = (12_345u16, 443u16);
+
+        let (src_mac, dst_mac) = if forward {
+            (src_mac, dst_mac)
+        } else {
+            (dst_mac, src_mac)
+        };
+        let (src_ip, dst_ip) = if forward {
+            (src_ip, dst_ip)
+        } else {
+            (dst_ip, src_ip)
+        };
+        let (src_port, dst_port) = if forward {
+            (src_port, dst_port)
+        } else {
+            (dst_port, src_port)
+        };
+
+        let mut frame = Vec::with_capacity(54);
+        frame.extend_from_slice(&dst_mac);
+        frame.extend_from_slice(&src_mac);
+        frame.extend_from_slice(&0x0800u16.to_be_bytes());
+
+        frame.extend_from_slice(&[0x45, 0x00]);
+        frame.extend_from_slice(&40u16.to_be_bytes());
+        frame.extend_from_slice(&[0, 1, 0, 0, 64, 6, 0, 0]);
+        frame.extend_from_slice(&src_ip);
+        frame.extend_from_slice(&dst_ip);
+
+        frame.extend_from_slice(&src_port.to_be_bytes());
+        frame.extend_from_slice(&dst_port.to_be_bytes());
+        frame.extend_from_slice(&[0; 8]);
+        frame.extend_from_slice(&[0x50, tcp_flags, 0x20, 0x00, 0, 0, 0, 0]);
+        frame
+    }
+
+    /// Feed one captured frame through the real parser into the engine, the
+    /// way the capture loops do.
+    fn offer_frame(engine: &mut FlowEngine, frame: &[u8], time: u64) -> Option<FluereRecord> {
+        let header = PacketHeader {
+            ts: libc::timeval {
+                tv_sec: 0,
+                tv_usec: time as i64,
+            },
+            caplen: frame.len() as u32,
+            len: frame.len() as u32,
+        };
+        let (key, reverse) = parse_keys(Packet::new(&header, frame), 1).expect("parsable frame");
+        let (doctets, raw_flags, record) =
+            parse_fluereflow(Packet::new(&header, frame), 1).expect("parsable frame");
+        engine.offer(
+            key,
+            reverse,
+            record,
+            doctets,
+            TcpFlags::new(raw_flags),
+            time,
+        )
+    }
+
+    fn assert_counter_invariants(flow: &FluereRecord) {
+        assert_eq!(
+            flow.in_pkts + flow.out_pkts,
+            flow.d_pkts,
+            "directional packet counts must sum to the total"
+        );
+        assert_eq!(
+            flow.in_bytes + flow.out_bytes,
+            flow.d_octets,
+            "directional byte counts must sum to the total"
+        );
+        if flow.in_pkts == 0 {
+            assert_eq!(
+                flow.in_bytes, 0,
+                "no reverse packets means no reverse bytes"
+            );
+        }
+        if flow.out_pkts == 0 {
+            assert_eq!(
+                flow.out_bytes, 0,
+                "no forward packets means no forward bytes"
+            );
+        }
+    }
+
+    #[test]
+    fn first_packet_is_counted_exactly_once() {
+        let frame = tcp_frame(true, 0x02);
+        let mut engine = FlowEngine::new(10);
+
+        offer_frame(&mut engine, &frame, 1);
+        let flow = *engine.active().values().next().expect("one active flow");
+
+        assert_eq!(flow.d_pkts, 1);
+        assert_eq!(flow.d_octets, frame.len());
+        assert_eq!((flow.out_pkts, flow.out_bytes), (1, frame.len()));
+        assert_eq!((flow.in_pkts, flow.in_bytes), (0, 0));
+        assert_counter_invariants(&flow);
+    }
+
+    #[test]
+    fn bidirectional_totals_match_the_captured_bytes() {
+        let forward = tcp_frame(true, 0x02);
+        let backward = tcp_frame(false, 0x12);
+        let mut engine = FlowEngine::new(10);
+
+        offer_frame(&mut engine, &forward, 1);
+        offer_frame(&mut engine, &forward, 2);
+        offer_frame(&mut engine, &backward, 3);
+
+        let flow = *engine.active().values().next().expect("one active flow");
+
+        assert_eq!(flow.d_pkts, 3);
+        assert_eq!(flow.d_octets, forward.len() * 2 + backward.len());
+        assert_eq!((flow.out_pkts, flow.out_bytes), (2, forward.len() * 2));
+        assert_eq!((flow.in_pkts, flow.in_bytes), (1, backward.len()));
+        assert_counter_invariants(&flow);
     }
 
     #[test]
