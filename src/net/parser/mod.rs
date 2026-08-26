@@ -30,6 +30,12 @@ use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket, StopLayer};
 /// endpoint field, which the record does not have yet.
 fn pseudo_ports(parsed: &ParsedPacket, protocol: u8) -> Option<(u16, u16)> {
     match protocol {
+        // An IPsec SPI names the security association a packet belongs to, so
+        // it discriminates flows the way a port pair does. It is per-direction
+        // by design: the return traffic of an SA carries a different SPI and is
+        // a separate flow, which is what IPsec means by a one-way association.
+        50 => parsed.esp.as_ref().map(|esp| split_spi(esp.spi)),
+        51 => parsed.ah.as_ref().map(|ah| split_spi(ah.spi)),
         // SCTP has real ports; they just do not arrive through
         // `TransportSegment`, which only covers TCP and UDP.
         132 => parsed
@@ -41,6 +47,14 @@ fn pseudo_ports(parsed: &ParsedPacket, protocol: u8) -> Option<(u16, u16)> {
         47 => parsed.gre.as_ref().map(|gre| (gre.protocol_type, 0)),
         _ => None,
     }
+}
+
+/// Spread a 32-bit SPI across the two 16-bit slots the record has.
+///
+/// Both halves are needed to tell two associations apart, and the record has
+/// nowhere else to put them yet.
+fn split_spi(spi: u32) -> (u16, u16) {
+    ((spi >> 16) as u16, (spi & 0xFFFF) as u16)
 }
 
 /// Decode one captured frame with paccel.
