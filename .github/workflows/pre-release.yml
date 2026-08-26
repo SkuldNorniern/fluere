@@ -26,17 +26,17 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2.2.1
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --workspace --verbose
       - name: Run Clippy
-        run: cargo clippy --fix --allow-dirty --allow-staged --release --verbose
+        run: cargo clippy --workspace --all-targets --release --verbose -- -D warnings
       - name: Build
         run: cargo build --release --verbose
       - name: Build deb
-        run: cargo deb ; mv target/debian/fluere_*.deb target/debian/fluere_latest_x86_64.deb
+        run: cargo deb && mv target/debian/fluere_*.deb target/debian/fluere_latest_x86_64.deb
       - name: Strip Builded file
         run: strip -s target/release/fluere
       - name: Build rpm
-        run: cargo generate-rpm; mv target/generate-rpm/fluere-*.rpm target/generate-rpm/fluere_latest_x86_64.rpm
+        run: cargo generate-rpm && mv target/generate-rpm/fluere-*.rpm target/generate-rpm/fluere_latest_x86_64.rpm
 
 
       - uses: "marvinpinto/action-automatic-releases@latest"
