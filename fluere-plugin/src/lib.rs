@@ -1,41 +1,48 @@
-//! Loading and running Fluere's Lua plugins.
+//! Loading and running Fluere's plugins.
 //!
-//! Plugins are untrusted, optional code. Nothing a plugin does — failing to
-//! load, raising a Lua error, or missing an expected function — is allowed to
-//! stop the capture that feeds it.
+//! Plugins are untrusted, optional code. Nothing a plugin does - failing to
+//! load, raising an error, or missing an expected function - is allowed to stop
+//! the capture that feeds it.
+//!
+//! A plugin is written for one of the [runtimes](runtime) compiled into this
+//! build, and is claimed by the first runtime whose entry file its directory
+//! contains. Adding a language is a new [`PluginRuntime`] implementation behind
+//! a feature; nothing here changes.
 
-use std::borrow::Cow;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub mod downloader;
 mod error;
-mod record;
+pub mod runtime;
 mod util;
+pub mod view;
 
 use downloader::download_plugin_from_github;
 use util::home_cache_path;
 
 pub use downloader::DownloadError;
 pub use error::PluginError;
+pub use runtime::PluginRuntime;
+pub use view::{FieldValue, FlowView, SCHEMA_VERSION};
 
 use fluere_config::{Config, Plugin};
 use fluereflow::FluereRecord;
-use mlua::Lua;
 use tokio::sync::{mpsc, Mutex};
 
 #[cfg(feature = "log")]
-use log::{debug, info, warn};
+use log::{debug, info};
 
 /// Capacity of the queue between the capture path and the plugin worker.
 const CHANNEL_CAPACITY: usize = 100;
 
 /// Report a plugin problem without bringing anything down.
+#[macro_export]
 macro_rules! plugin_warn {
     ($($arg:tt)*) => {{
         #[cfg(feature = "log")]
-        warn!($($arg)*);
+        log::warn!($($arg)*);
         #[cfg(not(feature = "log"))]
         println!($($arg)*);
     }};
@@ -60,12 +67,12 @@ pub struct PluginWorker {
     handle: tokio::task::JoinHandle<()>,
 }
 
-#[derive(Debug)]
 pub struct PluginManager {
-    lua: Arc<Mutex<Lua>>,
+    runtimes: Arc<Mutex<Vec<Box<dyn PluginRuntime>>>>,
     sender: mpsc::Sender<FluereRecord>,
     receiver: Arc<Mutex<mpsc::Receiver<FluereRecord>>>,
-    plugins: Arc<Mutex<HashSet<Cow<'static, str>>>>,
+    /// Names of the plugins that loaded, for reporting.
+    loaded: Arc<Mutex<HashSet<String>>>,
 }
 
 impl PluginManager {
@@ -73,10 +80,10 @@ impl PluginManager {
         let (sender, receiver) = mpsc::channel::<FluereRecord>(CHANNEL_CAPACITY);
 
         Ok(PluginManager {
-            lua: Arc::new(Mutex::new(Lua::new())),
+            runtimes: Arc::new(Mutex::new(runtime::available())),
             sender,
             receiver: Arc::new(Mutex::new(receiver)),
-            plugins: Arc::new(Mutex::new(HashSet::new())),
+            loaded: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -88,14 +95,15 @@ impl PluginManager {
         #[cfg(feature = "log")]
         debug!("Loading plugins");
 
-        let mut loaded = self.plugins.lock().await;
+        let mut runtimes = self.runtimes.lock().await;
+        let mut loaded = self.loaded.lock().await;
 
         for (name, plugin_config) in &config.plugins {
             if !plugin_config.enabled {
                 continue;
             }
 
-            let directory = match self.plugin_directory(name, plugin_config) {
+            let directory = match plugin_directory(name, plugin_config) {
                 Ok(directory) => directory,
                 Err(error) => {
                     plugin_warn!("Unable to locate plugin {}: {}", name, error);
@@ -103,10 +111,32 @@ impl PluginManager {
                 }
             };
 
-            match self.load_plugin(name, &directory, plugin_config).await {
+            let arguments = plugin_config.extra_arguments.clone().unwrap_or_default();
+
+            let Some(runtime) = runtimes
+                .iter_mut()
+                .find(|runtime| directory.join(runtime.entry_file()).is_file())
+            else {
+                match entry_files() {
+                    Some(entries) => plugin_warn!(
+                        "No runtime can load plugin {}: none of {} found in {}",
+                        name,
+                        entries,
+                        directory.display()
+                    ),
+                    None => plugin_warn!(
+                        "Cannot load plugin {}: this build has no plugin runtimes compiled in",
+                        name
+                    ),
+                }
+                continue;
+            };
+
+            match runtime.load(name, &directory, &arguments) {
                 Ok(()) => {
-                    loaded.insert(Cow::Owned(name.clone()));
-                    plugin_info!("Loaded plugin {}", name);
+                    let language = runtime.name();
+                    loaded.insert(name.clone());
+                    plugin_info!("Loaded {} plugin {}", language, name);
                 }
                 Err(error) => plugin_warn!("Failed to load plugin {}: {}", name, error),
             }
@@ -115,86 +145,24 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Where a plugin's `init.lua` lives: the configured path, or the cache
-    /// directory it gets downloaded into.
-    fn plugin_directory(&self, name: &str, plugin_config: &Plugin) -> Result<PathBuf, PluginError> {
-        match plugin_config.path.as_ref() {
-            Some(path) => Ok(PathBuf::from(path)),
-            None => {
-                download_plugin_from_github(name)?;
-                let directory = name.rsplit('/').next().unwrap_or(name);
-                Ok(home_cache_path()?.join(directory))
-            }
-        }
-    }
-
-    /// Evaluate one plugin's `init.lua`, call its `init`, and register the
-    /// table it returns under the plugin's name.
-    async fn load_plugin(
-        &self,
-        name: &str,
-        directory: &Path,
-        plugin_config: &Plugin,
-    ) -> Result<(), PluginError> {
-        let code = std::fs::read_to_string(directory.join("init.lua"))?;
-
-        let lua_guard = self.lua.lock().await;
-        let lua = &*lua_guard;
-
-        #[cfg(feature = "log")]
-        debug!("Lua path: {}", directory.display());
-
-        // Let the plugin `require` its own modules.
-        let package_path = format!(
-            "package.path = package.path .. \";{}/?.lua\"",
-            directory.display()
-        );
-        if let Err(error) = lua.load(package_path).exec() {
-            plugin_warn!("Could not extend package.path for {}: {}", name, error);
-        }
-
-        let plugin_table: mlua::Table = lua.load(&code).eval()?;
-        let init: mlua::Function = plugin_table.get("init")?;
-
-        let arguments = lua.create_table()?;
-        if let Some(extra) = plugin_config.extra_arguments.as_ref() {
-            #[cfg(feature = "log")]
-            debug!("extra argument details {:?}", extra);
-
-            for (key, value) in extra {
-                arguments.set(key.as_str(), value.as_str())?;
-            }
-        }
-
-        init.call::<_, ()>(arguments)?;
-        lua.globals().set(name, plugin_table)?;
-
-        Ok(())
-    }
-
     /// Spawn the task that hands captured records to every loaded plugin.
     pub fn start_worker(&self) -> PluginWorker {
-        let lua = self.lua.clone();
-        let plugins = self.plugins.clone();
+        let runtimes = self.runtimes.clone();
         let receiver = self.receiver.clone();
 
         let handle = tokio::spawn(async move {
             let mut receiver = receiver.lock().await;
 
-            while let Some(data) = receiver.recv().await {
-                let lua_guard = lua.lock().await;
-                let plugins_guard = plugins.lock().await;
+            while let Some(record) = receiver.recv().await {
+                // Built once and marshalled by each runtime, so the field list
+                // lives in one place however many languages are loaded.
+                let view = FlowView::new(&record);
 
-                let table = match record::to_lua_table(&lua_guard, &data) {
-                    Ok(table) => table,
-                    Err(error) => {
-                        plugin_warn!("Could not build the record table: {}", error);
-                        continue;
+                let mut runtimes = runtimes.lock().await;
+                for runtime in runtimes.iter_mut() {
+                    if !runtime.is_empty() {
+                        runtime.on_flow(&view);
                     }
-                };
-
-                for plugin_name in plugins_guard.iter() {
-                    dispatch(&lua_guard, plugin_name, &table);
                 }
             }
         });
@@ -210,7 +178,7 @@ impl PluginManager {
             .map_err(|_| PluginError::WorkerStopped)
     }
 
-    /// Drain the queue, stop the worker, then run each plugin's `cleanup`.
+    /// Drain the queue, stop the worker, then run each plugin's cleanup hook.
     ///
     /// Consuming `self` is what makes the ordering reliable: dropping the last
     /// sender closes the channel, so the worker processes everything already
@@ -218,10 +186,10 @@ impl PluginManager {
     /// records still in flight.
     pub async fn shutdown(self, worker: PluginWorker) {
         let PluginManager {
-            lua,
+            runtimes,
             sender,
             receiver: _,
-            plugins,
+            loaded: _,
         } = self;
 
         drop(sender);
@@ -230,54 +198,35 @@ impl PluginManager {
             plugin_warn!("Plugin worker did not stop cleanly: {}", error);
         }
 
-        let lua_guard = lua.lock().await;
-        let plugins_guard = plugins.lock().await;
-
-        for plugin_name in plugins_guard.iter() {
-            let plugin_table: mlua::Table = match lua_guard.globals().get(plugin_name.as_ref()) {
-                Ok(table) => table,
-                Err(error) => {
-                    plugin_warn!("Plugin table missing for {}: {}", plugin_name, error);
-                    continue;
-                }
-            };
-
-            match plugin_table.get::<_, mlua::Function>("cleanup") {
-                Ok(cleanup) => {
-                    if let Err(error) = cleanup.call::<(), ()>(()) {
-                        plugin_warn!("Error in cleanup of plugin {}: {}", plugin_name, error);
-                    }
-                }
-                Err(_) => plugin_warn!("cleanup function not found in plugin: {}", plugin_name),
-            }
+        let mut runtimes = runtimes.lock().await;
+        for runtime in runtimes.iter_mut() {
+            runtime.cleanup();
         }
     }
 }
 
-/// Call one plugin's `process_data` with the record table.
-///
-/// Errors are reported and swallowed: one broken plugin must not stop the
-/// others from seeing the record, nor stop the worker.
-fn dispatch(lua: &Lua, plugin_name: &str, table: &mlua::Table<'_>) {
-    let plugin_table: mlua::Table = match lua.globals().get(plugin_name) {
-        Ok(table) => table,
-        Err(error) => {
-            plugin_warn!("Plugin table missing for {}: {}", plugin_name, error);
-            return;
+/// Where a plugin's entry file lives: the configured path, or the cache
+/// directory it gets downloaded into.
+fn plugin_directory(name: &str, plugin_config: &Plugin) -> Result<PathBuf, PluginError> {
+    match plugin_config.path.as_ref() {
+        Some(path) => Ok(PathBuf::from(path)),
+        None => {
+            download_plugin_from_github(name)?;
+            let directory = name.rsplit('/').next().unwrap_or(name);
+            Ok(home_cache_path()?.join(directory))
         }
-    };
-
-    match plugin_table.get::<_, mlua::Function>("process_data") {
-        Ok(process) => {
-            if let Err(error) = process.call::<mlua::Table<'_>, ()>(table.clone()) {
-                plugin_warn!("Error in plugin {}: {}", plugin_name, error);
-            }
-        }
-        Err(_) => plugin_warn!(
-            "'process_data' function not found in plugin: {}",
-            plugin_name
-        ),
     }
+}
+
+/// The entry files this build knows how to load, or `None` when no runtime is
+/// compiled in at all.
+fn entry_files() -> Option<String> {
+    let names: Vec<&str> = runtime::available()
+        .iter()
+        .map(|runtime| runtime.entry_file())
+        .collect();
+
+    (!names.is_empty()).then(|| names.join(", "))
 }
 
 #[cfg(test)]
@@ -419,6 +368,61 @@ return plugin
         for (port, line) in lines[..25].iter().enumerate() {
             assert_eq!(*line, format!("record {}", port));
         }
+    }
+
+    /// Asserts inside Lua that each field arrived with its natural type.
+    const TYPE_PROBE_PLUGIN: &str = r#"
+local plugin = {}
+local path
+
+function plugin.init(args)
+    path = args.out
+    local file = io.open(path, "w")
+    file:close()
+end
+
+function plugin.process_data(record)
+    local file = io.open(path, "a")
+    file:write("schema=" .. tostring(record.schema_version) .. "\n")
+    file:write("d_pkts=" .. type(record.d_pkts) .. "\n")
+    file:write("source=" .. type(record.source) .. "\n")
+    file:write("mid_stream=" .. type(record.mid_stream) .. "\n")
+    -- Arithmetic straight on the field, with no tonumber() call.
+    file:write("doubled=" .. tostring(record.src_port * 2) .. "\n")
+    file:close()
+end
+
+return plugin
+"#;
+
+    #[tokio::test]
+    async fn plugins_see_typed_fields_and_a_schema_version() {
+        let dir = TempDir::new("types");
+        std::fs::write(dir.0.join("init.lua"), TYPE_PROBE_PLUGIN).expect("write plugin");
+        let output = dir.0.join("out.txt");
+
+        let mut arguments = HashMap::new();
+        arguments.insert("out".to_string(), output.display().to_string());
+
+        let manager = PluginManager::new().expect("manager");
+        manager
+            .load_plugins(&config_for(&dir.0, Some(arguments)))
+            .await
+            .expect("plugins load");
+        let worker = manager.start_worker();
+        manager.process_flow_data(record(21)).await.expect("queued");
+        manager.shutdown(worker).await;
+
+        let written = std::fs::read_to_string(&output).expect("plugin output");
+        assert!(
+            written.contains(&format!("schema={}", SCHEMA_VERSION)),
+            "{}",
+            written
+        );
+        assert!(written.contains("d_pkts=number"), "{}", written);
+        assert!(written.contains("source=string"), "{}", written);
+        assert!(written.contains("mid_stream=boolean"), "{}", written);
+        assert!(written.contains("doubled=42"), "{}", written);
     }
 
     #[tokio::test]
