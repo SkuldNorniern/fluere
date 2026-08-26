@@ -23,7 +23,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 libc = "0.2"
 csv = "1.3"
 
-paccel = { git = "https://github.com/SkuldNorniern/paccel.git", rev = "4847cb5" }
+paccel = "0.1.0"
 
 fluere_plugin = { version = "0.2.0", path = "./fluere-plugin", features = ["log"] }
 fluere-config = { version = "0.2.0", path = "./fluere-config", features = ["log"] }
