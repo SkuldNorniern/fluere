@@ -9,16 +9,21 @@ pub struct FlowEngine {
     active: HashMap<Key, FluereRecord>,
     expirations: BTreeMap<u64, Vec<Key>>,
     current_expirations: HashMap<Key, u64>,
-    flow_timeout: u64,
+    /// Idle timeout in milliseconds, or `None` when the caller asked for no
+    /// timeout at all. Flows in a no-timeout engine leave only through TCP
+    /// termination or `drain`.
+    flow_timeout: Option<u64>,
 }
 
 impl FlowEngine {
+    /// `flow_timeout` is an idle timeout in milliseconds; zero means flows
+    /// never expire on their own, matching what the CLI documents.
     pub fn new(flow_timeout: u64) -> Self {
         Self {
             active: HashMap::new(),
             expirations: BTreeMap::new(),
             current_expirations: HashMap::new(),
-            flow_timeout,
+            flow_timeout: (flow_timeout > 0).then_some(flow_timeout),
         }
     }
 
@@ -38,9 +43,8 @@ impl FlowEngine {
                 None => {
                     record.mid_stream = record.prot == 6 && flags.syn == 0;
 
-                    let expiration = self.expiration_for(packet_time);
                     self.active.insert(key, record);
-                    self.push_expiration(key, expiration);
+                    self.schedule_expiration(key, packet_time);
                     false
                 }
             },
@@ -63,8 +67,7 @@ impl FlowEngine {
             return None;
         }
 
-        let expiration = self.expiration_for(packet_time);
-        self.push_expiration(flow_key, expiration);
+        self.schedule_expiration(flow_key, packet_time);
 
         if flags.is_finished() {
             self.current_expirations.remove(&flow_key);
@@ -114,11 +117,13 @@ impl FlowEngine {
         self.active.len()
     }
 
-    fn expiration_for(&self, packet_time: u64) -> u64 {
-        packet_time + (self.flow_timeout * 1_000)
-    }
-
-    fn push_expiration(&mut self, key: Key, expiration: u64) {
+    /// Queue `key` to expire one idle timeout after `packet_time`. Does
+    /// nothing when the engine was built without a timeout.
+    fn schedule_expiration(&mut self, key: Key, packet_time: u64) {
+        let Some(timeout) = self.flow_timeout else {
+            return;
+        };
+        let expiration = packet_time + timeout * 1_000;
         self.expirations.entry(expiration).or_default().push(key);
         self.current_expirations.insert(key, expiration);
     }
@@ -373,6 +378,19 @@ mod tests {
         assert_eq!((flow.out_pkts, flow.out_bytes), (2, forward.len() * 2));
         assert_eq!((flow.in_pkts, flow.in_bytes), (1, backward.len()));
         assert_counter_invariants(&flow);
+    }
+
+    #[test]
+    fn zero_timeout_means_flows_never_expire() {
+        let (key, reverse) = keys(17);
+        let mut engine = FlowEngine::new(0);
+
+        engine.offer(key, reverse, record(17, 1), 60, flags(0, 0, 0), 1);
+
+        assert!(engine.sweep_expired(1).is_empty());
+        assert!(engine.sweep_expired(u64::MAX).is_empty());
+        assert_eq!(engine.active_count(), 1);
+        assert_eq!(engine.drain().len(), 1);
     }
 
     #[test]
