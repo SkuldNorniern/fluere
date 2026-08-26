@@ -11,6 +11,8 @@
 //! covers it.
 
 use fluereflow::FluereRecord;
+
+use crate::net::flow::Flow;
 use pcap::{Packet, PacketHeader};
 
 use crate::net::flow_engine::FlowEngine;
@@ -188,7 +190,7 @@ pub struct Capture {
     engine: FlowEngine,
     fragments: FragmentTracker,
     time: u64,
-    completed: Vec<FluereRecord>,
+    completed: Vec<Flow>,
     offered_packets: usize,
     offered_octets: usize,
     skipped: usize,
@@ -245,7 +247,7 @@ impl Capture {
         records.extend(self.engine.drain());
 
         Flows {
-            records,
+            flows: records,
             offered_packets: self.offered_packets,
             offered_octets: self.offered_octets,
             skipped: self.skipped,
@@ -254,7 +256,7 @@ impl Capture {
 }
 
 pub struct Flows {
-    pub records: Vec<FluereRecord>,
+    pub flows: Vec<Flow>,
     offered_packets: usize,
     offered_octets: usize,
     skipped: usize,
@@ -262,12 +264,23 @@ pub struct Flows {
 
 impl Flows {
     pub fn len(&self) -> usize {
-        self.records.len()
+        self.flows.len()
+    }
+
+    /// The identifying keys of every flow, for assertions about what separated
+    /// them rather than what they counted.
+    pub fn keys(&self) -> impl Iterator<Item = &crate::net::types::Key> {
+        self.flows.iter().map(|flow| &flow.key)
     }
 
     /// The one flow matching `predicate`, failing if there is not exactly one.
     pub fn only(&self, predicate: impl Fn(&FluereRecord) -> bool) -> &FluereRecord {
-        let matched: Vec<&FluereRecord> = self.records.iter().filter(|r| predicate(r)).collect();
+        let matched: Vec<&FluereRecord> = self
+            .flows
+            .iter()
+            .map(|flow| &flow.record)
+            .filter(|r| predicate(r))
+            .collect();
         assert_eq!(
             matched.len(),
             1,
@@ -278,7 +291,10 @@ impl Flows {
     }
 
     pub fn count(&self, predicate: impl Fn(&FluereRecord) -> bool) -> usize {
-        self.records.iter().filter(|r| predicate(r)).count()
+        self.flows
+            .iter()
+            .filter(|flow| predicate(&flow.record))
+            .count()
     }
 
     /// Nothing was lost, duplicated, or invented.
@@ -286,8 +302,8 @@ impl Flows {
     /// Called by every scenario, so a change that quietly miscounts fails even
     /// where no named assertion covers it.
     pub fn assert_conserved(&self) {
-        let packets: u32 = self.records.iter().map(|r| r.d_pkts).sum();
-        let octets: usize = self.records.iter().map(|r| r.d_octets).sum();
+        let packets: u32 = self.flows.iter().map(|flow| flow.record.d_pkts).sum();
+        let octets: usize = self.flows.iter().map(|flow| flow.record.d_octets).sum();
 
         assert_eq!(
             packets as usize,
@@ -299,7 +315,7 @@ impl Flows {
             "flow octets must equal the bytes offered"
         );
 
-        for record in &self.records {
+        for record in self.flows.iter().map(|flow| &flow.record) {
             assert_eq!(
                 record.in_pkts + record.out_pkts,
                 record.d_pkts,
@@ -538,6 +554,12 @@ mod tests {
             2,
             "two segments with the same inner tuple must not share a record"
         );
+
+        // And the reason they are separate is reportable, not just internal.
+        let mut segments: Vec<Vec<u16>> =
+            flows.keys().map(|key| key.vlan.tags().to_vec()).collect();
+        segments.sort_unstable();
+        assert_eq!(segments, vec![vec![100], vec![200]]);
     }
 
     /// A tagged frame and an untagged one are different segments too.

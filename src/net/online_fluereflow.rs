@@ -27,8 +27,8 @@ use fluere_config::Config;
 // FEAT:TASK: set plugin as feature
 // | Since the plugin manager uses Lua, for edge cases that require minimal feature,
 // | setting the plugin as a feature would be beneficial.
+use crate::net::Flow;
 use fluere_plugin::PluginManager;
-use fluereflow::FluereRecord;
 
 use log::{debug, error, info, trace};
 use tokio::{task, task::JoinHandle};
@@ -103,12 +103,12 @@ async fn process_packet(
     observation: PacketObservation,
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in engine.accept(observation).completed {
         trace!("flow finished: {:?}", flow);
         plugin_manager
-            .process_flow_data(flow)
+            .process_flow_data(flow.record)
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -118,7 +118,7 @@ async fn process_packet(
 }
 
 fn rotate_export(
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
     file: fs::File,
     file_path: &str,
     csv_file: &str,
@@ -145,7 +145,7 @@ fn rotate_export(
 }
 
 fn export_if_due(
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
     file: fs::File,
     file_path: Cow<'static, str>,
     csv_file: &str,
@@ -166,11 +166,11 @@ fn export_if_due(
 async fn drain_engine(
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in engine.drain() {
         plugin_manager
-            .process_flow_data(flow)
+            .process_flow_data(flow.record)
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -184,7 +184,7 @@ async fn await_capture_tasks(tasks: Vec<JoinHandle<Result<(), FluereError>>>) {
     }
 }
 
-fn spawn_final_export(records: &mut Vec<FluereRecord>, file: fs::File) -> JoinHandle<()> {
+fn spawn_final_export(records: &mut Vec<Flow>, file: fs::File) -> JoinHandle<()> {
     let records_to_export = take(records);
     task::spawn(async {
         let exporter = fluere_exporter(records_to_export, file).await;
@@ -243,7 +243,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
 
     //let mut wtr = csv::Writer::from_writer(file);
 
-    let mut records: Vec<FluereRecord> = Vec::new();
+    let mut records: Vec<Flow> = Vec::new();
     let mut engine = FlowEngine::new(flow_timeout);
     let tasks: Vec<JoinHandle<Result<(), FluereError>>> = vec![];
     let mut export_tasks = vec![];
