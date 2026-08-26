@@ -6,7 +6,7 @@ use crate::net::parser::{dscp_to_tos, parse_microseconds};
 
 use fluereflow::FluereRecord;
 use log::trace;
-use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket, StopLayer, TransportSegment};
+use paccel::engine::{ParsedPacket, TransportSegment};
 use paccel::layer::datalink::arp::ArpPacket;
 use paccel::layer::network::{ipv4::Ipv4Header, ipv6::Ipv6Header};
 
@@ -37,31 +37,53 @@ pub fn parse_fluereflow(
     packet: pcap::Packet,
     linktype: u16,
 ) -> Result<(usize, [u8; 9], FluereRecord), ParseError> {
-    trace!("Parsing packet");
     if packet.is_empty() {
         return Err(ParseError::EmptyPacket);
     }
 
-    let config = ParseConfig {
-        stop_after: StopLayer::Transport,
-        ..Default::default()
-    };
-    let parsed =
-        BuiltinPacketParser::parse_with_config_and_linktype(packet.data, config, Some(linktype))
-            .map_err(|_| ParseError::InvalidPacket)?;
-    let time = parse_microseconds(
-        packet.header.ts.tv_sec as u64,
-        packet.header.ts.tv_usec as u64,
-    );
-    // `header.len` is the length on the wire; `data` is only what the snaplen
-    // let through. Sources that do not report a wire length send 0, so fall
-    // back to what was captured.
-    let doctets = if packet.header.len > 0 {
+    let parsed = super::parse_frame(packet.data, linktype)?;
+    record_from_parsed(
+        &parsed,
+        packet.data,
+        wire_length(&packet),
+        packet_time(&packet),
+    )
+}
+
+/// The frame's length on the wire.
+///
+/// `data` is only what the snaplen let through; `header.len` is what was
+/// actually on the wire, so counting captured bytes would under-report traffic.
+/// Sources that do not report a wire length send 0, so fall back to what was
+/// captured.
+pub(super) fn wire_length(packet: &pcap::Packet) -> usize {
+    if packet.header.len > 0 {
         packet.header.len as usize
     } else {
         packet.data.len()
-    };
-    let inner = innermost(&parsed);
+    }
+}
+
+/// The capture timestamp, in microseconds since the epoch.
+pub(super) fn packet_time(packet: &pcap::Packet) -> u64 {
+    parse_microseconds(
+        packet.header.ts.tv_sec as u64,
+        packet.header.ts.tv_usec as u64,
+    )
+}
+
+/// Turn an already parsed frame into a flow record.
+///
+/// Split out of [`parse_fluereflow`] so the capture path can decode a frame
+/// once and derive both the flow keys and this record from the same parse.
+pub(super) fn record_from_parsed(
+    parsed: &ParsedPacket,
+    packet_data: &[u8],
+    doctets: usize,
+    time: u64,
+) -> Result<FlowRecord, ParseError> {
+    trace!("Parsing packet");
+    let inner = innermost(parsed);
 
     if let Some(arp) = inner.arp.as_ref() {
         return Ok(arp_record(arp, doctets, time));
@@ -73,7 +95,7 @@ pub fn parse_fluereflow(
         return Ok(ipv6_record(ipv6, inner.transport.as_ref(), doctets, time));
     }
 
-    raw_fallback_record(&parsed, packet.data, doctets, time)
+    raw_fallback_record(parsed, packet_data, doctets, time)
 }
 
 fn arp_record(arp: &ArpPacket, doctets: usize, time: u64) -> FlowRecord {

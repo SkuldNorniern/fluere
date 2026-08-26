@@ -7,8 +7,9 @@ use crate::{
     net::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
-        parser::{microseconds_to_timestamp, parse_fluereflow, parse_keys, parse_microseconds},
-        types::{Key, TcpFlags},
+        observe_packet,
+        parser::{PacketObservation, microseconds_to_timestamp},
+        types::Key,
     },
     types::Args,
     utils::{cur_time_file, fluere_exporter},
@@ -111,53 +112,10 @@ struct FlowSummary {
     protocol: Cow<'static, str>, //flow_data: String, // or any other relevant data you want to display
 }
 
-struct ParsedPacket {
-    key_value: Key,
-    reverse_key: Key,
-    flowdata: FluereRecord,
-    doctets: usize,
-    flags: TcpFlags,
-    packet_time: u64,
-}
-
 struct ExportSchedule<'a> {
     interval: u64,
     last_export: &'a Mutex<Instant>,
     last_export_unix_time: &'a Mutex<u64>,
-}
-
-fn parse_packet(packet: pcap::Packet<'_>, use_mac: bool, linktype: u16) -> Option<ParsedPacket> {
-    let (mut key_value, mut reverse_key) = match parse_keys(packet.clone(), linktype) {
-        Ok(keys) => keys,
-        Err(error) => {
-            debug!("Error on parse_keys: {}", error);
-            return None;
-        }
-    };
-    if !use_mac {
-        key_value.mac_defaultate();
-        reverse_key.mac_defaultate();
-    }
-
-    let (doctets, raw_flags, flowdata) = match parse_fluereflow(packet.clone(), linktype) {
-        Ok(result) => result,
-        Err(error) => {
-            debug!("Error on parse_fluereflow: {}", error);
-            return None;
-        }
-    };
-
-    Some(ParsedPacket {
-        key_value,
-        reverse_key,
-        flowdata,
-        doctets,
-        flags: TcpFlags::new(raw_flags),
-        packet_time: parse_microseconds(
-            packet.header.ts.tv_sec as u64,
-            packet.header.ts.tv_usec as u64,
-        ),
-    })
 }
 
 fn next_packet(cap: &mut pcap::Capture<pcap::Active>) -> Option<pcap::Packet<'_>> {
@@ -205,7 +163,7 @@ async fn emit_completed_flows(
 }
 
 async fn process_packet(
-    packet: ParsedPacket,
+    observation: PacketObservation,
     engine: &Mutex<FlowEngine>,
     recent_flows: &Mutex<Vec<FlowSummary>>,
     plugin_manager: &PluginManager,
@@ -213,18 +171,18 @@ async fn process_packet(
 ) -> Result<(), FluereError> {
     let (completed, new_flow) = {
         let mut engine_guard = engine.lock().await;
-        let was_active = engine_guard.active().contains_key(&packet.key_value)
-            || engine_guard.active().contains_key(&packet.reverse_key);
+        let was_active = engine_guard.active().contains_key(&observation.key)
+            || engine_guard.active().contains_key(&observation.reverse_key);
         let finished = engine_guard.offer(
-            packet.key_value,
-            packet.reverse_key,
-            packet.flowdata,
-            packet.doctets,
-            packet.flags,
-            packet.packet_time,
+            observation.key,
+            observation.reverse_key,
+            observation.record,
+            observation.doctets,
+            observation.flags,
+            observation.packet_time,
         );
-        let expired = engine_guard.sweep_expired(packet.packet_time);
-        let new_flow = !was_active && engine_guard.active().contains_key(&packet.key_value);
+        let expired = engine_guard.sweep_expired(observation.packet_time);
+        let new_flow = !was_active && engine_guard.active().contains_key(&observation.key);
         let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
         if let Some(flow) = finished {
             completed.push(flow);
@@ -234,7 +192,7 @@ async fn process_packet(
     };
 
     if new_flow {
-        add_recent_flow(recent_flows, packet.key_value).await;
+        add_recent_flow(recent_flows, observation.key).await;
     }
     emit_completed_flows(completed, plugin_manager, records).await
 }
@@ -365,11 +323,11 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                 continue;
             };
             trace!("received packet");
-            let Some(packet) = parse_packet(packet, use_mac, linktype) else {
+            let Some(observation) = observe_packet(packet, use_mac, linktype) else {
                 continue;
             };
             process_packet(
-                packet,
+                observation,
                 &engine,
                 &recent_flows,
                 &plugin_manager,
