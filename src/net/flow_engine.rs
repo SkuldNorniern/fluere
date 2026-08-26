@@ -1,9 +1,20 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::net::flows::update_flow;
+use crate::net::parser::PacketObservation;
 use crate::net::types::{Key, TcpFlags};
 use crate::types::UDFlowKey;
 use fluereflow::FluereRecord;
+
+/// What one packet did to the engine.
+#[derive(Debug, Default)]
+pub struct AcceptOutcome {
+    /// Flows finished by this packet: a TCP termination, plus any flow that
+    /// idled out at this packet's timestamp.
+    pub completed: Vec<FluereRecord>,
+    /// Whether this packet opened a flow that was not active before.
+    pub opened_flow: bool,
+}
 
 pub struct FlowEngine {
     active: HashMap<Key, FluereRecord>,
@@ -77,6 +88,36 @@ impl FlowEngine {
         }
     }
 
+    /// Feed one observed packet into the engine.
+    ///
+    /// Every capture mode goes through this, so they all agree on the order of
+    /// events for a packet: the flow is updated first, then anything that has
+    /// idled out is swept, and both sets of finished flows come back together.
+    pub fn accept(&mut self, observation: PacketObservation) -> AcceptOutcome {
+        let was_active = self.active.contains_key(&observation.key)
+            || self.active.contains_key(&observation.reverse_key);
+
+        let finished = self.offer(
+            observation.key,
+            observation.reverse_key,
+            observation.record,
+            observation.doctets,
+            observation.flags,
+            observation.packet_time,
+        );
+        let expired = self.sweep_expired(observation.packet_time);
+        let opened_flow = !was_active && self.active.contains_key(&observation.key);
+
+        let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
+        completed.extend(finished);
+        completed.extend(expired);
+
+        AcceptOutcome {
+            completed,
+            opened_flow,
+        }
+    }
+
     pub fn sweep_expired(&mut self, current_time: u64) -> Vec<FluereRecord> {
         let expired_times: Vec<u64> = self
             .expirations
@@ -109,6 +150,9 @@ impl FlowEngine {
         self.active.drain().map(|(_, flow)| flow).collect()
     }
 
+    /// The flows currently held open. Only the tests inspect this directly;
+    /// callers go through `accept`.
+    #[cfg(test)]
     pub fn active(&self) -> &HashMap<Key, FluereRecord> {
         &self.active
     }
@@ -297,6 +341,38 @@ mod tests {
         frame
     }
 
+    /// An Ethernet + IPv4 + UDP frame, for a flow distinct from `tcp_frame`.
+    fn udp_frame() -> Vec<u8> {
+        let mut frame = vec![0xaa; 6];
+        frame.extend_from_slice(&[0xbb; 6]);
+        frame.extend_from_slice(&0x0800u16.to_be_bytes());
+
+        frame.extend_from_slice(&[0x45, 0x00]);
+        frame.extend_from_slice(&28u16.to_be_bytes());
+        frame.extend_from_slice(&[0, 1, 0, 0, 64, 17, 0, 0]);
+        frame.extend_from_slice(&[203, 0, 113, 5]);
+        frame.extend_from_slice(&[203, 0, 113, 6]);
+
+        frame.extend_from_slice(&53u16.to_be_bytes());
+        frame.extend_from_slice(&5353u16.to_be_bytes());
+        frame.extend_from_slice(&8u16.to_be_bytes());
+        frame.extend_from_slice(&[0, 0]);
+        frame
+    }
+
+    /// Decode a frame the way the capture loops do.
+    fn observe_frame(frame: &[u8], time: u64) -> PacketObservation {
+        let header = PacketHeader {
+            ts: libc::timeval {
+                tv_sec: 0,
+                tv_usec: time as i64,
+            },
+            caplen: frame.len() as u32,
+            len: frame.len() as u32,
+        };
+        crate::net::parser::observe(Packet::new(&header, frame), false, 1).expect("parsable frame")
+    }
+
     /// Feed one captured frame through the real parser into the engine, the
     /// way the capture loops do.
     fn offer_frame(engine: &mut FlowEngine, frame: &[u8], time: u64) -> Option<FluereRecord> {
@@ -378,6 +454,44 @@ mod tests {
         assert_eq!((flow.out_pkts, flow.out_bytes), (2, forward.len() * 2));
         assert_eq!((flow.in_pkts, flow.in_bytes), (1, backward.len()));
         assert_counter_invariants(&flow);
+    }
+
+    #[test]
+    fn accept_reports_a_newly_opened_flow_once() {
+        let frame = tcp_frame(true, 0x02);
+        let mut engine = FlowEngine::new(10);
+
+        let first = engine.accept(observe_frame(&frame, 1));
+        assert!(first.opened_flow, "the first packet opens the flow");
+        assert!(first.completed.is_empty());
+
+        let second = engine.accept(observe_frame(&frame, 2));
+        assert!(!second.opened_flow, "a second packet joins the same flow");
+
+        let reverse = engine.accept(observe_frame(&tcp_frame(false, 0x12), 3));
+        assert!(
+            !reverse.opened_flow,
+            "the reverse direction is the same flow, not a new one"
+        );
+    }
+
+    #[test]
+    fn accept_returns_terminated_and_expired_flows_together() {
+        let mut engine = FlowEngine::new(10);
+
+        // A flow that goes idle, and a second one whose FIN lands later.
+        engine.accept(observe_frame(&tcp_frame(true, 0x02), 1_000));
+        let outcome = engine.accept(observe_frame(&udp_frame(), 2_000));
+        assert!(outcome.completed.is_empty());
+
+        // Far enough ahead that the first flow has idled out.
+        let outcome = engine.accept(observe_frame(&tcp_frame(true, 0x01), 30_000));
+        assert_eq!(
+            outcome.completed.len(),
+            2,
+            "the FIN'd flow and the idled-out one both come back"
+        );
+        assert_eq!(engine.active_count(), 0);
     }
 
     #[test]
