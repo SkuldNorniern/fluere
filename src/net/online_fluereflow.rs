@@ -337,8 +337,9 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     await_capture_tasks(tasks).await;
 
     export_tasks.push(spawn_final_export(&mut records, file));
-    plugin_manager.await_completion(plugin_worker).await;
-    drop(plugin_manager);
+    // Consumes the manager: dropping its sender is what lets the worker drain
+    // the queue and stop before plugin cleanup runs.
+    plugin_manager.shutdown(plugin_worker).await;
     await_export_tasks(export_tasks).await;
     // info!("Exporting task excutation result: {:?}", result);
 

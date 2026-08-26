@@ -1,6 +1,6 @@
 [package]
 name = "fluere_plugin"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 description = "Plugin API for Fluere."
@@ -31,3 +31,7 @@ name = "fluere_plugin"
 
 [features]
 log = ["dep:log"]
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

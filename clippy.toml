@@ -1,2 +1,4 @@
+# Tests assert on known-good values; a failed unwrap there is the test failing,
+# which is what it is for. Production code still denies both.
 allow-unwrap-in-tests = true
-cognitive-complexity-threshold = 10
+allow-expect-in-tests = true
