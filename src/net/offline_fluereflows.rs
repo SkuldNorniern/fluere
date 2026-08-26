@@ -18,20 +18,11 @@ fn process_packet(
     engine: &mut FlowEngine,
     records: &mut Vec<FluereRecord>,
 ) {
-    if let Some(flow) = engine.offer(
-        observation.key,
-        observation.reverse_key,
-        observation.record,
-        observation.doctets,
-        observation.flags,
-        observation.packet_time,
-    ) {
-        trace!("Flow finished");
-        trace!("Flow data: {:?}", flow);
-        records.push(flow);
+    let outcome = engine.accept(observation);
+    for flow in &outcome.completed {
+        trace!("Flow finished: {:?}", flow);
     }
-
-    records.extend(engine.sweep_expired(observation.packet_time));
+    records.extend(outcome.completed);
 }
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {

@@ -169,32 +169,17 @@ async fn process_packet(
     plugin_manager: &PluginManager,
     records: &mut Vec<FluereRecord>,
 ) -> Result<(), FluereError> {
-    let (completed, new_flow) = {
+    // Held only for the engine update, so the capture loop is not blocked on
+    // the plugin and TUI work that follows.
+    let outcome = {
         let mut engine_guard = engine.lock().await;
-        let was_active = engine_guard.active().contains_key(&observation.key)
-            || engine_guard.active().contains_key(&observation.reverse_key);
-        let finished = engine_guard.offer(
-            observation.key,
-            observation.reverse_key,
-            observation.record,
-            observation.doctets,
-            observation.flags,
-            observation.packet_time,
-        );
-        let expired = engine_guard.sweep_expired(observation.packet_time);
-        let new_flow = !was_active && engine_guard.active().contains_key(&observation.key);
-        let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
-        if let Some(flow) = finished {
-            completed.push(flow);
-        }
-        completed.extend(expired);
-        (completed, new_flow)
+        engine_guard.accept(observation)
     };
 
-    if new_flow {
+    if outcome.opened_flow {
         add_recent_flow(recent_flows, observation.key).await;
     }
-    emit_completed_flows(completed, plugin_manager, records).await
+    emit_completed_flows(outcome.completed, plugin_manager, records).await
 }
 
 async fn export_if_due(

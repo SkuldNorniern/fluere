@@ -103,25 +103,8 @@ async fn process_packet(
     plugin_manager: &PluginManager,
     records: &mut Vec<FluereRecord>,
 ) -> Result<(), FluereError> {
-    if let Some(flow) = engine.offer(
-        observation.key,
-        observation.reverse_key,
-        observation.record,
-        observation.doctets,
-        observation.flags,
-        observation.packet_time,
-    ) {
-        trace!("flow finished");
-        trace!("flow data: {:?}", flow);
-        plugin_manager
-            .process_flow_data(flow)
-            .await
-            .map_err(|error| FluereError::Plugin(error.to_string()))?;
-        records.push(flow);
-    }
-
-    for flow in engine.sweep_expired(observation.packet_time) {
-        trace!("flow expired");
+    for flow in engine.accept(observation).completed {
+        trace!("flow finished: {:?}", flow);
         plugin_manager
             .process_flow_data(flow)
             .await
