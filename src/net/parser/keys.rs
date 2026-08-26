@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use crate::error::ParseError;
-use crate::net::types::{Key, MacAddress};
+use crate::net::types::{EncapKind, Encapsulation, Key, MacAddress};
 
 use log::trace;
 use paccel::engine::ParsedPacket;
@@ -30,13 +30,21 @@ pub(super) fn keys_from_parsed(
     trace!("Parsing keys");
     let (src_mac, dst_mac) = mac_addresses(parsed);
     let (src_ip, dst_ip, src_port, dst_port, protocol) = extract_flow_tuple(parsed, packet_data)?;
+    let encapsulation = encapsulation_of(parsed);
 
     trace!(
         "Parsed keys: src_ip={:?} dst_ip={:?} src_port={:?} dst_port={:?} protocol={:?} src_mac={:?} dst_mac={:?}",
         src_ip, dst_ip, src_port, dst_port, protocol, src_mac, dst_mac
     );
     Ok(build_key_pair(
-        src_ip, dst_ip, src_port, dst_port, protocol, src_mac, dst_mac,
+        src_ip,
+        dst_ip,
+        src_port,
+        dst_port,
+        protocol,
+        src_mac,
+        dst_mac,
+        encapsulation,
     ))
 }
 
@@ -113,6 +121,52 @@ fn raw_fallback_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<FlowT
     ))
 }
 
+/// The tunnel a packet arrived inside, taken from the outermost headers.
+///
+/// `None` when the packet was not tunnelled. The kind and segment identifier
+/// come from whichever tunnel header paccel decoded; the addresses are the
+/// outermost ones, which are the tunnel's own endpoints.
+fn encapsulation_of(parsed: &ParsedPacket) -> Option<Encapsulation> {
+    // No inner packet means nothing was encapsulated.
+    parsed.inner.as_ref()?;
+
+    let (outer_src, outer_dst) = outer_addresses(parsed)?;
+
+    let (kind, vni) = if let Some(vxlan) = parsed.vxlan.as_ref() {
+        (EncapKind::Vxlan, vxlan.vni)
+    } else if let Some(geneve) = parsed.geneve.as_ref() {
+        (EncapKind::Geneve, geneve.vni)
+    } else if parsed.gre.is_some() {
+        (EncapKind::Gre, 0)
+    } else if let Some(mpls) = parsed.mpls.as_ref() {
+        // The outermost label is the one the carrier switched on.
+        let label = mpls.labels.first().map_or(0, |label| label.label);
+        (EncapKind::Mpls, label)
+    } else if parsed.ipv4.is_some() || parsed.ipv6.is_some() {
+        (EncapKind::IpInIp, 0)
+    } else {
+        (EncapKind::Other, 0)
+    };
+
+    Some(Encapsulation {
+        kind,
+        outer_src,
+        outer_dst,
+        vni,
+    })
+}
+
+/// Addresses of the outermost IP header, which belong to the tunnel endpoints.
+fn outer_addresses(parsed: &ParsedPacket) -> Option<(IpAddr, IpAddr)> {
+    if let Some(ipv4) = parsed.ipv4.as_ref() {
+        return Some((IpAddr::V4(ipv4.source), IpAddr::V4(ipv4.destination)));
+    }
+    parsed
+        .ipv6
+        .as_ref()
+        .map(|ipv6| (IpAddr::V6(ipv6.source), IpAddr::V6(ipv6.destination)))
+}
+
 /// Build the forward and reverse `Key` for a flow from its extracted fields.
 #[allow(clippy::too_many_arguments)]
 fn build_key_pair(
@@ -123,6 +177,7 @@ fn build_key_pair(
     protocol: u8,
     src_mac: MacAddress,
     dst_mac: MacAddress,
+    encapsulation: Option<Encapsulation>,
 ) -> (Key, Key) {
     let key_value = Key {
         src_ip,
@@ -132,7 +187,10 @@ fn build_key_pair(
         protocol,
         src_mac,
         dst_mac,
+        encapsulation,
     };
+    // The tunnel is not reversed with the inner addresses: the return traffic
+    // of a flow comes back through the same tunnel, in the same direction.
     let key_reverse_value = Key {
         src_ip: dst_ip,
         src_port: dst_port,
@@ -141,6 +199,7 @@ fn build_key_pair(
         protocol,
         src_mac: dst_mac,
         dst_mac: src_mac,
+        encapsulation,
     };
     (key_value, key_reverse_value)
 }
