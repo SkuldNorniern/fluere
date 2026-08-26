@@ -16,7 +16,6 @@ use fluereflow::FluereRecord;
 use indicatif::ProgressBar;
 use log::{debug, info, trace};
 use pcap::Capture;
-use tokio::task;
 
 struct ParsedPacket {
     key_value: Key,
@@ -77,10 +76,7 @@ fn process_packet(packet: ParsedPacket, engine: &mut FlowEngine, records: &mut V
 }
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
-    let _csv_file = arg
-        .files
-        .csv
-        .required("this should be defaulted to `output` on construction")?;
+    let csv_title = arg.files.csv;
     let file_name = arg
         .files
         .file
@@ -101,14 +97,17 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
-    let file_noext = format!(
-        "{}_converted.csv",
-        Path::new(&file_name)
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or("output")
-    );
-    let output_file_path = format!("{}/{}", file_dir, file_noext);
+    // `-c` names the output; without it, derive the name from the capture file.
+    let file_noext = csv_title.unwrap_or_else(|| {
+        format!(
+            "{}_converted",
+            Path::new(&file_name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("output")
+        )
+    });
+    let output_file_path = format!("{}/{}.csv", file_dir, file_noext);
     let file = fs::File::create(&output_file_path)?;
 
     let mut records: Vec<FluereRecord> = Vec::new();
@@ -132,12 +131,10 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
 
     records.extend(engine.drain());
 
-    let tasks = task::spawn(async {
-        let _ = fluere_exporter(records, file).await;
-    });
-
-    let result = tasks.await;
-    info!("Export {} result: {:?}", output_file_path, result);
+    // Awaited immediately, so there is nothing to gain from a spawned task -
+    // and a failed export has to reach the caller rather than be discarded.
+    fluere_exporter(records, file).await?;
+    info!("Exported {}", output_file_path);
 
     info!("Active flows: {:?}", ac_flow_cnt);
     info!("Ended flows: {:?}", ended_flow_cnt);
