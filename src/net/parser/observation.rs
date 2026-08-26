@@ -283,6 +283,44 @@ mod tests {
         );
     }
 
+    /// Every IPsec association between two hosts used to collapse into one
+    /// flow, because ESP and AH have no ports and their SPI went unread.
+    #[test]
+    fn ipsec_associations_are_told_apart_by_spi() {
+        let esp = |spi: u32| {
+            let mut frame = Vec::new();
+            frame.extend_from_slice(&DST_MAC);
+            frame.extend_from_slice(&SRC_MAC);
+            frame.extend_from_slice(&0x0800u16.to_be_bytes());
+            frame.extend_from_slice(&[0x45, 0x00]);
+            frame.extend_from_slice(&(20u16 + 16).to_be_bytes());
+            frame.extend_from_slice(&[0, 1, 0, 0, 64, 50, 0, 0]);
+            frame.extend_from_slice(&[203, 0, 113, 1]);
+            frame.extend_from_slice(&[203, 0, 113, 2]);
+            frame.extend_from_slice(&spi.to_be_bytes());
+            frame.extend_from_slice(&1u32.to_be_bytes());
+            frame.extend_from_slice(&[0; 8]);
+            frame
+        };
+
+        let first = observed(&esp(0x1111_1111));
+        let second = observed(&esp(0x2222_2222));
+
+        assert_eq!(first.record.prot, 50);
+        let spi_of =
+            |o: &PacketObservation| (u32::from(o.key.src_port) << 16) | u32::from(o.key.dst_port);
+        assert_eq!(spi_of(&first), 0x1111_1111);
+        assert_eq!(spi_of(&second), 0x2222_2222);
+        assert_ne!(
+            first.key, second.key,
+            "different associations must be different flows"
+        );
+        assert_eq!(
+            (first.record.src_port, first.record.dst_port),
+            (first.key.src_port, first.key.dst_port)
+        );
+    }
+
     #[test]
     fn an_empty_packet_is_rejected() {
         let header = header(&[]);
