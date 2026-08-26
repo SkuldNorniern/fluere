@@ -353,8 +353,14 @@ mod tests {
             0x00, 0x50, 0x02, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0800).unwrap();
-        assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))));
-        assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20))));
+        assert_eq!(
+            header.src_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10)))
+        );
+        assert_eq!(
+            header.dst_ip,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 20)))
+        );
         assert_eq!((header.src_port, header.dst_port), (4660, 80));
         assert_eq!(header.protocol, 6);
     }
