@@ -59,7 +59,7 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
         std::fs::create_dir_all(&path)?;
     }
 
-    let repo_path = path.join(repo_name.split('/').last().unwrap());
+    let repo_path = path.join(repo_name.split('/').next_back().unwrap());
     let repository_path = Path::new(&repo_path);
 
     let repo = match Repository::open(repository_path) {

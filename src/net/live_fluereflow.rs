@@ -673,22 +673,21 @@ fn draw_ui(
 }
 async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
     loop {
-        if event::poll(std::time::Duration::from_millis(100))? {
-            if let event::Event::Key(KeyEvent {
+        if event::poll(std::time::Duration::from_millis(100))?
+            && let event::Event::Key(KeyEvent {
                 code, modifiers, ..
             }) = event::read()?
-            {
-                match code {
-                    KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
-                        debug!("Exiting due to control-c");
-                        std::process::exit(0);
-                    }
-                    KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        debug!("Exiting due to q/Q");
-                        std::process::exit(0);
-                    }
-                    _ => {}
+        {
+            match code {
+                KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
+                    debug!("Exiting due to control-c");
+                    std::process::exit(0);
                 }
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    debug!("Exiting due to q/Q");
+                    std::process::exit(0);
+                }
+                _ => {}
             }
         }
     }
