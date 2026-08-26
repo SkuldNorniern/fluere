@@ -4,9 +4,11 @@
 [![Rust](https://github.com/SkuldNorniern/fluere/actions/workflows/rust.yml/badge.svg)](https://github.com/SkuldNorniern/fluere/actions/workflows/rust.yml)
 [![Drone Build Status](https://drone.nornity.com/api/badges/SkuldNorniern/fluere/status.svg)](https://drone.nornity.com/SkuldNorniern/fluere)
 
-## Your Comprehensive Network Monitoring and Analysis Tool
+## Cross-platform packet capture and network flow analysis
 
-Fluere is a robust tool designed for comprehensive network monitoring and analysis. It facilitates the capture of network packets in pcap format and their conversion into NetFlow data, offering a detailed view of network traffic dynamics. With support for both live and offline data capture, Fluere stands as a versatile solution suitable for a myriad of use cases. 
+Fluere captures network traffic and turns it into FluereFlow records: bidirectional flow records with per-flow byte and packet counts, TCP flag counters, packet-size and TTL ranges, and tunnel-aware keys. It reads live interfaces or existing pcap files, and exports to CSV or to Lua plugins.
+
+FluereFlow is Fluere's own flow format. It is not NetFlow, and Fluere is not a NetFlow collector or exporter.
 
 - AWS flow logging using AWS Traffic Mirroring
 - Local Server's Active firewall implementation using a plugin
@@ -14,7 +16,7 @@ Fluere is a robust tool designed for comprehensive network monitoring and analys
 
 ### Key Features:
 - Cross-platform support (Windows, macOS, Linux)
-- Live and offline NetFlow data capture and conversion
+- Live and offline flow record generation, exported as CSV
 - Packet capture in pcap format
 - Terminal User Interface (TUI) for real-time feedback during live capture
 
@@ -71,12 +73,12 @@ cargo install fluere
 
 Explore the diverse functionalities of Fluere with the following examples:
 
-1. **Live NetFlow Capture and Conversion**
+1. **Live Capture to Flow Records**
    ```sh
    fluere online -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
    ```
 
-2. **Offline pcap to NetFlow Conversion**
+2. **Offline pcap to Flow Records**
    ```sh
    fluere offline -f input.pcap -c output
    ```

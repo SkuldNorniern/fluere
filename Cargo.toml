@@ -3,10 +3,10 @@ name = "fluere"
 version = "0.7.1-dev"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2024"
-description = "Cross Platform Packet Capture, pcap to Netflow Conversion, Live Netflow Capture Tool"
+description = "Cross-platform packet capture and network flow analysis, producing FluereFlow records from live traffic or pcap files"
 readme = "README.md"
 license = "Apache-2.0"
-keywords = ["netflow", "fluereflow","cross-platform", "netflow-collector", "network-security"]
+keywords = ["fluereflow", "packet-capture", "cross-platform", "network-monitoring", "network-security"]
 categories = ["network-programming"]
 repository = "https://github.com/SkuldNorniern/fluere"
 

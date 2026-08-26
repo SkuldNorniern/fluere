@@ -36,6 +36,7 @@ use tokio::{task, task::JoinHandle};
 struct OnlineArgs {
     csv_file: String,
     use_mac: bool,
+    snaplen: u64,
     interface_name: String,
     duration: u64,
     interval: u64,
@@ -64,13 +65,14 @@ fn extract_online_args(arg: Args) -> Result<OnlineArgs, FluereError> {
         .parameters
         .timeout
         .required("this should be defaulted to `10 minutes` on construction")?;
-    let _sleep_windows = arg
+    let snaplen = arg
         .parameters
-        .sleep_windows
-        .required("this should be defaulted to `false`, and now deprecated")?;
+        .snaplen
+        .required("this should be defaulted to `65535` on construction")?;
     Ok(OnlineArgs {
         csv_file,
         use_mac,
+        snaplen,
         interface_name,
         duration,
         interval,
@@ -265,6 +267,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
     let OnlineArgs {
         csv_file,
         use_mac,
+        snaplen,
         interface_name,
         duration,
         interval,
@@ -281,7 +284,7 @@ pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
         .map_err(|error| FluereError::Plugin(error.to_string()))?;
 
     let interface = find_device(&interface_name)?;
-    let mut cap_device = CaptureDevice::new(interface.clone())?;
+    let mut cap_device = CaptureDevice::new(interface.clone(), snaplen)?;
     let cap = &mut cap_device.capture;
     let linktype = u16::try_from(cap.get_datalink().0).unwrap_or(1);
 

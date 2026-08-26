@@ -5,20 +5,20 @@ use crate::{
     types::{Args, Files, Parameters},
 };
 
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command, crate_version};
 use pcap::Device;
 
 // This function sets up the command line interface for the application using the clap library.
 // It defines the available commands and their arguments.
 pub fn cli_template() -> Command {
     Command::new("fluere")
-        .version("0.7.0")
+        .version(crate_version!())
         .author("Skuld Norniern. <skuldnorniern@gmail.com>")
-        .about("Netflow Capture Tool")
+        .about("Cross-platform packet capture and network flow analysis")
         .subcommand_required(true)
         .subcommand(
             Command::new("online")
-                .about("Capture netflow online")
+                .about("Capture live traffic and export flow records")
                 .arg(
                     Arg::new("csv")
                         .help("Title of the exported csv file")
@@ -38,7 +38,7 @@ pub fn cli_template() -> Command {
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        .required_unless_present("list")
+                        .required_unless_present("list"),
                 )
                 .arg(
                     Arg::new("duration")
@@ -62,13 +62,6 @@ pub fn cli_template() -> Command {
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
-                    Arg::new("use_ipv6")
-                        .help("support ipv6 [default: false]")
-                        .short('6')
-                        .long("ipv6")
-                        .action(ArgAction::SetTrue),
-                )
-                .arg(
                     Arg::new("interval")
                         .help("Set export interval, in milliseconds")
                         .default_value("1800000")
@@ -76,15 +69,15 @@ pub fn cli_template() -> Command {
                         .long("interval"),
                 )
                 .arg(
-                    Arg::new("sleep_windows")
-                        .help("Set inverval of thread pause for (only)MS Windows per n packet (need it for stopping random stop on Windows)")
-                        .default_value("10")
+                    Arg::new("snaplen")
+                        .help("Bytes captured per packet; smaller values truncate payloads")
+                        .default_value("65535")
                         .short('s')
-                        .long("sleep"),
+                        .long("snaplen"),
                 )
                 .arg(
                     Arg::new("verbose")
-                        .help("Set verbosity level") 
+                        .help("Set verbosity level")
                         .default_value("2")
                         .short('v')
                         .long("verbose"), // 0: Error, 1: Warning, 2: Info, 3: Debug 4: Trace
@@ -92,7 +85,7 @@ pub fn cli_template() -> Command {
         )
         .subcommand(
             Command::new("offline")
-                .about("Convet pcap files to netflow")
+                .about("Convert pcap files into flow records")
                 .arg(
                     Arg::new("file")
                         .help("Name of the input pcap file [Required]")
@@ -121,13 +114,6 @@ pub fn cli_template() -> Command {
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
-                    Arg::new("use_ipv6")
-                        .help("support ipv6 [default: false]")
-                        .short('6')
-                        .long("ipv6")
-                        .action(ArgAction::SetTrue),
-                )
-                .arg(
                     Arg::new("verbose")
                         .help("Set verbosity level")
                         .default_value("2")
@@ -137,7 +123,7 @@ pub fn cli_template() -> Command {
         )
         .subcommand(
             Command::new("live")
-                .about("Capture netflow online with live TUI feedback")
+                .about("Capture live traffic with a live TUI")
                 .arg(
                     Arg::new("csv")
                         .help("Title of the exported csv file")
@@ -157,7 +143,7 @@ pub fn cli_template() -> Command {
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        .required_unless_present("list")
+                        .required_unless_present("list"),
                 )
                 .arg(
                     Arg::new("duration")
@@ -181,13 +167,6 @@ pub fn cli_template() -> Command {
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
-                    Arg::new("use_ipv6")
-                        .help("support ipv6 [default: false]")
-                        .short('6')
-                        .long("ipv6")
-                        .action(ArgAction::SetTrue),
-                )
-                .arg(
                     Arg::new("interval")
                         .help("Set export interval, in milliseconds")
                         .default_value("1800000")
@@ -195,15 +174,15 @@ pub fn cli_template() -> Command {
                         .long("interval"),
                 )
                 .arg(
-                    Arg::new("sleep_windows")
-                        .help("Set inverval of thread pause for (only)MS Windows per n packet (need it for stopping random stop on Windows)")
-                        .default_value("10")
+                    Arg::new("snaplen")
+                        .help("Bytes captured per packet; smaller values truncate payloads")
+                        .default_value("65535")
                         .short('s')
-                        .long("sleep"),
+                        .long("snaplen"),
                 )
                 .arg(
                     Arg::new("verbose")
-                        .help("Set verbosity level") 
+                        .help("Set verbosity level")
                         .default_value("2")
                         .short('v')
                         .long("verbose"), // 0: Error, 1: Warning, 2: Info, 3: Debug 4: Trace
@@ -217,14 +196,14 @@ pub fn cli_template() -> Command {
                         .help("Name of the output pcap files title [Required]")
                         .short('p')
                         .long("pcap")
-                        .required_unless_present("list")
+                        .required_unless_present("list"),
                 )
                 .arg(
                     Arg::new("interface")
                         .help("Select network interface to use [Required]")
                         .short('i')
                         .long("interface")
-                        .required_unless_present("list")
+                        .required_unless_present("list"),
                 )
                 .arg(
                     Arg::new("duration")
@@ -241,11 +220,11 @@ pub fn cli_template() -> Command {
                         .long("interval"),
                 )
                 .arg(
-                    Arg::new("sleep_windows")
-                        .help("Set inverval of thread pause for (only)MS Windows per n packet (need it for stopping random stop on Windows)")
-                        .default_value("10")
+                    Arg::new("snaplen")
+                        .help("Bytes captured per packet; smaller values truncate payloads")
+                        .default_value("65535")
                         .short('s')
-                        .long("sleep"),
+                        .long("snaplen"),
                 )
                 .arg(
                     Arg::new("list")
@@ -339,7 +318,7 @@ fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Result<Args, 
     let timeout = required_value(args, "timeout", "Timeout argument missing")?;
     let duration = required_value(args, "duration", "Duration argument missing")?;
     let interval = required_value(args, "interval", "Interval argument missing")?;
-    let sleep_windows = required_value(args, "sleep_windows", "Sleep windows argument missing")?;
+    let snaplen = required_value(args, "snaplen", "Snaplen argument missing")?;
 
     Ok(Args::new(
         Some(interface),
@@ -349,14 +328,13 @@ fn parse_online_live_args(args: &clap::ArgMatches, _mode: &str) -> Result<Args, 
             Some(timeout),
             Some(duration),
             Some(interval),
-            Some(sleep_windows),
+            Some(snaplen),
         ),
         // Some(verbose),
     ))
 }
 fn parse_offline_args(args: &clap::ArgMatches) -> Result<Args, ConfigError> {
     let use_mac = args.get_flag("useMACaddress");
-    let _use_ipv6 = args.get_flag("use_ipv6");
     let file = required_string(args, "file", "File not specified")?;
     // Left unset when the user did not pass -c, so offline can fall back to a
     // name derived from the capture file.
@@ -375,18 +353,12 @@ fn parse_pcap_args(args: &clap::ArgMatches) -> Result<Args, ConfigError> {
     let interface = required_string(args, "interface", "Network interface not specified")?;
     let duration = required_value(args, "duration", "Duration argument missing")?;
     let interval = required_value(args, "interval", "Interval argument missing")?;
-    let sleep_windows = required_value(args, "sleep_windows", "Sleep windows argument missing")?;
+    let snaplen = required_value(args, "snaplen", "Snaplen argument missing")?;
 
     Ok(Args::new(
         Some(interface),
         Files::new(None, None, Some(pcap)),
-        Parameters::new(
-            None,
-            None,
-            Some(duration),
-            Some(interval),
-            Some(sleep_windows),
-        ),
+        Parameters::new(None, None, Some(duration), Some(interval), Some(snaplen)),
         // Some(verbose),
     ))
 }
