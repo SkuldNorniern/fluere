@@ -23,6 +23,12 @@ use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket, StopLayer};
 /// and reported another.
 fn pseudo_ports(parsed: &ParsedPacket, protocol: u8) -> Option<(u16, u16)> {
     match protocol {
+        // SCTP has real ports; they just do not arrive through
+        // `TransportSegment`, which only covers TCP and UDP.
+        132 => parsed
+            .sctp
+            .as_ref()
+            .map(|sctp| (sctp.source_port, sctp.destination_port)),
         58 => parsed
             .icmpv6
             .as_ref()

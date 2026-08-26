@@ -170,6 +170,40 @@ mod tests {
         assert_eq!(observation.key.dst_port, 0, "ICMPv6 code");
     }
 
+    /// SCTP carries ports like TCP and UDP do, but paccel reports them on
+    /// `parsed.sctp` rather than through `TransportSegment`, so fluere used to
+    /// key every SCTP association between two hosts as a single flow.
+    #[test]
+    fn sctp_ports_reach_both_the_key_and_the_record() {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&DST_MAC);
+        frame.extend_from_slice(&SRC_MAC);
+        frame.extend_from_slice(&0x0800u16.to_be_bytes());
+
+        // IPv4, protocol 132 (SCTP), 12-byte common header + no chunks.
+        frame.extend_from_slice(&[0x45, 0x00]);
+        frame.extend_from_slice(&(20u16 + 12).to_be_bytes());
+        frame.extend_from_slice(&[0, 1, 0, 0, 64, 132, 0, 0]);
+        frame.extend_from_slice(&[192, 0, 2, 1]);
+        frame.extend_from_slice(&[198, 51, 100, 2]);
+        frame.extend_from_slice(&50_005u16.to_be_bytes());
+        frame.extend_from_slice(&38_412u16.to_be_bytes());
+        frame.extend_from_slice(&[0; 8]); // verification tag + checksum
+
+        let header = header(&frame);
+        let observation = observe(pcap::Packet::new(&header, &frame), true, 1).expect("observed");
+
+        assert_eq!(observation.record.prot, 132);
+        assert_eq!(
+            (observation.key.src_port, observation.key.dst_port),
+            (50_005, 38_412)
+        );
+        assert_eq!(
+            (observation.record.src_port, observation.record.dst_port),
+            (observation.key.src_port, observation.key.dst_port)
+        );
+    }
+
     #[test]
     fn an_empty_packet_is_rejected() {
         let header = header(&[]);
