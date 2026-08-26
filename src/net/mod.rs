@@ -6,6 +6,8 @@ mod offline_fluereflows;
 pub mod online_fluereflow;
 mod packet_pcap;
 pub mod parser;
+#[cfg(test)]
+mod scenarios;
 pub mod types;
 
 pub use capture::CaptureDevice;
