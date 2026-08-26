@@ -25,7 +25,7 @@ csv = "1.3"
 
 paccel = "0.1.0"
 
-fluere_plugin = { version = "0.3.0", path = "./fluere-plugin", features = ["log"] }
+fluere_plugin = { version = "0.4.0", path = "./fluere-plugin", default-features = false, features = ["log"] }
 fluere-config = { version = "0.3.0", path = "./fluere-config", features = ["log"] }
 fluereflow = { version = "0.5.0", path = "./fluereflow" }
 
@@ -37,6 +37,13 @@ indicatif = "0.18"
 [lints.clippy]
 unwrap_used = "deny"
 cognitive_complexity = "deny"
+
+[features]
+default = ["plugins"]
+# Plugin support. Off, the Lua interpreter and its vendored C sources are not
+# built at all; the plugin manager stays, and reports that no runtime can load
+# a configured plugin.
+plugins = ["fluere_plugin/lua"]
 
 [workspace]
 members = [
