@@ -1,6 +1,6 @@
 [package]
 name = "fluere"
-version = "0.7.1-dev"
+version = "0.8.0"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2024"
 description = "Cross-platform packet capture and network flow analysis, producing FluereFlow records from live traffic or pcap files"
