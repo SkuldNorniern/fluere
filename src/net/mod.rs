@@ -12,3 +12,23 @@ pub use capture::CaptureDevice;
 pub use capture::find_device;
 pub use offline_fluereflows::fluereflow_fileparse;
 pub use packet_pcap::pcap_capture;
+
+use log::debug;
+
+/// Decode one captured frame, skipping anything that cannot be parsed.
+///
+/// Shared by every capture mode so a frame is decoded exactly once and all
+/// modes agree on what a malformed packet means.
+pub(crate) fn observe_packet(
+    packet: pcap::Packet<'_>,
+    use_mac: bool,
+    linktype: u16,
+) -> Option<parser::PacketObservation> {
+    match parser::observe(packet, use_mac, linktype) {
+        Ok(observation) => Some(observation),
+        Err(error) => {
+            debug!("Skipping unparsable packet: {}", error);
+            None
+        }
+    }
+}
