@@ -6,7 +6,6 @@ pub enum ParseError {
     EmptyPacket,
     UnknownProtocol(u8),
     UnknownEtherType(String),
-    UnknownDSCP(u8),
 }
 
 impl fmt::Display for ParseError {
@@ -18,7 +17,6 @@ impl fmt::Display for ParseError {
             Self::UnknownEtherType(ether_type) => {
                 write!(f, "Unknown ether type: {}", ether_type)
             }
-            Self::UnknownDSCP(dscp) => write!(f, "Unknown dscp: {}", dscp),
         }
     }
 }
