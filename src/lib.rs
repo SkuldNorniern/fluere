@@ -8,27 +8,14 @@ pub mod utils;
 pub use error::{CaptureError, ConfigError, FluereError, ParseError};
 use log::{Level, LevelFilter};
 
-// Move Mode enum and its implementations to lib
-#[derive(Debug)]
+/// What a resolved command line asks Fluere to do. Chosen by
+/// [`cli::dispatch`], not parsed from a name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Offline,
     Online,
     Live,
     Pcap,
-}
-
-impl TryFrom<&str> for Mode {
-    type Error = FluereError;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        match s {
-            "offline" => Ok(Mode::Offline),
-            "online" => Ok(Mode::Online),
-            "live" => Ok(Mode::Live),
-            "pcap" => Ok(Mode::Pcap),
-            _ => Err(ConfigError::Config(format!("Invalid mode: {}", s)).into()),
-        }
-    }
 }
 
 impl std::fmt::Display for Mode {
