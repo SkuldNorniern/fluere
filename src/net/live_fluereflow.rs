@@ -422,8 +422,9 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
     exit_key_task.abort();
     let render_result = await_render_task(draw_task).await;
 
-    plugin_manager.await_completion(plugin_worker).await;
-    drop(plugin_manager);
+    // Consumes the manager: dropping its sender is what lets the worker drain
+    // the queue and stop before plugin cleanup runs.
+    plugin_manager.shutdown(plugin_worker).await;
     await_export_tasks(export_tasks).await;
 
     capture_result?;
