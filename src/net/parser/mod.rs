@@ -1,4 +1,5 @@
 mod fluereflows;
+mod fragments;
 mod keys;
 mod observation;
 mod raw;
@@ -6,6 +7,7 @@ mod time;
 mod tos;
 
 pub use fluereflows::parse_fluereflow;
+pub use fragments::FragmentTracker;
 pub use keys::parse_keys;
 pub use observation::{PacketObservation, observe};
 pub use time::microseconds_to_timestamp;

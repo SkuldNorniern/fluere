@@ -579,7 +579,13 @@ mod tests {
             caplen: frame.len() as u32,
             len: frame.len() as u32,
         };
-        crate::net::parser::observe(Packet::new(&header, frame), false, 1).expect("parsable frame")
+        crate::net::parser::observe(
+            Packet::new(&header, frame),
+            false,
+            1,
+            &mut crate::net::parser::FragmentTracker::new(),
+        )
+        .expect("parsable frame")
     }
 
     /// Feed one captured frame through the real parser into the engine, the
