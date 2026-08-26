@@ -9,6 +9,7 @@ use log::trace;
 /// the delay is never a large fraction of the timeout itself.
 const MAX_BUCKET: u64 = 1_000_000;
 
+use crate::net::flow::Flow;
 use crate::net::flows::update_flow;
 use crate::net::parser::PacketObservation;
 use crate::net::types::{Key, TcpFlags};
@@ -69,7 +70,7 @@ impl FlowState {
 pub struct AcceptOutcome {
     /// Flows finished by this packet: a TCP termination, plus any flow that
     /// idled out at this packet's timestamp.
-    pub completed: Vec<FluereRecord>,
+    pub completed: Vec<Flow>,
     /// Whether this packet opened a flow that was not active before.
     pub opened_flow: bool,
 }
@@ -118,7 +119,7 @@ impl FlowEngine {
         packet_time: u64,
     ) -> Option<FluereRecord> {
         self.offer_with_reason(key, reverse, record, doctets, flags, packet_time)
-            .map(|(flow, _)| flow)
+            .map(|(flow, _)| flow.record)
     }
 
     /// As [`offer`](Self::offer), but also reporting why the flow ended.
@@ -130,7 +131,7 @@ impl FlowEngine {
         doctets: usize,
         flags: TcpFlags,
         packet_time: u64,
-    ) -> Option<(FluereRecord, FlowEndReason)> {
+    ) -> Option<(Flow, FlowEndReason)> {
         let is_reverse = match self.active.get(&key) {
             Some(_) => false,
             None => match self.active.get(&reverse) {
@@ -187,7 +188,7 @@ impl FlowEngine {
         let reason = reason?;
         self.active
             .remove(&flow_key)
-            .map(|state| (state.record, reason))
+            .map(|state| (Flow::new(flow_key, state.record), reason))
     }
 
     /// Feed one observed packet into the engine.
@@ -228,7 +229,7 @@ impl FlowEngine {
         }
     }
 
-    pub fn sweep_expired(&mut self, current_time: u64) -> Vec<FluereRecord> {
+    pub fn sweep_expired(&mut self, current_time: u64) -> Vec<Flow> {
         let Some(timeout) = self.timeout else {
             return Vec::new();
         };
@@ -263,7 +264,7 @@ impl FlowEngine {
                 if deadline <= current_time {
                     if let Some(state) = self.active.remove(&key) {
                         trace!("flow ended: {:?}", FlowEndReason::IdleTimeout);
-                        expired.push(state.record);
+                        expired.push(Flow::new(key, state.record));
                     }
                 } else {
                     // Touched since it was queued, so it lives on until its
@@ -281,13 +282,13 @@ impl FlowEngine {
         expired
     }
 
-    pub fn drain(&mut self) -> Vec<FluereRecord> {
+    pub fn drain(&mut self) -> Vec<Flow> {
         self.due.clear();
         self.active
             .drain()
-            .map(|(_, state)| {
+            .map(|(key, state)| {
                 trace!("flow ended: {:?}", FlowEndReason::CaptureEnd);
-                state.record
+                Flow::new(key, state.record)
             })
             .collect()
     }
@@ -440,7 +441,7 @@ mod tests {
 
         let expired = engine.sweep_expired(15_000);
         assert_eq!(expired.len(), 1);
-        assert_eq!(expired[0].d_pkts, 2);
+        assert_eq!(expired[0].record.d_pkts, 2);
         assert_eq!(engine.active_count(), 0);
     }
 

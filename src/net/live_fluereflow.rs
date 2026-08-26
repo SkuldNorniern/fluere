@@ -22,9 +22,9 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use crate::net::Flow;
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
-use fluereflow::FluereRecord;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent},
@@ -147,14 +147,14 @@ async fn add_recent_flow(recent_flows: &Mutex<Vec<FlowSummary>>, key: Key) {
 }
 
 async fn emit_completed_flows(
-    completed: Vec<FluereRecord>,
+    completed: Vec<Flow>,
     plugin_manager: &PluginManager,
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in completed {
         trace!("flow completed");
         plugin_manager
-            .process_flow_data(flow)
+            .process_flow_data(flow.record)
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -167,7 +167,7 @@ async fn process_packet(
     engine: &Mutex<FlowEngine>,
     recent_flows: &Mutex<Vec<FlowSummary>>,
     plugin_manager: &PluginManager,
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     // Held only for the engine update, so the capture loop is not blocked on
     // the plugin and TUI work that follows.
@@ -183,7 +183,7 @@ async fn process_packet(
 }
 
 async fn export_if_due(
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
     file: fs::File,
     file_path: Cow<'static, str>,
     csv_file: &str,
@@ -270,7 +270,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
     let mut file = fs::File::create(file_path.as_ref())?;
 
-    let mut records: Vec<FluereRecord> = Vec::new();
+    let mut records: Vec<Flow> = Vec::new();
     let recent_flows: Arc<Mutex<Vec<FlowSummary>>> = Arc::new(Mutex::new(Vec::new()));
     let engine = Arc::new(Mutex::new(FlowEngine::new(flow_timeout)));
 
@@ -350,7 +350,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         };
         for flow in remaining {
             plugin_manager
-                .process_flow_data(flow)
+                .process_flow_data(flow.record)
                 .await
                 .map_err(|error| FluereError::Plugin(error.to_string()))?;
             records.push(flow);
