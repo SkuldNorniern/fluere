@@ -13,10 +13,10 @@ pub async fn pcap_capture(args: Args) -> Result<(), FluereError> {
     let interface_name = args.interface.required("interface")?;
     let duration = args.parameters.duration.required("duration")?;
     let _interval = args.parameters.interval.required("interval")?;
-    let _sleep_windows = args.parameters.sleep_windows.required("sleep_windows")?;
+    let snaplen = args.parameters.snaplen.required("snaplen")?;
 
     let interface = find_device(interface_name.as_str())?;
-    let mut cap_device = CaptureDevice::new(interface)?;
+    let mut cap_device = CaptureDevice::new(interface, snaplen)?;
     let cap = &mut cap_device.capture;
 
     let file_dir = "./output";

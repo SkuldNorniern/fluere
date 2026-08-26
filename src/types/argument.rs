@@ -41,7 +41,8 @@ pub struct Parameters {
     pub timeout: Option<u64>,
     pub duration: Option<u64>,
     pub interval: Option<u64>,
-    pub sleep_windows: Option<u64>,
+    /// Bytes captured per packet (libpcap snaplen).
+    pub snaplen: Option<u64>,
 }
 
 impl Parameters {
@@ -50,14 +51,14 @@ impl Parameters {
         timeout: Option<u64>,
         duration: Option<u64>,
         interval: Option<u64>,
-        sleep_windows: Option<u64>,
+        snaplen: Option<u64>,
     ) -> Self {
         Self {
             use_mac,
             timeout,
             duration,
             interval,
-            sleep_windows,
+            snaplen,
         }
     }
 }
