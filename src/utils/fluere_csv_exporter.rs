@@ -1,8 +1,8 @@
-use fluereflow::FluereRecord;
+use crate::net::Flow;
 use log::{debug, error, trace};
 use std::fs::File;
 
-pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(), csv::Error> {
+pub async fn fluere_exporter(records: Vec<Flow>, file: File) -> Result<(), csv::Error> {
     let mut wtr = csv::Writer::from_writer(file);
 
     debug!("Writing {} records", records.len());
@@ -36,6 +36,12 @@ pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(
         "ns_cnt",
         "tos",
         "mid_stream",
+        // What separated this flow from another with the same addresses and
+        // ports. Empty when the traffic was untagged and untunnelled.
+        "vlan",
+        "encap",
+        "tunnel_id",
+        "tunnel_endpoints",
     ])
     .map_err(|e| {
         error!("Failed to write CSV header: {}", e);
@@ -43,6 +49,11 @@ pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(
     })?;
 
     for flow in records.iter() {
+        let vlan = flow.vlan();
+        let encapsulation = flow.encapsulation();
+        let tunnel_id = flow.tunnel_id();
+        let tunnel_endpoints = flow.tunnel_endpoints();
+        let flow = &flow.record;
         wtr.write_record([
             &flow.source.to_string(),
             &flow.destination.to_string(),
@@ -72,6 +83,10 @@ pub async fn fluere_exporter(records: Vec<FluereRecord>, file: File) -> Result<(
             &flow.ns_cnt.to_string(),
             &flow.tos.to_string(),
             &u8::from(flow.mid_stream).to_string(),
+            &vlan,
+            &encapsulation.to_string(),
+            &tunnel_id,
+            &tunnel_endpoints,
         ])
         .map_err(|e| {
             error!("Failed to write CSV record: {}", e);

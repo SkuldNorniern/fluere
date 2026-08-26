@@ -12,9 +12,9 @@ use crate::{
     utils::fluere_exporter,
 };
 
+use crate::net::Flow;
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
-use fluereflow::FluereRecord;
 use indicatif::ProgressBar;
 use log::{info, trace};
 use pcap::Capture;
@@ -23,12 +23,12 @@ async fn process_packet(
     observation: PacketObservation,
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in engine.accept(observation).completed {
         trace!("Flow finished: {:?}", flow);
         plugin_manager
-            .process_flow_data(flow)
+            .process_flow_data(flow.record)
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -43,11 +43,11 @@ async fn process_packet(
 async fn drain_engine(
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
-    records: &mut Vec<FluereRecord>,
+    records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in engine.drain() {
         plugin_manager
-            .process_flow_data(flow)
+            .process_flow_data(flow.record)
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -91,7 +91,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let output_file_path = format!("{}/{}.csv", file_dir, file_noext);
     let file = fs::File::create(&output_file_path)?;
 
-    let mut records: Vec<FluereRecord> = Vec::new();
+    let mut records: Vec<Flow> = Vec::new();
     let mut engine = FlowEngine::new(flow_timeout);
 
     let config = Config::new();
