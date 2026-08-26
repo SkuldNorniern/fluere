@@ -59,7 +59,8 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
         std::fs::create_dir_all(&path)?;
     }
 
-    let repo_path = path.join(repo_name.split('/').next_back().unwrap());
+    // "owner/plugin" -> "plugin"; a name without a slash is used as-is.
+    let repo_path = path.join(repo_name.rsplit('/').next().unwrap_or(repo_name));
     let repository_path = Path::new(&repo_path);
 
     let repo = match Repository::open(repository_path) {
@@ -73,7 +74,12 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
     let fetch_head = repo.find_reference("FETCH_HEAD")?;
 
     let fetch_commit = fetch_head.peel(ObjectType::Commit)?.id();
-    let local_commit = repo.head()?.target().unwrap();
+    // A freshly cloned repository with an unborn HEAD has no target commit;
+    // treat that as "nothing local to compare against".
+    let local_commit = repo
+        .head()?
+        .target()
+        .ok_or_else(|| DownloadError::Other(format!("{} has no checked-out commit", repo_name)))?;
 
     if fetch_commit != local_commit {
         println!(
