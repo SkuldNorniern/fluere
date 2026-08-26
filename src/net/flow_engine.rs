@@ -345,6 +345,7 @@ mod tests {
             protocol,
             src_mac: MacAddress::new([0; 6]),
             dst_mac: MacAddress::new([1; 6]),
+            encapsulation: None,
         };
         let reverse = Key {
             src_ip: key.dst_ip,
@@ -354,6 +355,7 @@ mod tests {
             protocol,
             src_mac: key.dst_mac,
             dst_mac: key.src_mac,
+            encapsulation: None,
         };
         (key, reverse)
     }
