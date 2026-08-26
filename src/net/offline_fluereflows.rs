@@ -8,21 +8,48 @@ use crate::{
     utils::fluere_exporter,
 };
 
+use fluere_config::Config;
+use fluere_plugin::PluginManager;
 use fluereflow::FluereRecord;
 use indicatif::ProgressBar;
 use log::{info, trace};
 use pcap::Capture;
 
-fn process_packet(
+async fn process_packet(
     observation: PacketObservation,
     engine: &mut FlowEngine,
+    plugin_manager: &PluginManager,
     records: &mut Vec<FluereRecord>,
-) {
-    let outcome = engine.accept(observation);
-    for flow in &outcome.completed {
+) -> Result<(), FluereError> {
+    for flow in engine.accept(observation).completed {
         trace!("Flow finished: {:?}", flow);
+        plugin_manager
+            .process_flow_data(flow)
+            .await
+            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        records.push(flow);
     }
-    records.extend(outcome.completed);
+
+    Ok(())
+}
+
+/// Hand the flows still open at the end of the capture to the plugins too, so
+/// a plugin sees every flow the conversion produced and not just the ones that
+/// happened to close inside the file.
+async fn drain_engine(
+    engine: &mut FlowEngine,
+    plugin_manager: &PluginManager,
+    records: &mut Vec<FluereRecord>,
+) -> Result<(), FluereError> {
+    for flow in engine.drain() {
+        plugin_manager
+            .process_flow_data(flow)
+            .await
+            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        records.push(flow);
+    }
+
+    Ok(())
 }
 
 pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
@@ -63,6 +90,15 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let mut records: Vec<FluereRecord> = Vec::new();
     let mut engine = FlowEngine::new(flow_timeout);
 
+    let config = Config::new();
+    let plugin_manager =
+        PluginManager::new().map_err(|error| FluereError::Plugin(error.to_string()))?;
+    let plugin_worker = plugin_manager.start_worker();
+    plugin_manager
+        .load_plugins(&config)
+        .await
+        .map_err(|error| FluereError::Plugin(error.to_string()))?;
+
     info!("Converting file: {}", file_name);
 
     let bar = ProgressBar::new_spinner();
@@ -72,14 +108,18 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
         let Some(observation) = observe_packet(packet, use_mac, linktype) else {
             continue;
         };
-        process_packet(observation, &mut engine, &mut records);
+        process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
     }
     bar.finish();
     info!("Converted in {:?}", start.elapsed());
     let ac_flow_cnt = engine.active_count();
     let ended_flow_cnt = records.len();
 
-    records.extend(engine.drain());
+    drain_engine(&mut engine, &plugin_manager, &mut records).await?;
+
+    // Consumes the manager: dropping its sender lets the worker drain the
+    // queue and stop before plugin cleanup runs.
+    plugin_manager.shutdown(plugin_worker).await;
 
     // Awaited immediately, so there is nothing to gain from a spawned task -
     // and a failed export has to reach the caller rather than be discarded.
