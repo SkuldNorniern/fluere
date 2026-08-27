@@ -46,6 +46,11 @@ impl Flow {
         }
     }
 
+    /// Whether the protocol carries transport ports of its own.
+    pub fn has_ports(&self) -> bool {
+        !matches!(self.key.protocol, 1 | 4 | 47 | 50 | 51 | 58)
+    }
+
     /// Whether this flow carried an IP protocol at all.
     ///
     /// ARP does not, and used to report IP protocol 4 - IANA's number for
@@ -68,7 +73,28 @@ impl From<&Flow> for fluere_plugin::FlowIdentity {
     fn from(flow: &Flow) -> Self {
         let encapsulation = flow.key.encapsulation;
 
+        // Only real ports go in `ports`; anything a protocol puts in their place
+        // is reported under its own name, the same way the CSV columns do.
+        let ports = flow
+            .has_ports()
+            .then_some((flow.key.src_port, flow.key.dst_port));
+        let spi = matches!(flow.key.protocol, 50 | 51)
+            .then(|| (u32::from(flow.key.src_port) << 16) | u32::from(flow.key.dst_port));
+        let gre_protocol =
+            (flow.key.protocol == 47 && flow.key.src_port != 0).then_some(flow.key.src_port);
+
         fluere_plugin::FlowIdentity {
+            source: Some(flow.key.src_ip),
+            destination: Some(flow.key.dst_ip),
+            ports,
+            icmp: flow.record.transport.icmp,
+            spi,
+            gre_protocol,
+            protocol: flow.protocol_name().to_string(),
+            protocol_number: flow.is_ip().then_some(flow.key.protocol),
+            ethertype: (!flow.is_ip())
+                .then_some(flow.record.network.ethertype)
+                .flatten(),
             vlan: flow.key.vlan.tags().to_vec(),
             encapsulation: encapsulation.map(|e| e.kind.as_str().to_string()),
             tunnel_id: encapsulation.map_or(0, |e| e.id),
