@@ -1,4 +1,4 @@
-use std::{env, fs, path::Path, path::PathBuf};
+use std::{fs, path::Path, path::PathBuf};
 
 use dirs::config_dir;
 
@@ -122,13 +122,12 @@ impl Config {
 /// Under `sudo` this resolves the invoking user's directory rather than root's,
 /// so a privileged capture still reads the config the user actually edits.
 fn home_config_path() -> Result<PathBuf, ConfigError> {
-    let base = match env::var("SUDO_USER") {
-        // macOS home directories are not under /home, so the usual lookup is
-        // already correct there.
-        Ok(user) if env::consts::OS != "macos" => {
-            Path::new(&format!("/home/{}", user)).join(".config")
-        }
-        _ => config_dir().ok_or(ConfigError::NoConfigDirectory)?,
+    // Under `sudo` this resolves the invoking user's directory rather than
+    // root's, so a privileged capture reads the config that user actually
+    // edits.
+    let base = match crate::home::sudo_user_home() {
+        Some(home) => home.join(".config"),
+        None => config_dir().ok_or(ConfigError::NoConfigDirectory)?,
     };
 
     Ok(base.join("fluere"))

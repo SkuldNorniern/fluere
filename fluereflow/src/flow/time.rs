@@ -77,7 +77,11 @@ pub enum EndReason {
     Rst,
     /// Nothing arrived within the idle timeout.
     IdleTimeout,
-    /// A long-running flow exported while still active.
+    /// A long-running flow exported while it was still active.
+    ///
+    /// Reserved. Fluere has no active timeout yet, so nothing produces this
+    /// today; it is declared so adding one later does not change the shape of
+    /// this enum for consumers already matching on it.
     ActiveTimeout,
     /// Capture stopped while the flow was open.
     CaptureEnd,

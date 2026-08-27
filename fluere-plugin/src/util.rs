@@ -1,33 +1,27 @@
 use dirs::cache_dir;
 
-use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+/// Where downloaded plugins are cached.
+///
+/// Under `sudo` this resolves the invoking user's directory rather than root's,
+/// so a privileged capture uses the same cache the user's own runs do.
 pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
-    // Check for the SUDO_USER environment variable
-    let sudo_user = env::var("SUDO_USER");
-
-    let path_base = match sudo_user {
-        Ok(user) => {
-            // If SUDO_USER is set, construct the path using the user's home directory
-            let user_home = format!("/home/{}", user);
-            Path::new(&user_home).join(".cache")
-        }
-        Err(_) => {
-            // If not running under sudo, just use the config_dir function as before
-            cache_dir().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Failed to find cache directory",
-                )
-            })?
-        }
+    let base = match fluere_config::sudo_user_home() {
+        Some(home) => home.join(".cache"),
+        None => cache_dir().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Failed to find cache directory",
+            )
+        })?,
     };
 
-    let path_config = path_base.join("fluere");
-    if !path_config.exists() {
-        fs::create_dir_all(path_config.clone())?;
+    let path = base.join("fluere");
+    if !path.exists() {
+        fs::create_dir_all(&path)?;
     }
-    Ok(path_config)
+
+    Ok(path)
 }
