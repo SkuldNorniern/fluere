@@ -28,7 +28,7 @@ async fn process_packet(
     for flow in engine.accept(observation).completed {
         trace!("Flow finished: {:?}", flow);
         plugin_manager
-            .process_flow_data(flow.record)
+            .process_flow_data(flow.record, (&flow).into())
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -47,7 +47,7 @@ async fn drain_engine(
 ) -> Result<(), FluereError> {
     for flow in engine.drain() {
         plugin_manager
-            .process_flow_data(flow.record)
+            .process_flow_data(flow.record, (&flow).into())
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
