@@ -13,6 +13,7 @@ use crate::{plugin_warn, runtime::PluginRuntime};
 use log::debug;
 
 /// Holds one Lua state with every Lua plugin loaded into it.
+#[derive(Debug)]
 pub struct LuaRuntime {
     lua: Lua,
     /// Global names the loaded plugin tables are registered under.
