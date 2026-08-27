@@ -31,6 +31,8 @@ pub struct PacketObservation {
     pub dscp: u8,
     /// Explicit congestion notification bits, from this packet's IP header.
     pub ecn: u8,
+    /// EtherType of the traffic this packet carried.
+    pub ethertype: Option<u16>,
     /// TCP control bits, `None` for anything that is not TCP.
     pub tcp_flags: Option<TcpFlags>,
 }
@@ -84,6 +86,7 @@ pub fn observe(
         facts: properties.facts,
         dscp: properties.dscp,
         ecn: properties.ecn,
+        ethertype: properties.ethertype,
         tcp_flags: properties.facts.tcp_flags,
     };
 

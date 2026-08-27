@@ -77,6 +77,7 @@ fn open_record(observation: &PacketObservation) -> FlowRecord {
     );
     record.network.dscp = observation.dscp;
     record.network.ecn = observation.ecn;
+    record.network.ethertype = observation.ethertype;
     record
 }
 
