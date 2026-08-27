@@ -38,6 +38,10 @@ impl LuaRuntime {
                 FieldValue::Text(text) => table.set(*name, text.as_str())?,
                 FieldValue::Unsigned(number) => table.set(*name, *number)?,
                 FieldValue::Bool(flag) => table.set(*name, *flag)?,
+                // Left unset: in Lua an absent key reads as nil, which is what
+                // "does not apply to this flow" means. Writing 0 would make it
+                // indistinguishable from a real zero.
+                FieldValue::Absent => {}
             }
         }
 

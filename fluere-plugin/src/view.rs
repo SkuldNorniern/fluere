@@ -18,7 +18,10 @@ use fluereflow::{FlowRecord, Range};
 /// - 3: the FluereFlow record. Counters are per direction with derived totals,
 ///   timestamps are nanoseconds, `mid_stream` became `start_state`, and
 ///   `end_reason`, `ecn` and hop limits arrived. `tos` is gone: it was `dscp`
-///   shifted, and `dscp` is now reported directly.
+///   shifted, and `dscp` is now reported directly. `path_count` and `paths`
+///   report where a flow moved to. Fields that do not apply to a flow are now
+///   absent rather than zero, so a plugin must check a field exists before
+///   using it.
 pub const SCHEMA_VERSION: u32 = 3;
 
 /// One field's value, in the few shapes a flow record actually uses.
@@ -30,6 +33,13 @@ pub enum FieldValue {
     Unsigned(u64),
     /// A flag.
     Bool(bool),
+    /// The field does not apply to this flow.
+    ///
+    /// Distinct from zero and from the empty string, both of which are real
+    /// values: a flow keyed on IP protocol 0 has one, and an absent GRE key is
+    /// not a GRE key of 0. Runtimes leave the field unset rather than inventing
+    /// a value for it.
+    Absent,
 }
 
 /// What separated a flow from another with the same addresses and ports.
@@ -64,7 +74,7 @@ pub struct FlowIdentity {
     /// Kind of tunnel that carried the flow, if any: `vxlan`, `gre`, ...
     pub encapsulation: Option<String>,
     /// The tunnel's segment, key, label or session. Zero when it has none.
-    pub tunnel_id: u32,
+    pub tunnel_id: Option<u32>,
     /// The tunnel's own endpoints, for tunnels that run over IP.
     pub tunnel_endpoints: Option<(IpAddr, IpAddr)>,
 }
@@ -78,24 +88,37 @@ pub struct FlowView {
 
 impl FlowView {
     pub fn new(record: &FlowRecord, identity: &FlowIdentity) -> Self {
-        use FieldValue::{Bool, Text, Unsigned};
+        use FieldValue::{Absent, Bool, Text, Unsigned};
 
-        let vlan = identity
-            .vlan
-            .iter()
-            .map(u16::to_string)
-            .collect::<Vec<_>>()
-            .join(".");
+        // Untagged is not VLAN 0, and a flow that never moved has no path list
+        // rather than an empty one.
+        let vlan = (!identity.vlan.is_empty()).then(|| {
+            identity
+                .vlan
+                .iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(".")
+        });
         let endpoints = identity
             .tunnel_endpoints
-            .map_or_else(String::new, |(source, destination)| {
-                format!("{}->{}", source, destination)
-            });
+            .map(|(source, destination)| format!("{}->{}", source, destination));
+        let paths = record.paths.migrated().then(|| {
+            record
+                .paths
+                .endpoints()
+                .iter()
+                .map(|(address, port)| format!("{}:{}", address, port))
+                .collect::<Vec<_>>()
+                .join(";")
+        });
 
-        let ports = identity.ports.unwrap_or((0, 0));
-        let icmp = identity.icmp.unwrap_or((0, 0));
+        // Absent rather than zero wherever the value genuinely does not apply.
+        // A flow with no transport ports has none; it does not have port 0.
+        let optional = |value: Option<u64>| value.map_or(Absent, Unsigned);
+        let text = |value: Option<String>| value.map_or(Absent, Text);
         let bound = |range: Option<Range<u32>>, take_max: bool| {
-            Unsigned(range.map_or(0, |r| u64::from(if take_max { r.max } else { r.min })))
+            optional(range.map(|r| u64::from(if take_max { r.max } else { r.min })))
         };
         let flags = &record.forward.tcp_flags;
         let reverse_flags = &record.reverse.tcp_flags;
@@ -104,41 +127,36 @@ impl FlowView {
         FlowView {
             schema_version: SCHEMA_VERSION,
             fields: vec![
-                (
-                    "source",
-                    Text(
-                        identity
-                            .source
-                            .map_or_else(String::new, |ip| ip.to_string()),
-                    ),
-                ),
+                ("source", text(identity.source.map(|ip| ip.to_string()))),
                 (
                     "destination",
-                    Text(
-                        identity
-                            .destination
-                            .map_or_else(String::new, |ip| ip.to_string()),
-                    ),
+                    text(identity.destination.map(|ip| ip.to_string())),
                 ),
                 ("ip_version", Unsigned(u64::from(identity.ip_version))),
-                ("src_port", Unsigned(u64::from(ports.0))),
-                ("dst_port", Unsigned(u64::from(ports.1))),
-                ("icmp_type", Unsigned(u64::from(icmp.0))),
-                ("icmp_code", Unsigned(u64::from(icmp.1))),
-                ("spi", Unsigned(u64::from(identity.spi.unwrap_or(0)))),
+                (
+                    "src_port",
+                    optional(identity.ports.map(|(source, _)| u64::from(source))),
+                ),
+                (
+                    "dst_port",
+                    optional(identity.ports.map(|(_, destination)| u64::from(destination))),
+                ),
+                (
+                    "icmp_type",
+                    optional(identity.icmp.map(|(kind, _)| u64::from(kind))),
+                ),
+                (
+                    "icmp_code",
+                    optional(identity.icmp.map(|(_, code)| u64::from(code))),
+                ),
+                ("spi", optional(identity.spi.map(u64::from))),
                 (
                     "gre_protocol",
-                    Unsigned(u64::from(identity.gre_protocol.unwrap_or(0))),
+                    optional(identity.gre_protocol.map(u64::from)),
                 ),
                 ("protocol", Text(identity.protocol.clone())),
-                (
-                    "prot",
-                    Unsigned(u64::from(identity.protocol_number.unwrap_or(0))),
-                ),
-                (
-                    "ethertype",
-                    Unsigned(u64::from(identity.ethertype.unwrap_or(0))),
-                ),
+                ("prot", optional(identity.protocol_number.map(u64::from))),
+                ("ethertype", optional(identity.ethertype.map(u64::from))),
                 ("packets", Unsigned(record.packets())),
                 ("frame_octets", Unsigned(record.frame_octets())),
                 ("fwd_packets", Unsigned(record.forward.packets)),
@@ -154,11 +172,11 @@ impl FlowView {
                 ("rev_max_pkt", bound(record.reverse.packet_length, true)),
                 (
                     "min_ttl",
-                    Unsigned(record.network.ttl.map_or(0, |r| u64::from(r.min))),
+                    optional(record.network.ttl.map(|r| u64::from(r.min))),
                 ),
                 (
                     "max_ttl",
-                    Unsigned(record.network.ttl.map_or(0, |r| u64::from(r.max))),
+                    optional(record.network.ttl.map(|r| u64::from(r.max))),
                 ),
                 ("fin_cnt", both(flags.fin, reverse_flags.fin)),
                 ("syn_cnt", both(flags.syn, reverse_flags.syn)),
@@ -177,20 +195,22 @@ impl FlowView {
                 ),
                 (
                     "end_reason",
-                    Text(
-                        record.time.end_reason.map_or_else(String::new, |reason| {
-                            format!("{:?}", reason).to_lowercase()
-                        }),
+                    text(
+                        record
+                            .time
+                            .end_reason
+                            .map(|reason| format!("{:?}", reason).to_lowercase()),
                     ),
                 ),
                 ("truncated", Bool(record.capture.truncated)),
-                ("vlan", Text(vlan)),
-                (
-                    "encap",
-                    Text(identity.encapsulation.clone().unwrap_or_default()),
-                ),
-                ("tunnel_id", Unsigned(u64::from(identity.tunnel_id))),
-                ("tunnel_endpoints", Text(endpoints)),
+                // Where the flow was seen. A QUIC connection that changes
+                // address stays one flow; these say where it moved to.
+                ("path_count", Unsigned(record.paths.count() as u64)),
+                ("paths", text(paths)),
+                ("vlan", text(vlan)),
+                ("encap", text(identity.encapsulation.clone())),
+                ("tunnel_id", optional(identity.tunnel_id.map(u64::from))),
+                ("tunnel_endpoints", text(endpoints)),
             ],
         }
     }
@@ -258,7 +278,7 @@ mod tests {
 
         assert_eq!(
             view.fields.len(),
-            45,
+            47,
             "one entry per record field, plus what identified the flow"
         );
         assert_eq!(view.schema_version, SCHEMA_VERSION);
@@ -282,7 +302,7 @@ mod tests {
             protocol_number: Some(6),
             vlan: vec![10, 20],
             encapsulation: Some("vxlan".to_string()),
-            tunnel_id: 100,
+            tunnel_id: Some(100),
             tunnel_endpoints: Some((
                 IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1)),
                 IpAddr::V4(Ipv4Addr::new(203, 0, 113, 2)),
@@ -308,15 +328,38 @@ mod tests {
         );
     }
 
-    /// Untagged, untunnelled traffic reports empty rather than absent fields,
-    /// so a plugin can read them unconditionally.
+    /// Untagged, untunnelled traffic reports absent rather than empty or zero.
+    /// Untagged is not VLAN 0, and no GRE key is not a GRE key of 0.
     #[test]
-    fn plain_traffic_reports_empty_identity() {
+    fn plain_traffic_reports_absent_identity() {
         let view = FlowView::new(&record(), &FlowIdentity::default());
 
-        assert_eq!(field(&view, "vlan"), FieldValue::Text(String::new()));
-        assert_eq!(field(&view, "encap"), FieldValue::Text(String::new()));
+        assert_eq!(field(&view, "vlan"), FieldValue::Absent);
+        assert_eq!(field(&view, "encap"), FieldValue::Absent);
+        assert_eq!(field(&view, "tunnel_id"), FieldValue::Absent);
+    }
+
+    /// The zero a flow really has, told apart from the zero it does not.
+    #[test]
+    fn a_real_zero_is_not_reported_as_absent() {
+        let identity = FlowIdentity {
+            tunnel_id: Some(0),
+            protocol_number: Some(0),
+            ..FlowIdentity::default()
+        };
+        let view = FlowView::new(&record(), &identity);
+
         assert_eq!(field(&view, "tunnel_id"), FieldValue::Unsigned(0));
+        assert_eq!(field(&view, "prot"), FieldValue::Unsigned(0));
+    }
+
+    /// A flow that never moved lists no paths at all.
+    #[test]
+    fn a_flow_that_never_moved_has_no_path_list() {
+        let view = FlowView::new(&record(), &FlowIdentity::default());
+
+        assert_eq!(field(&view, "path_count"), FieldValue::Unsigned(1));
+        assert_eq!(field(&view, "paths"), FieldValue::Absent);
     }
 
     #[test]
