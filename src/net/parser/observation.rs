@@ -431,7 +431,7 @@ mod tests {
 
         let encap = tenant_a.key.encapsulation.expect("tunnel recorded");
         assert_eq!(encap.kind.as_str(), "vxlan");
-        assert_eq!(encap.id, 100, "the VXLAN VNI");
+        assert_eq!(encap.id, Some(100), "the VXLAN VNI");
     }
 
     /// Different tunnel endpoints separate flows even on the same segment.

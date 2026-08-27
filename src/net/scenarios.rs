@@ -317,11 +317,16 @@ impl Flows {
     /// Predicates take the whole flow. Addresses, ports and protocol live on the
     /// key; what the flow counted lives on the record.
     pub fn only(&self, predicate: impl Fn(&Flow) -> bool) -> &FlowRecord {
-        let matched: Vec<&FlowRecord> = self
+        &self.only_flow(predicate).record
+    }
+
+    /// The one flow matching `predicate`, key included, for assertions about
+    /// what identified it rather than what it counted.
+    pub fn only_flow(&self, predicate: impl Fn(&Flow) -> bool) -> &Flow {
+        let matched: Vec<&Flow> = self
             .flows
             .iter()
             .filter(|flow| predicate(flow))
-            .map(|flow| &flow.record)
             .collect();
         assert_eq!(
             matched.len(),
@@ -837,6 +842,55 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(flows.count(|f| f.key.ports().0 == 41_001), 2, "two tunnels");
+    }
+
+    /// A GRE key is optional, so a tunnel that omits it and one that sets it to
+    /// zero are different tunnels. Recording the absent key as 0 merged them.
+    #[test]
+    fn a_keyless_gre_tunnel_is_not_one_keyed_zero() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_006, 9_000, SYN),
+        );
+
+        for key in [None, Some(0)] {
+            let mut payload = gre(0x0800, key);
+            payload.extend_from_slice(&inner);
+            capture.push(&v4(47, 64, [203, 0, 113, 1], [203, 0, 113, 2], &payload));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+        assert_eq!(flows.count(|f| f.key.ports().0 == 41_006), 2, "two tunnels");
+    }
+
+    /// MPLS label 0 is IPv4 Explicit NULL, a label in everyday use, not the
+    /// absence of one.
+    #[test]
+    fn mpls_label_zero_is_a_label() {
+        let mut capture = Capture::new(600_000);
+        let inner = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_007, 9_000, SYN),
+        );
+
+        let mut payload = mpls(0);
+        payload.extend_from_slice(&inner);
+        capture.push(&ethernet(0x8847, &payload));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        let flow = flows.only_flow(|f| f.key.ports().0 == 41_007);
+        let encapsulation = flow.key.encapsulation.expect("an MPLS encapsulation");
+        assert_eq!(encapsulation.id, Some(0), "explicit null, not absent");
     }
 
     /// MPLS sits below IP and has no addresses of its own, but the label still
