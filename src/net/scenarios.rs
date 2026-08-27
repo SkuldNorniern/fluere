@@ -287,8 +287,8 @@ impl Flows {
 
     /// The one flow matching `predicate`, failing if there is not exactly one.
     ///
-    /// Predicates take the whole flow: what identifies it - addresses, ports,
-    /// protocol - lives on the key, and what it counted lives on the record.
+    /// Predicates take the whole flow. Addresses, ports and protocol live on the
+    /// key; what the flow counted lives on the record.
     pub fn only(&self, predicate: impl Fn(&Flow) -> bool) -> &FlowRecord {
         let matched: Vec<&FlowRecord> = self
             .flows
@@ -529,8 +529,8 @@ mod tests {
     }
 
     /// IPv6 carries fragmentation in an extension header rather than the IP
-    /// header, so it needs its own handling - but the outcome must match IPv4's:
-    /// one datagram is one flow.
+    /// header, so it needs its own handling. The outcome must match IPv4's: one
+    /// datagram is one flow.
     #[test]
     fn the_fragments_of_an_ipv6_datagram_stay_together() {
         const FRAGMENT_HEADER: u8 = 44;

@@ -67,10 +67,9 @@ pub struct PluginWorker {
 
 /// Hands finished flows to the loaded plugins.
 ///
-/// Only a channel sender: everything with state - the interpreters, the plugins
-/// loaded into them, the queue - is owned by the worker task and never shared.
-/// That is what keeps this free of reference counting and locks, and why the
-/// manager is cheap to hold and to clone.
+/// Only a channel sender. The interpreters, the plugins loaded into them and the
+/// queue are all owned by the worker task and never shared, which is why this
+/// needs no reference counting or locks and is cheap to hold and to clone.
 #[derive(Debug, Clone)]
 pub struct PluginManager {
     sender: mpsc::Sender<(FlowRecord, FlowIdentity)>,

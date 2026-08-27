@@ -32,9 +32,9 @@ impl EncapKind {
 ///
 /// Flow keys are built from the innermost addresses, which is what makes
 /// tunnelled traffic readable. On its own that merges every tunnel between the
-/// same pair of inner endpoints into one flow - and different tenants routinely
-/// reuse the same private ranges, so two tenants' traffic would land in one
-/// record. Including the carrier keeps them apart.
+/// same pair of inner endpoints into one flow. Different tenants reuse the same
+/// private ranges, so their traffic would land in one record. Including the
+/// carrier keeps them apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Encapsulation {
     pub kind: EncapKind,

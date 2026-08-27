@@ -3,8 +3,8 @@
 /// The DS field occupies the upper six bits of the IPv4 ToS byte / IPv6
 /// traffic class, so the conversion is a two-bit shift. This used to be a
 /// lookup table covering 21 well-known code points, which turned every other
-/// valid DSCP - including whole ranges of the AF and CS space, and any local
-/// use value - into an error that callers silently mapped to zero.
+/// valid DSCP into an error that callers silently mapped to zero. That included
+/// whole ranges of the AF and CS space, and any local-use value.
 ///
 /// The low two bits (ECN) are not part of DSCP and are reported as zero here.
 #[inline]

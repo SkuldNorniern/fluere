@@ -12,10 +12,10 @@ use super::vlan::VlanTags;
 /// in their place, and each is named for what it actually is rather than
 /// sharing a pair of fields called "port" and meaning different things by row.
 ///
-/// ICMP is deliberately absent. Its type and code identify a *direction* — an
-/// echo request and its reply carry different ones — so keying on them would
-/// split one exchange into two flows. They are recorded as a measurement on the
-/// flow record instead.
+/// ICMP is deliberately absent. Its type and code identify a direction rather
+/// than an endpoint: an echo request and its reply carry different ones, so
+/// keying on them would split one exchange into two flows. They are recorded as
+/// a measurement on the flow record instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum Endpoints {
     /// TCP, UDP and SCTP.

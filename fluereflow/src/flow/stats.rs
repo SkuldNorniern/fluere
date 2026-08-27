@@ -112,7 +112,7 @@ impl DirectionStats {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct NetworkStats {
     /// Time to live, as IPv4 calls it. IPv6 calls the same octet the hop
-    /// limit, and both are reported here - the previous model recorded zero for
+    /// limit, and both are reported here. The previous model recorded zero for
     /// IPv6, which read as a genuine measurement.
     pub ttl: Option<Range<u8>>,
     /// Differentiated services code point, from the first packet.
@@ -123,7 +123,7 @@ pub struct NetworkStats {
     ///
     /// Names the network protocol for traffic that has no IP protocol number
     /// of its own. ARP used to be reported as IP protocol 4, which is IANA's
-    /// number for IP-in-IP - a marker that read as a genuine measurement.
+    /// number for IP-in-IP, a marker that read as a genuine measurement.
     pub ethertype: Option<u16>,
 }
 
@@ -131,8 +131,8 @@ pub struct NetworkStats {
 ///
 /// ICMP has no ports; its type and code identify the message. They are recorded
 /// here, as a measurement, rather than being squeezed into fields named for
-/// ports - which is what the previous model did, and what made an echo request
-/// and its reply look like different endpoints.
+/// ports. That is what the previous model did, and it made an echo request and
+/// its reply look like different endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TransportStats {
     /// ICMP or ICMPv6 type and code, from the flow's first packet.
