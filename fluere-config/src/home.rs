@@ -6,7 +6,7 @@
 //! the one that user edits.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The home directory of the user who invoked a `sudo` session.
 ///
@@ -36,6 +36,32 @@ fn passwd_home(user: &str) -> Option<PathBuf> {
             .filter(|home| !home.is_empty())
             .map(PathBuf::from)
     })
+}
+
+/// The config directory belonging to `home`.
+///
+/// Mirrors what `dirs::config_dir` would return for that user, so a privileged
+/// run and an unprivileged one read the same file rather than diverging on
+/// macOS, where the two places are different.
+pub fn config_dir_in(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home.join("Library").join("Application Support")
+    } else if cfg!(windows) {
+        home.join("AppData").join("Roaming")
+    } else {
+        home.join(".config")
+    }
+}
+
+/// The cache directory belonging to `home`, on the same reasoning.
+pub fn cache_dir_in(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        home.join("Library").join("Caches")
+    } else if cfg!(windows) {
+        home.join("AppData").join("Local")
+    } else {
+        home.join(".cache")
+    }
 }
 
 /// Where a home directory usually lives, when the database has nothing to say.
@@ -77,6 +103,23 @@ mod tests {
             "root's home came from the database, not the /home guess: {}",
             home.display()
         );
+    }
+
+    /// A privileged run must land on the same file an unprivileged one would,
+    /// which means following the platform rather than always using `.config`.
+    #[test]
+    fn the_config_directory_follows_the_platform() {
+        let home = PathBuf::from("/home/someone");
+        let config = config_dir_in(&home);
+
+        assert!(config.starts_with(&home));
+        if cfg!(target_os = "macos") {
+            assert!(config.ends_with("Library/Application Support"));
+        } else if cfg!(windows) {
+            assert!(config.ends_with("AppData/Roaming"));
+        } else {
+            assert!(config.ends_with(".config"));
+        }
     }
 
     #[test]
