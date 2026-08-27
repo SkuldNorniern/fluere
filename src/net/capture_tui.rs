@@ -23,6 +23,7 @@ use std::{
 };
 
 use crate::net::Flow;
+use fluereflow::Endpoints;
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
 
@@ -166,13 +167,44 @@ fn duration_reached(start: Instant, duration: u64) -> bool {
     start.elapsed() >= Duration::from_millis(duration) && duration != 0
 }
 
+/// The two endpoint columns, as text.
+///
+/// Protocols without ports show what they have instead rather than a pair of
+/// zeros, which read as port 0 on a flow that has no ports at all.
+fn endpoint_columns(key: &Key) -> (Cow<'static, str>, Cow<'static, str>) {
+    match key.endpoints {
+        Endpoints::Ports {
+            source,
+            destination,
+        } => (
+            Cow::from(source.to_string()),
+            Cow::from(destination.to_string()),
+        ),
+        Endpoints::SecurityAssociation(spi) => {
+            (Cow::from(format!("spi 0x{:08x}", spi)), Cow::from("-"))
+        }
+        Endpoints::GreProtocol(protocol) => {
+            (Cow::from(format!("0x{:04x}", protocol)), Cow::from("-"))
+        }
+        Endpoints::None => (Cow::from("-"), Cow::from("-")),
+    }
+}
+
 fn add_recent_flow(recent_flows: &mut Vec<FlowSummary>, key: Key) {
+    let (src_port, dst_port) = endpoint_columns(&key);
+    // The name, not the number: a bare 0 says nothing, and now means "no IP
+    // protocol number" rather than an unset field.
+    let protocol = match key.protocol_name() {
+        "" => Cow::from(key.protocol.to_string()),
+        name => Cow::from(name),
+    };
+
     recent_flows.push(FlowSummary {
         src: Cow::from(key.source.to_string()),
         dst: Cow::from(key.destination.to_string()),
-        src_port: Cow::from(key.ports().0.to_string()),
-        dst_port: Cow::from(key.ports().1.to_string()),
-        protocol: Cow::from(key.protocol.to_string()),
+        src_port,
+        dst_port,
+        protocol,
     });
     if recent_flows.len() > MAX_RECENT_FLOWS {
         recent_flows.remove(0);
@@ -651,6 +683,63 @@ async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn key_with(endpoints: Endpoints, protocol: u8, ethertype: Option<u16>) -> Key {
+        use fluereflow::{MacAddress, VlanTags};
+        use std::net::{IpAddr, Ipv4Addr};
+
+        Key {
+            source: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+            destination: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
+            endpoints,
+            protocol,
+            ethertype,
+            source_mac: MacAddress::new([0; 6]),
+            destination_mac: MacAddress::new([1; 6]),
+            vlan: VlanTags::default(),
+            encapsulation: None,
+        }
+    }
+
+    /// A protocol with no ports showed `0` and `0`, which read as port zero on
+    /// a flow that has no ports at all.
+    #[test]
+    fn a_flow_without_ports_shows_no_ports() {
+        let arp = key_with(Endpoints::None, 0, Some(fluereflow::ETHERTYPE_ARP));
+        assert_eq!(endpoint_columns(&arp), ("-".into(), "-".into()));
+
+        let ipsec = key_with(Endpoints::SecurityAssociation(0xdead_beef), 50, None);
+        assert_eq!(
+            endpoint_columns(&ipsec),
+            ("spi 0xdeadbeef".into(), "-".into())
+        );
+    }
+
+    #[test]
+    fn a_flow_with_ports_shows_them() {
+        let tcp = key_with(
+            Endpoints::Ports {
+                source: 40_001,
+                destination: 443,
+            },
+            6,
+            None,
+        );
+
+        assert_eq!(endpoint_columns(&tcp), ("40001".into(), "443".into()));
+    }
+
+    /// The protocol column names the protocol where there is a name for it.
+    #[test]
+    fn the_protocol_column_reads_as_a_name() {
+        let mut recent = Vec::new();
+        add_recent_flow(
+            &mut recent,
+            key_with(Endpoints::None, 0, Some(fluereflow::ETHERTYPE_ARP)),
+        );
+
+        assert_eq!(recent[0].protocol, "arp");
+    }
 
     #[test]
     fn export_progress_runs_from_empty_to_full() {

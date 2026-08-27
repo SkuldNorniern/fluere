@@ -136,6 +136,30 @@ impl FlowKey {
         self.endpoints.ports().unwrap_or((0, 0))
     }
 
+    /// Readable name of the protocol this flow carried, or empty when it has
+    /// no well-known one.
+    pub fn protocol_name(&self) -> &'static str {
+        if self.ethertype == Some(super::ETHERTYPE_ARP) {
+            return "arp";
+        }
+
+        match self.protocol {
+            1 => "icmp",
+            2 => "igmp",
+            6 => "tcp",
+            17 => "udp",
+            41 => "ipv6",
+            47 => "gre",
+            50 => "esp",
+            51 => "ah",
+            58 => "icmpv6",
+            89 => "ospf",
+            112 => "vrrp",
+            132 => "sctp",
+            _ => "",
+        }
+    }
+
     /// `4` or `6`.
     ///
     /// Derived rather than stored: the addresses already carry it, and a stored
