@@ -19,8 +19,6 @@ pub(super) struct PacketProperties {
     pub dscp: u8,
     /// Explicit congestion notification, two bits.
     pub ecn: u8,
-    /// EtherType of the innermost traffic.
-    pub ethertype: Option<u16>,
 }
 
 /// Read one packet's properties from an already parsed frame.
@@ -54,18 +52,6 @@ pub(super) fn from_parsed(
         (raw_ttl(parsed, packet_data), 0, 0)
     };
 
-    // Taken from what was actually decoded rather than the frame header, so a
-    // tunnel reports the traffic it carried rather than its own framing.
-    let ethertype = if inner.arp.is_some() {
-        Some(0x0806)
-    } else if inner.ipv4.is_some() {
-        Some(0x0800)
-    } else if inner.ipv6.is_some() {
-        Some(0x86DD)
-    } else {
-        parsed.ethernet.as_ref().map(|ethernet| ethernet.ethertype)
-    };
-
     PacketProperties {
         facts: PacketFacts {
             time,
@@ -77,7 +63,6 @@ pub(super) fn from_parsed(
         },
         dscp,
         ecn,
-        ethertype,
     }
 }
 
