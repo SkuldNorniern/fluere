@@ -51,6 +51,8 @@ pub struct FlowIdentity {
     /// Protocol type a GRE tunnel carried, when its inner flow could not be
     /// decoded.
     pub gre_protocol: Option<u16>,
+    /// `4` or `6`.
+    pub ip_version: u8,
     /// Readable protocol name: `tcp`, `udp`, `arp`, and so on.
     pub protocol: String,
     /// IANA protocol number, absent for traffic with none - such as ARP.
@@ -118,13 +120,7 @@ impl FlowView {
                             .map_or_else(String::new, |ip| ip.to_string()),
                     ),
                 ),
-                (
-                    "ip_version",
-                    Unsigned(match identity.source {
-                        Some(IpAddr::V6(_)) => 6,
-                        _ => 4,
-                    }),
-                ),
+                ("ip_version", Unsigned(u64::from(identity.ip_version))),
                 ("src_port", Unsigned(u64::from(ports.0))),
                 ("dst_port", Unsigned(u64::from(ports.1))),
                 ("icmp_type", Unsigned(u64::from(icmp.0))),

@@ -60,6 +60,7 @@ pub fn for_plugin(flow: &Flow) -> fluere_plugin::FlowIdentity {
         icmp: flow.record.transport.icmp,
         spi: flow.key.endpoints.security_association(),
         gre_protocol: flow.key.endpoints.gre_protocol(),
+        ip_version: flow.key.ip_version(),
         protocol: flow.protocol_name().to_string(),
         protocol_number: flow.is_ip().then_some(flow.key.protocol),
         ethertype: (!flow.is_ip())

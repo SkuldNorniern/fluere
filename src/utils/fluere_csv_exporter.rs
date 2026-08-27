@@ -135,7 +135,7 @@ fn row(flow: &Flow) -> Vec<String> {
     vec![
         key.source.to_string(),
         key.destination.to_string(),
-        if key.source.is_ipv6() { "6" } else { "4" }.to_string(),
+        key.ip_version().to_string(),
         endpoints.ports.0.clone(),
         endpoints.ports.1.clone(),
         endpoints.icmp_type,
