@@ -55,7 +55,7 @@ pub struct FlowIdentity {
     pub ip_version: u8,
     /// Readable protocol name: `tcp`, `udp`, `arp`, and so on.
     pub protocol: String,
-    /// IANA protocol number, absent for traffic with none - such as ARP.
+    /// IANA protocol number, absent for traffic with none, such as ARP.
     pub protocol_number: Option<u8>,
     /// EtherType, for traffic that is not IP.
     pub ethertype: Option<u16>,
