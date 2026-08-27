@@ -18,7 +18,6 @@ use std::{
     borrow::Cow,
     fs, io,
     mem::take,
-    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -40,7 +39,7 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
 };
 use tokio::{
-    sync::{Mutex, oneshot},
+    sync::{oneshot, watch},
     task,
 };
 
@@ -112,11 +111,45 @@ struct FlowSummary {
     protocol: Cow<'static, str>, //flow_data: String, // or any other relevant data you want to display
 }
 
+/// When the last export happened, and how often the next one is due.
 struct ExportSchedule<'a> {
     interval: u64,
-    last_export: &'a Mutex<Instant>,
-    last_export_unix_time: &'a Mutex<u64>,
+    last_export: &'a mut Instant,
+    last_export_unix_time: &'a mut u64,
 }
+
+/// Everything the terminal draws, as published by the capture loop.
+///
+/// The capture task owns the flow engine and the export schedule outright; the
+/// render task owns its terminal. Neither reaches into the other's state - the
+/// capture task publishes a snapshot and the render task reads the latest one -
+/// so there is nothing to lock and no way for drawing to stall the capture.
+#[derive(Debug, Clone)]
+struct UiSnapshot {
+    recent_flows: Vec<FlowSummary>,
+    active_flows: usize,
+    /// Used to work out how far through the current export interval we are.
+    last_export: Instant,
+    /// Unix seconds of the last export, for display.
+    last_export_unix_time: u64,
+}
+
+impl Default for UiSnapshot {
+    fn default() -> Self {
+        UiSnapshot {
+            recent_flows: Vec::new(),
+            active_flows: 0,
+            last_export: Instant::now(),
+            last_export_unix_time: unix_time_seconds(),
+        }
+    }
+}
+
+/// How often the capture loop republishes what the terminal draws.
+///
+/// The terminal redraws every 100ms, so publishing faster than this would only
+/// copy the recent-flow list for frames nobody sees.
+const UI_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
 
 fn next_packet(cap: &mut pcap::Capture<pcap::Active>) -> Option<pcap::Packet<'_>> {
     match cap.next_packet() {
@@ -132,17 +165,16 @@ fn duration_reached(start: Instant, duration: u64) -> bool {
     start.elapsed() >= Duration::from_millis(duration) && duration != 0
 }
 
-async fn add_recent_flow(recent_flows: &Mutex<Vec<FlowSummary>>, key: Key) {
-    let mut recent_flows_guard = recent_flows.lock().await;
-    recent_flows_guard.push(FlowSummary {
+fn add_recent_flow(recent_flows: &mut Vec<FlowSummary>, key: Key) {
+    recent_flows.push(FlowSummary {
         src: Cow::from(key.src_ip.to_string()),
         dst: Cow::from(key.dst_ip.to_string()),
         src_port: Cow::from(key.src_port.to_string()),
         dst_port: Cow::from(key.dst_port.to_string()),
         protocol: Cow::from(key.protocol.to_string()),
     });
-    if recent_flows_guard.len() > MAX_RECENT_FLOWS {
-        recent_flows_guard.remove(0);
+    if recent_flows.len() > MAX_RECENT_FLOWS {
+        recent_flows.remove(0);
     }
 }
 
@@ -164,20 +196,15 @@ async fn emit_completed_flows(
 
 async fn process_packet(
     observation: PacketObservation,
-    engine: &Mutex<FlowEngine>,
-    recent_flows: &Mutex<Vec<FlowSummary>>,
+    engine: &mut FlowEngine,
+    recent_flows: &mut Vec<FlowSummary>,
     plugin_manager: &PluginManager,
     records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
-    // Held only for the engine update, so the capture loop is not blocked on
-    // the plugin and TUI work that follows.
-    let outcome = {
-        let mut engine_guard = engine.lock().await;
-        engine_guard.accept(observation)
-    };
+    let outcome = engine.accept(observation);
 
     if outcome.opened_flow {
-        add_recent_flow(recent_flows, observation.key).await;
+        add_recent_flow(recent_flows, observation.key);
     }
     emit_completed_flows(outcome.completed, plugin_manager, records).await
 }
@@ -191,9 +218,7 @@ async fn export_if_due(
     schedule: ExportSchedule<'_>,
     export_tasks: &mut Vec<task::JoinHandle<()>>,
 ) -> Result<(fs::File, Cow<'static, str>), FluereError> {
-    let mut last_export_guard = schedule.last_export.lock().await;
-    let mut last_export_unix_time_guard = schedule.last_export_unix_time.lock().await;
-    if last_export_guard.elapsed() >= Duration::from_millis(schedule.interval)
+    if schedule.last_export.elapsed() >= Duration::from_millis(schedule.interval)
         && schedule.interval != 0
     {
         let records_to_export = take(records);
@@ -207,8 +232,8 @@ async fn export_if_due(
 
         let file_path = cur_time_file(csv_file, file_dir, ".csv");
         let file = fs::File::create(file_path.as_ref())?;
-        *last_export_guard = Instant::now();
-        *last_export_unix_time_guard = unix_time_seconds();
+        *schedule.last_export = Instant::now();
+        *schedule.last_export_unix_time = unix_time_seconds();
         return Ok((file, file_path));
     }
     Ok((file, file_path))
@@ -260,35 +285,28 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
     fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
-    let last_export_unix_time = Arc::new(Mutex::new(unix_time_seconds()));
-    let last_export = Arc::new(Mutex::new(Instant::now()));
+    let mut last_export_unix_time = unix_time_seconds();
+    let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
     let mut file = fs::File::create(file_path.as_ref())?;
 
     let mut records: Vec<Flow> = Vec::new();
-    let recent_flows: Arc<Mutex<Vec<FlowSummary>>> = Arc::new(Mutex::new(Vec::new()));
-    let engine = Arc::new(Mutex::new(FlowEngine::new(flow_timeout)));
+    let mut recent_flows: Vec<FlowSummary> = Vec::new();
+    let mut engine = FlowEngine::new(flow_timeout);
+
+    // The capture loop publishes what the terminal draws; the render task only
+    // ever reads the latest snapshot.
+    let (ui_tx, ui_rx) = watch::channel(UiSnapshot::default());
+    let mut last_publish = Instant::now();
 
     let (render_ready_tx, render_ready_rx) = oneshot::channel();
     let (render_shutdown_tx, render_shutdown_rx) = oneshot::channel();
-    let draw_task = task::spawn({
-        let recent_flows_clone = Arc::clone(&recent_flows);
-        let last_export_clone = Arc::clone(&last_export);
-        let last_export_unix_time_clone = Arc::clone(&last_export_unix_time);
-        let engine_clone = Arc::clone(&engine);
-        async move {
-            render_ui(
-                recent_flows_clone,
-                last_export_clone,
-                last_export_unix_time_clone,
-                engine_clone,
-                interval,
-                render_ready_tx,
-                render_shutdown_rx,
-            )
-            .await
-        }
-    });
+    let draw_task = task::spawn(render_ui(
+        ui_rx,
+        interval,
+        render_ready_tx,
+        render_shutdown_rx,
+    ));
 
     render_ready_rx.await.map_err(|error| {
         io::Error::other(format!("render task stopped during setup: {error}"))
@@ -311,8 +329,8 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
             };
             process_packet(
                 observation,
-                &engine,
-                &recent_flows,
+                &mut engine,
+                &mut recent_flows,
                 &plugin_manager,
                 &mut records,
             )
@@ -326,12 +344,25 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                 file_dir,
                 ExportSchedule {
                     interval,
-                    last_export: &last_export,
-                    last_export_unix_time: &last_export_unix_time,
+                    last_export: &mut last_export,
+                    last_export_unix_time: &mut last_export_unix_time,
                 },
                 &mut export_tasks,
             )
             .await?;
+
+            // Republished at a bounded rate: the terminal redraws ten times a
+            // second, so copying the recent-flow list per packet would be work
+            // for frames nobody sees.
+            if last_publish.elapsed() >= UI_PUBLISH_INTERVAL {
+                last_publish = Instant::now();
+                let _ = ui_tx.send(UiSnapshot {
+                    recent_flows: recent_flows.clone(),
+                    active_flows: engine.active_count(),
+                    last_export,
+                    last_export_unix_time,
+                });
+            }
 
             if duration_reached(start, duration) {
                 break;
@@ -339,11 +370,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         }
 
         debug!("Captured in {:?}", start.elapsed());
-        let remaining = {
-            let mut engine_guard = engine.lock().await;
-            engine_guard.drain()
-        };
-        for flow in remaining {
+        for flow in engine.drain() {
             plugin_manager
                 .process_flow_data(flow.record, (&flow).into())
                 .await
@@ -421,10 +448,7 @@ fn restore_terminal(terminal: &mut LiveTerminal) -> io::Result<()> {
 }
 
 async fn render_ui(
-    recent_flows: Arc<Mutex<Vec<FlowSummary>>>,
-    last_export: Arc<Mutex<Instant>>,
-    last_export_unix_time: Arc<Mutex<u64>>,
-    engine: Arc<Mutex<FlowEngine>>,
+    ui: watch::Receiver<UiSnapshot>,
     interval: u64,
     ready_tx: oneshot::Sender<io::Result<()>>,
     mut shutdown_rx: oneshot::Receiver<()>,
@@ -443,14 +467,7 @@ async fn render_ui(
     loop {
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                refresh_ui(
-                    &mut terminal,
-                    &recent_flows,
-                    &last_export,
-                    &last_export_unix_time,
-                    &engine,
-                    interval,
-                ).await;
+                refresh_ui(&mut terminal, &ui.borrow(), interval);
             }
             _ = &mut shutdown_rx => break,
         }
@@ -460,36 +477,28 @@ async fn render_ui(
     Ok(())
 }
 
-async fn refresh_ui(
-    terminal: &mut LiveTerminal,
-    recent_flows: &Mutex<Vec<FlowSummary>>,
-    last_export: &Mutex<Instant>,
-    last_export_unix_time: &Mutex<u64>,
-    engine: &Mutex<FlowEngine>,
-    interval: u64,
-) {
-    let flow_summaries: Vec<FlowSummary> = {
-        let recent_flows_guard = recent_flows.lock().await;
-        recent_flows_guard.clone()
-    };
-    let (progress, recent_exported_time): (f64, u64) = {
-        let last_export_unix_time_guard = last_export_unix_time.lock().await;
-        let last_export_guard = last_export.lock().await;
-        let progress =
-            (last_export_guard.elapsed().as_millis() as f64 / interval as f64).clamp(0.0, 1.0);
-        (progress, *last_export_unix_time_guard)
-    };
-    let active_flow_count: usize = {
-        let engine_guard = engine.lock().await;
-        engine_guard.active_count()
-    };
+/// How far through the current export interval, as 0.0 to 1.0.
+///
+/// An interval of zero means exports are not scheduled at all, so there is no
+/// progress to show rather than a bar permanently at full.
+fn export_progress(since_last_export: Duration, interval: u64) -> f64 {
+    if interval == 0 {
+        return 0.0;
+    }
+
+    (since_last_export.as_millis() as f64 / interval as f64).clamp(0.0, 1.0)
+}
+
+fn refresh_ui(terminal: &mut LiveTerminal, snapshot: &UiSnapshot, interval: u64) {
+    let progress = export_progress(snapshot.last_export.elapsed(), interval);
+
     if let Err(error) = terminal.draw(|f| {
         draw_ui(
             f,
-            &flow_summaries,
+            &snapshot.recent_flows,
             progress,
-            active_flow_count,
-            recent_exported_time,
+            snapshot.active_flows,
+            snapshot.last_export_unix_time,
         );
     }) {
         error!("Failed to draw terminal UI: {}", error);
@@ -635,5 +644,70 @@ async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_progress_runs_from_empty_to_full() {
+        assert_eq!(export_progress(Duration::from_millis(0), 1_000), 0.0);
+        assert_eq!(export_progress(Duration::from_millis(500), 1_000), 0.5);
+        assert_eq!(export_progress(Duration::from_millis(1_000), 1_000), 1.0);
+    }
+
+    /// Overdue exports must not run the bar past the end.
+    #[test]
+    fn export_progress_is_clamped() {
+        assert_eq!(export_progress(Duration::from_millis(9_000), 1_000), 1.0);
+    }
+
+    /// With no export interval there is nothing to be partway through. The
+    /// previous code divided by the interval regardless, which left the bar
+    /// pinned at full for a capture that never exports on a timer.
+    #[test]
+    fn an_unscheduled_export_shows_no_progress() {
+        assert_eq!(export_progress(Duration::from_millis(5_000), 0), 0.0);
+    }
+
+    /// The snapshot is what the render task reads; a fresh one must be drawable
+    /// before the capture loop has published anything.
+    #[test]
+    fn a_default_snapshot_is_drawable() {
+        let snapshot = UiSnapshot::default();
+
+        assert!(snapshot.recent_flows.is_empty());
+        assert_eq!(snapshot.active_flows, 0);
+        assert_eq!(export_progress(snapshot.last_export.elapsed(), 1_000), 0.0);
+    }
+
+    /// The recent-flow list is bounded, so a long capture cannot grow the
+    /// snapshot the capture loop clones on every publish.
+    #[test]
+    fn the_recent_flow_list_stays_bounded() {
+        use crate::net::types::{Key, MacAddress, VlanTags};
+        use std::net::{IpAddr, Ipv4Addr};
+
+        let mut recent = Vec::new();
+        for port in 0..(MAX_RECENT_FLOWS as u16 * 3) {
+            add_recent_flow(
+                &mut recent,
+                Key {
+                    src_ip: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+                    src_port: port,
+                    dst_ip: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
+                    dst_port: 443,
+                    protocol: 6,
+                    src_mac: MacAddress::new([0; 6]),
+                    dst_mac: MacAddress::new([1; 6]),
+                    vlan: VlanTags::default(),
+                    encapsulation: None,
+                },
+            );
+        }
+
+        assert!(recent.len() <= MAX_RECENT_FLOWS + 1, "got {}", recent.len());
     }
 }
