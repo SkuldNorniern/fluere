@@ -126,7 +126,7 @@ fn home_config_path() -> Result<PathBuf, ConfigError> {
     // root's, so a privileged capture reads the config that user actually
     // edits.
     let base = match crate::home::sudo_user_home() {
-        Some(home) => home.join(".config"),
+        Some(home) => crate::home::config_dir_in(&home),
         None => config_dir().ok_or(ConfigError::NoConfigDirectory)?,
     };
 
