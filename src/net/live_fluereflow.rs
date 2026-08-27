@@ -121,9 +121,9 @@ struct ExportSchedule<'a> {
 /// Everything the terminal draws, as published by the capture loop.
 ///
 /// The capture task owns the flow engine and the export schedule outright; the
-/// render task owns its terminal. Neither reaches into the other's state - the
-/// capture task publishes a snapshot and the render task reads the latest one -
-/// so there is nothing to lock and no way for drawing to stall the capture.
+/// render task owns its terminal. Neither reaches into the other's state: the
+/// capture task publishes a snapshot and the render task reads the latest one.
+/// Nothing needs locking, and drawing cannot stall the capture.
 #[derive(Debug, Clone)]
 struct UiSnapshot {
     recent_flows: Vec<FlowSummary>,

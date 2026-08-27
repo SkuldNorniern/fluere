@@ -83,7 +83,7 @@ pub struct FlowRecord {
 }
 
 impl FlowRecord {
-    /// Open a flow. The first packet is not counted here - pass it to
+    /// Open a flow. The first packet is not counted here: pass it to
     /// [`observe`](Self::observe) like any other, so it is counted exactly once.
     pub fn open(at: Timestamp, resolution: TimeResolution, start_state: StartState) -> Self {
         FlowRecord {
@@ -184,8 +184,8 @@ impl Flow {
 
     /// Whether this flow carried an IP protocol at all.
     ///
-    /// ARP does not. It used to report IP protocol 4 - IANA's number for
-    /// IP-in-IP - purely as a flow-keying marker.
+    /// ARP does not. It used to report IP protocol 4, IANA's number for IP-in-IP,
+    /// purely as a flow-keying marker.
     pub fn is_ip(&self) -> bool {
         self.record.network.ethertype != Some(ETHERTYPE_ARP)
     }

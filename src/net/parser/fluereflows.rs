@@ -56,7 +56,7 @@ mod tests {
     }
 
     /// A short snaplen leaves the wire length in the header, which is what
-    /// byte accounting must use - counting captured bytes under-reports.
+    /// byte accounting must use, because counting captured bytes under-reports.
     #[test]
     fn wire_length_is_what_was_on_the_wire() {
         let data = [0u8; 64];
