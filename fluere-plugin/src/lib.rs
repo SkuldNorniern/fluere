@@ -9,9 +9,7 @@
 //! contains. Adding a language is a new [`PluginRuntime`] implementation behind
 //! a feature; nothing here changes.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 pub mod downloader;
 mod error;
@@ -24,12 +22,12 @@ use util::home_cache_path;
 
 pub use downloader::DownloadError;
 pub use error::PluginError;
-pub use runtime::PluginRuntime;
+pub use runtime::{PluginRuntime, Runtime};
 pub use view::{FieldValue, FlowIdentity, FlowView, SCHEMA_VERSION};
 
 use fluere_config::{Config, Plugin};
 use fluereflow::FluereRecord;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 #[cfg(feature = "log")]
 use log::{debug, info};
@@ -60,43 +58,35 @@ macro_rules! plugin_info {
 
 /// Handle to the background task that feeds records to loaded plugins.
 ///
-/// Obtained from [`PluginManager::start_worker`] and handed back to
+/// Returned by [`PluginManager::start`] alongside the manager, and handed back to
 /// [`PluginManager::shutdown`], which is the only supported way to stop it.
 #[derive(Debug)]
 pub struct PluginWorker {
     handle: tokio::task::JoinHandle<()>,
 }
 
+/// Hands finished flows to the loaded plugins.
+///
+/// Only a channel sender: everything with state - the interpreters, the plugins
+/// loaded into them, the queue - is owned by the worker task and never shared.
+/// That is what keeps this free of reference counting and locks, and why the
+/// manager is cheap to hold and to clone.
+#[derive(Debug, Clone)]
 pub struct PluginManager {
-    runtimes: Arc<Mutex<Vec<Box<dyn PluginRuntime>>>>,
     sender: mpsc::Sender<(FluereRecord, FlowIdentity)>,
-    receiver: Arc<Mutex<mpsc::Receiver<(FluereRecord, FlowIdentity)>>>,
-    /// Names of the plugins that loaded, for reporting.
-    loaded: Arc<Mutex<HashSet<String>>>,
 }
 
 impl PluginManager {
-    pub fn new() -> Result<Self, PluginError> {
-        let (sender, receiver) = mpsc::channel::<(FluereRecord, FlowIdentity)>(CHANNEL_CAPACITY);
-
-        Ok(PluginManager {
-            runtimes: Arc::new(Mutex::new(runtime::available())),
-            sender,
-            receiver: Arc::new(Mutex::new(receiver)),
-            loaded: Arc::new(Mutex::new(HashSet::new())),
-        })
-    }
-
-    /// Load every enabled plugin named in `config`.
+    /// Load every enabled plugin in `config` and start feeding them flows.
     ///
     /// A plugin that cannot be found, downloaded, read, or initialised is
     /// reported and skipped; the remaining plugins still load.
-    pub async fn load_plugins(&self, config: &Config) -> Result<(), PluginError> {
+    pub async fn start(config: &Config) -> Result<(Self, PluginWorker), PluginError> {
         #[cfg(feature = "log")]
         debug!("Loading plugins");
 
-        let mut runtimes = self.runtimes.lock().await;
-        let mut loaded = self.loaded.lock().await;
+        let mut runtimes = Runtime::available();
+        let mut loaded = 0usize;
 
         for (name, plugin_config) in &config.plugins {
             if !plugin_config.enabled {
@@ -135,39 +125,21 @@ impl PluginManager {
             match runtime.load(name, &directory, &arguments) {
                 Ok(()) => {
                     let language = runtime.name();
-                    loaded.insert(name.clone());
+                    loaded += 1;
                     plugin_info!("Loaded {} plugin {}", language, name);
                 }
                 Err(error) => plugin_warn!("Failed to load plugin {}: {}", name, error),
             }
         }
 
-        Ok(())
-    }
+        let (sender, receiver) = mpsc::channel::<(FluereRecord, FlowIdentity)>(CHANNEL_CAPACITY);
 
-    /// Spawn the task that hands captured records to every loaded plugin.
-    pub fn start_worker(&self) -> PluginWorker {
-        let runtimes = self.runtimes.clone();
-        let receiver = self.receiver.clone();
+        #[cfg(feature = "log")]
+        debug!("{} plugin(s) loaded", loaded);
+        #[cfg(not(feature = "log"))]
+        let _ = loaded;
 
-        let handle = tokio::spawn(async move {
-            let mut receiver = receiver.lock().await;
-
-            while let Some((record, identity)) = receiver.recv().await {
-                // Built once and marshalled by each runtime, so the field list
-                // lives in one place however many languages are loaded.
-                let view = FlowView::new(&record, &identity);
-
-                let mut runtimes = runtimes.lock().await;
-                for runtime in runtimes.iter_mut() {
-                    if !runtime.is_empty() {
-                        runtime.on_flow(&view);
-                    }
-                }
-            }
-        });
-
-        PluginWorker { handle }
+        Ok((PluginManager { sender }, spawn_worker(runtimes, receiver)))
     }
 
     /// Queue one finished flow for the plugins.
@@ -189,27 +161,46 @@ impl PluginManager {
     ///
     /// Consuming `self` is what makes the ordering reliable: dropping the last
     /// sender closes the channel, so the worker processes everything already
-    /// queued and only then returns. Cleanup runs after that, never alongside
-    /// records still in flight.
+    /// queued and only then cleans up and returns.
     pub async fn shutdown(self, worker: PluginWorker) {
-        let PluginManager {
-            runtimes,
-            sender,
-            receiver: _,
-            loaded: _,
-        } = self;
-
-        drop(sender);
+        drop(self.sender);
 
         if let Err(error) = worker.handle.await {
             plugin_warn!("Plugin worker did not stop cleanly: {}", error);
         }
+    }
+}
 
-        let mut runtimes = runtimes.lock().await;
+/// Spawn the task that owns the runtimes for the rest of the run.
+///
+/// It holds them outright rather than borrowing them back from the manager, so
+/// no lock is needed to hand a flow to a plugin, and cleanup happens here once
+/// the queue has drained rather than being coordinated from outside.
+fn spawn_worker(
+    mut runtimes: Vec<Runtime>,
+    mut receiver: mpsc::Receiver<(FluereRecord, FlowIdentity)>,
+) -> PluginWorker {
+    let handle = tokio::spawn(async move {
+        while let Some((record, identity)) = receiver.recv().await {
+            // Built once and marshalled by each runtime, so the field list
+            // lives in one place however many languages are loaded.
+            let view = FlowView::new(&record, &identity);
+
+            for runtime in runtimes.iter_mut() {
+                if !runtime.is_empty() {
+                    runtime.on_flow(&view);
+                }
+            }
+        }
+
+        // The channel is closed and the queue is empty: every flow that will
+        // ever arrive has been handed over.
         for runtime in runtimes.iter_mut() {
             runtime.cleanup();
         }
-    }
+    });
+
+    PluginWorker { handle }
 }
 
 /// Where a plugin's entry file lives: the configured path, or the cache
@@ -228,7 +219,7 @@ fn plugin_directory(name: &str, plugin_config: &Plugin) -> Result<PathBuf, Plugi
 /// The entry files this build knows how to load, or `None` when no runtime is
 /// compiled in at all.
 fn entry_files() -> Option<String> {
-    let names: Vec<&str> = runtime::available()
+    let names: Vec<&str> = Runtime::available()
         .iter()
         .map(|runtime| runtime.entry_file())
         .collect();
@@ -347,12 +338,9 @@ return plugin
         let mut arguments = HashMap::new();
         arguments.insert("out".to_string(), output.display().to_string());
 
-        let manager = PluginManager::new().expect("manager");
-        manager
-            .load_plugins(&config_for(&dir.0, Some(arguments)))
+        let (manager, worker) = PluginManager::start(&config_for(&dir.0, Some(arguments)))
             .await
             .expect("plugins load");
-        let worker = manager.start_worker();
 
         for port in 0..25u16 {
             manager
@@ -411,12 +399,9 @@ return plugin
         let mut arguments = HashMap::new();
         arguments.insert("out".to_string(), output.display().to_string());
 
-        let manager = PluginManager::new().expect("manager");
-        manager
-            .load_plugins(&config_for(&dir.0, Some(arguments)))
+        let (manager, worker) = PluginManager::start(&config_for(&dir.0, Some(arguments)))
             .await
             .expect("plugins load");
-        let worker = manager.start_worker();
         manager
             .process_flow_data(record(21), FlowIdentity::default())
             .await
@@ -445,13 +430,9 @@ return plugin
         )
         .expect("write plugin");
 
-        let manager = PluginManager::new().expect("manager");
-        manager
-            .load_plugins(&config_for(&dir.0, None))
+        let (manager, worker) = PluginManager::start(&config_for(&dir.0, None))
             .await
             .expect("a plugin with no extra_arguments must not fail to load");
-
-        let worker = manager.start_worker();
         manager
             .process_flow_data(record(1), FlowIdentity::default())
             .await
@@ -464,13 +445,9 @@ return plugin
         let dir = TempDir::new("broken");
         std::fs::write(dir.0.join("init.lua"), "this is not lua(((").expect("write plugin");
 
-        let manager = PluginManager::new().expect("manager");
-        manager
-            .load_plugins(&config_for(&dir.0, None))
+        let (manager, worker) = PluginManager::start(&config_for(&dir.0, None))
             .await
             .expect("a broken plugin must not fail the whole load");
-
-        let worker = manager.start_worker();
         manager
             .process_flow_data(record(1), FlowIdentity::default())
             .await
