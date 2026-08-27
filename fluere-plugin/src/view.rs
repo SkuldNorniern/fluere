@@ -6,7 +6,7 @@
 
 use std::net::IpAddr;
 
-use fluereflow::FluereRecord;
+use fluereflow::{FlowRecord, Range};
 
 /// Version of the field set below.
 ///
@@ -15,7 +15,11 @@ use fluereflow::FluereRecord;
 ///
 /// - 1: the flow record's own fields.
 /// - 2: added `vlan`, `encap`, `tunnel_id` and `tunnel_endpoints`.
-pub const SCHEMA_VERSION: u32 = 2;
+/// - 3: the FluereFlow record. Counters are per direction with derived totals,
+///   timestamps are nanoseconds, `mid_stream` became `start_state`, and
+///   `end_reason`, `ecn` and hop limits arrived. `tos` is gone: it was `dscp`
+///   shifted, and `dscp` is now reported directly.
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// One field's value, in the few shapes a flow record actually uses.
 #[derive(Debug, Clone, PartialEq)]
@@ -52,7 +56,7 @@ pub struct FlowView {
 }
 
 impl FlowView {
-    pub fn new(record: &FluereRecord, identity: &FlowIdentity) -> Self {
+    pub fn new(record: &FlowRecord, identity: &FlowIdentity) -> Self {
         use FieldValue::{Bool, Text, Unsigned};
 
         let vlan = identity
@@ -67,37 +71,61 @@ impl FlowView {
                 format!("{}->{}", source, destination)
             });
 
+        let bound = |range: Option<Range<u32>>, take_max: bool| {
+            Unsigned(range.map_or(0, |r| u64::from(if take_max { r.max } else { r.min })))
+        };
+        let flags = &record.forward.tcp_flags;
+        let reverse_flags = &record.reverse.tcp_flags;
+        let both = |forward: u64, reverse: u64| Unsigned(forward + reverse);
+
         FlowView {
             schema_version: SCHEMA_VERSION,
             fields: vec![
-                ("source", Text(record.source.to_string())),
-                ("destination", Text(record.destination.to_string())),
-                ("d_pkts", Unsigned(u64::from(record.d_pkts))),
-                ("d_octets", Unsigned(record.d_octets as u64)),
-                ("first", Unsigned(record.first)),
-                ("last", Unsigned(record.last)),
-                ("src_port", Unsigned(u64::from(record.src_port))),
-                ("dst_port", Unsigned(u64::from(record.dst_port))),
-                ("min_pkt", Unsigned(u64::from(record.min_pkt))),
-                ("max_pkt", Unsigned(u64::from(record.max_pkt))),
-                ("min_ttl", Unsigned(u64::from(record.min_ttl))),
-                ("max_ttl", Unsigned(u64::from(record.max_ttl))),
-                ("in_pkts", Unsigned(u64::from(record.in_pkts))),
-                ("out_pkts", Unsigned(u64::from(record.out_pkts))),
-                ("in_bytes", Unsigned(record.in_bytes as u64)),
-                ("out_bytes", Unsigned(record.out_bytes as u64)),
-                ("fin_cnt", Unsigned(u64::from(record.fin_cnt))),
-                ("syn_cnt", Unsigned(u64::from(record.syn_cnt))),
-                ("rst_cnt", Unsigned(u64::from(record.rst_cnt))),
-                ("psh_cnt", Unsigned(u64::from(record.psh_cnt))),
-                ("ack_cnt", Unsigned(u64::from(record.ack_cnt))),
-                ("urg_cnt", Unsigned(u64::from(record.urg_cnt))),
-                ("ece_cnt", Unsigned(u64::from(record.ece_cnt))),
-                ("cwr_cnt", Unsigned(u64::from(record.cwr_cnt))),
-                ("ns_cnt", Unsigned(u64::from(record.ns_cnt))),
-                ("prot", Unsigned(u64::from(record.prot))),
-                ("tos", Unsigned(u64::from(record.tos))),
-                ("mid_stream", Bool(record.mid_stream)),
+                ("packets", Unsigned(record.packets())),
+                ("frame_octets", Unsigned(record.frame_octets())),
+                ("fwd_packets", Unsigned(record.forward.packets)),
+                ("rev_packets", Unsigned(record.reverse.packets)),
+                ("fwd_octets", Unsigned(record.forward.frame_octets)),
+                ("rev_octets", Unsigned(record.reverse.frame_octets)),
+                ("first", Unsigned(record.time.start.nanos())),
+                ("last", Unsigned(record.time.end.nanos())),
+                ("duration", Unsigned(record.time.duration())),
+                ("fwd_min_pkt", bound(record.forward.packet_length, false)),
+                ("fwd_max_pkt", bound(record.forward.packet_length, true)),
+                ("rev_min_pkt", bound(record.reverse.packet_length, false)),
+                ("rev_max_pkt", bound(record.reverse.packet_length, true)),
+                (
+                    "min_ttl",
+                    Unsigned(record.network.ttl.map_or(0, |r| u64::from(r.min))),
+                ),
+                (
+                    "max_ttl",
+                    Unsigned(record.network.ttl.map_or(0, |r| u64::from(r.max))),
+                ),
+                ("fin_cnt", both(flags.fin, reverse_flags.fin)),
+                ("syn_cnt", both(flags.syn, reverse_flags.syn)),
+                ("rst_cnt", both(flags.rst, reverse_flags.rst)),
+                ("psh_cnt", both(flags.psh, reverse_flags.psh)),
+                ("ack_cnt", both(flags.ack, reverse_flags.ack)),
+                ("urg_cnt", both(flags.urg, reverse_flags.urg)),
+                ("ece_cnt", both(flags.ece, reverse_flags.ece)),
+                ("cwr_cnt", both(flags.cwr, reverse_flags.cwr)),
+                ("ns_cnt", both(flags.ns, reverse_flags.ns)),
+                ("dscp", Unsigned(u64::from(record.network.dscp))),
+                ("ecn", Unsigned(u64::from(record.network.ecn))),
+                (
+                    "start_state",
+                    Text(format!("{:?}", record.time.start_state).to_lowercase()),
+                ),
+                (
+                    "end_reason",
+                    Text(
+                        record.time.end_reason.map_or_else(String::new, |reason| {
+                            format!("{:?}", reason).to_lowercase()
+                        }),
+                    ),
+                ),
+                ("truncated", Bool(record.capture.truncated)),
                 ("vlan", Text(vlan)),
                 (
                     "encap",
@@ -115,39 +143,45 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use super::{FieldValue, FlowIdentity, FlowView, SCHEMA_VERSION};
-    use fluereflow::FluereRecord;
+    use fluereflow::{
+        Direction, FlowRecord, PacketFacts, StartState, TcpFlags, TimeResolution, Timestamp,
+    };
 
-    fn record() -> FluereRecord {
-        FluereRecord::new(
-            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
-            IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
-            7,
-            420,
-            1_000,
-            2_000,
-            12_345,
-            443,
-            54,
-            120,
-            64,
-            64,
-            3,
-            4,
-            180,
-            240,
-            1,
-            1,
-            0,
-            0,
-            5,
-            0,
-            0,
-            0,
-            0,
-            6,
-            40,
-            true,
-        )
+    /// A flow with traffic in both directions, for exercising the view.
+    fn record() -> FlowRecord {
+        let mut record = FlowRecord::open(
+            Timestamp::from_micros(1_000),
+            TimeResolution::Microseconds,
+            StartState::SynObserved,
+        );
+        record.network.dscp = 10;
+        record.network.ecn = 1;
+
+        let syn = TcpFlags {
+            syn: true,
+            ..TcpFlags::default()
+        };
+        record.observe(
+            Direction::Forward,
+            PacketFacts {
+                time: Timestamp::from_micros(1_000),
+                frame_octets: 54,
+                captured_octets: 54,
+                ttl: Some(64),
+                tcp_flags: Some(syn),
+            },
+        );
+        record.observe(
+            Direction::Reverse,
+            PacketFacts {
+                time: Timestamp::from_micros(2_000),
+                frame_octets: 120,
+                captured_octets: 120,
+                ttl: Some(52),
+                tcp_flags: Some(syn),
+            },
+        );
+        record
     }
 
     fn field(view: &FlowView, name: &str) -> FieldValue {
@@ -164,7 +198,7 @@ mod tests {
 
         assert_eq!(
             view.fields.len(),
-            32,
+            33,
             "one entry per record field, plus what identified the flow"
         );
         assert_eq!(view.schema_version, SCHEMA_VERSION);
@@ -215,10 +249,15 @@ mod tests {
     fn values_keep_their_natural_types() {
         let view = FlowView::new(&record(), &FlowIdentity::default());
 
-        assert_eq!(field(&view, "source"), FieldValue::Text("192.0.2.1".into()));
-        assert_eq!(field(&view, "d_pkts"), FieldValue::Unsigned(7));
-        assert_eq!(field(&view, "d_octets"), FieldValue::Unsigned(420));
-        assert_eq!(field(&view, "src_port"), FieldValue::Unsigned(12_345));
-        assert_eq!(field(&view, "mid_stream"), FieldValue::Bool(true));
+        assert_eq!(field(&view, "packets"), FieldValue::Unsigned(2));
+        assert_eq!(field(&view, "frame_octets"), FieldValue::Unsigned(174));
+        assert_eq!(field(&view, "fwd_packets"), FieldValue::Unsigned(1));
+        assert_eq!(field(&view, "rev_octets"), FieldValue::Unsigned(120));
+        assert_eq!(field(&view, "dscp"), FieldValue::Unsigned(10));
+        assert_eq!(
+            field(&view, "start_state"),
+            FieldValue::Text("synobserved".into())
+        );
+        assert_eq!(field(&view, "truncated"), FieldValue::Bool(false));
     }
 }

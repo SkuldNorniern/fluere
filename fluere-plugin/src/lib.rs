@@ -26,7 +26,7 @@ pub use runtime::{PluginRuntime, Runtime};
 pub use view::{FieldValue, FlowIdentity, FlowView, SCHEMA_VERSION};
 
 use fluere_config::{Config, Plugin};
-use fluereflow::FluereRecord;
+use fluereflow::FlowRecord;
 use tokio::sync::mpsc;
 
 #[cfg(feature = "log")]
@@ -73,7 +73,7 @@ pub struct PluginWorker {
 /// manager is cheap to hold and to clone.
 #[derive(Debug, Clone)]
 pub struct PluginManager {
-    sender: mpsc::Sender<(FluereRecord, FlowIdentity)>,
+    sender: mpsc::Sender<(FlowRecord, FlowIdentity)>,
 }
 
 impl PluginManager {
@@ -132,7 +132,7 @@ impl PluginManager {
             }
         }
 
-        let (sender, receiver) = mpsc::channel::<(FluereRecord, FlowIdentity)>(CHANNEL_CAPACITY);
+        let (sender, receiver) = mpsc::channel::<(FlowRecord, FlowIdentity)>(CHANNEL_CAPACITY);
 
         #[cfg(feature = "log")]
         debug!("{} plugin(s) loaded", loaded);
@@ -148,7 +148,7 @@ impl PluginManager {
     /// addresses and ports; it lives on the flow key rather than the record.
     pub async fn process_flow_data(
         &self,
-        data: FluereRecord,
+        data: FlowRecord,
         identity: FlowIdentity,
     ) -> Result<(), PluginError> {
         self.sender
@@ -178,7 +178,7 @@ impl PluginManager {
 /// the queue has drained rather than being coordinated from outside.
 fn spawn_worker(
     mut runtimes: Vec<Runtime>,
-    mut receiver: mpsc::Receiver<(FluereRecord, FlowIdentity)>,
+    mut receiver: mpsc::Receiver<(FlowRecord, FlowIdentity)>,
 ) -> PluginWorker {
     let handle = tokio::spawn(async move {
         while let Some((record, identity)) = receiver.recv().await {
@@ -230,7 +230,6 @@ fn entry_files() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::net::{IpAddr, Ipv4Addr};
     use std::path::{Path, PathBuf};
 
     use super::*;
@@ -249,7 +248,7 @@ end
 
 function plugin.process_data(record)
     local file = io.open(path, "a")
-    file:write("record " .. record.src_port .. "\n")
+    file:write("record " .. record.frame_octets .. "\n")
     file:close()
 end
 
@@ -283,37 +282,25 @@ return plugin
         }
     }
 
-    fn record(src_port: u16) -> FluereRecord {
-        FluereRecord::new(
-            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
-            IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
-            1,
-            60,
-            1,
-            1,
-            src_port,
-            443,
-            60,
-            60,
-            64,
-            64,
-            0,
-            1,
-            0,
-            60,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            6,
-            0,
-            false,
-        )
+    /// A one-packet flow whose size identifies it, so an ordering test can
+    /// tell one record from another.
+    fn record(marker: u16) -> FlowRecord {
+        let mut record = FlowRecord::open(
+            fluereflow::Timestamp::from_micros(1_000),
+            fluereflow::TimeResolution::Microseconds,
+            fluereflow::StartState::NotApplicable,
+        );
+        record.observe(
+            fluereflow::Direction::Forward,
+            fluereflow::PacketFacts {
+                time: fluereflow::Timestamp::from_micros(1_000),
+                frame_octets: u32::from(marker),
+                captured_octets: u32::from(marker),
+                ttl: Some(64),
+                tcp_flags: None,
+            },
+        );
+        record
     }
 
     fn config_for(dir: &Path, arguments: Option<HashMap<String, String>>) -> Config {
@@ -379,11 +366,11 @@ end
 function plugin.process_data(record)
     local file = io.open(path, "a")
     file:write("schema=" .. tostring(record.schema_version) .. "\n")
-    file:write("d_pkts=" .. type(record.d_pkts) .. "\n")
-    file:write("source=" .. type(record.source) .. "\n")
-    file:write("mid_stream=" .. type(record.mid_stream) .. "\n")
+    file:write("packets=" .. type(record.packets) .. "\n")
+    file:write("start_state=" .. type(record.start_state) .. "\n")
+    file:write("truncated=" .. type(record.truncated) .. "\n")
     -- Arithmetic straight on the field, with no tonumber() call.
-    file:write("doubled=" .. tostring(record.src_port * 2) .. "\n")
+    file:write("doubled=" .. tostring(record.frame_octets * 2) .. "\n")
     file:close()
 end
 
@@ -414,9 +401,9 @@ return plugin
             "{}",
             written
         );
-        assert!(written.contains("d_pkts=number"), "{}", written);
-        assert!(written.contains("source=string"), "{}", written);
-        assert!(written.contains("mid_stream=boolean"), "{}", written);
+        assert!(written.contains("packets=number"), "{}", written);
+        assert!(written.contains("start_state=string"), "{}", written);
+        assert!(written.contains("truncated=boolean"), "{}", written);
         assert!(written.contains("doubled=42"), "{}", written);
     }
 

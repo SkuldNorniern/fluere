@@ -2,11 +2,11 @@ mod fluereflows;
 mod fragments;
 mod keys;
 mod observation;
+mod properties;
 mod raw;
 mod time;
 mod tos;
 
-pub use fluereflows::parse_fluereflow;
 pub use fragments::FragmentTracker;
 pub use keys::parse_keys;
 pub use observation::{PacketObservation, observe};

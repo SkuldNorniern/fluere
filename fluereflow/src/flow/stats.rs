@@ -111,9 +111,10 @@ impl DirectionStats {
 /// Network-layer properties observed across the flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct NetworkStats {
-    /// IPv4 TTL and IPv6 hop limit are the same field by another name, so both
-    /// are reported here rather than IPv6 traffic reporting nothing.
-    pub hop_limit: Option<Range<u8>>,
+    /// Time to live, as IPv4 calls it. IPv6 calls the same octet the hop
+    /// limit, and both are reported here - the previous model recorded zero for
+    /// IPv6, which read as a genuine measurement.
+    pub ttl: Option<Range<u8>>,
     /// Differentiated services code point, from the first packet.
     pub dscp: u8,
     /// Explicit congestion notification bits, from the first packet.
