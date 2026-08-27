@@ -177,21 +177,24 @@ fn vlan_of(parsed: &ParsedPacket) -> VlanTags {
 /// traffic that would otherwise collide.
 fn encapsulation_of(parsed: &ParsedPacket) -> Option<Encapsulation> {
     let (kind, id, over_ip) = if let Some(vxlan) = parsed.vxlan.as_ref() {
-        (EncapKind::Vxlan, vxlan.vni, true)
+        (EncapKind::Vxlan, Some(vxlan.vni), true)
     } else if let Some(geneve) = parsed.geneve.as_ref() {
-        (EncapKind::Geneve, geneve.vni, true)
+        (EncapKind::Geneve, Some(geneve.vni), true)
     } else if let Some(gre) = parsed.gre.as_ref() {
-        // RFC 2890 keys distinguish tunnels sharing a pair of endpoints.
-        (EncapKind::Gre, gre.key.unwrap_or(0), true)
+        // RFC 2890 keys distinguish tunnels sharing a pair of endpoints. The
+        // field is optional, and a tunnel that omits it is not the same tunnel
+        // as one that sets it to zero.
+        (EncapKind::Gre, gre.key, true)
     } else if let Some(mpls) = parsed.mpls.as_ref() {
         // The outermost label is the one the carrier switched on.
-        let label = mpls.labels.first().map_or(0, |label| label.label);
+        let label = mpls.labels.first().map(|label| label.label);
         (EncapKind::Mpls, label, false)
     } else if let Some(pppoe) = parsed.pppoe.as_ref() {
-        (EncapKind::Pppoe, u32::from(pppoe.session_id), false)
+        (EncapKind::Pppoe, Some(u32::from(pppoe.session_id)), false)
     } else if parsed.inner.is_some() {
-        // IP carried directly inside IP, with no tunnel header between them.
-        (EncapKind::IpInIp, 0, true)
+        // IP carried directly inside IP, with no tunnel header between them,
+        // and so nothing to distinguish two of them beyond their endpoints.
+        (EncapKind::IpInIp, None, true)
     } else {
         return None;
     };

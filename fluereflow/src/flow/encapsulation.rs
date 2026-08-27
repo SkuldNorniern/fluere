@@ -45,6 +45,11 @@ pub struct Encapsulation {
     pub outer: Option<(IpAddr, IpAddr)>,
     /// What distinguishes this encapsulation from another of the same kind
     /// between the same endpoints: a VXLAN or Geneve VNI, a GRE key, an MPLS
-    /// label, a PPPoE session. Zero when the encapsulation has no such field.
-    pub id: u32,
+    /// label, a PPPoE session.
+    ///
+    /// `None` when the encapsulation carries no such field, which is not the
+    /// same as carrying zero. A GRE key is optional, and a tunnel that omits it
+    /// is a different tunnel from one that sets it to 0; MPLS label 0 is IPv4
+    /// Explicit NULL, a label in everyday use.
+    pub id: Option<u32>,
 }
