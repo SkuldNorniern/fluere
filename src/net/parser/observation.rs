@@ -6,7 +6,7 @@ use crate::net::types::Key;
 use fluereflow::{PacketFacts, TcpFlags, Timestamp};
 
 use super::fluereflows::{innermost, packet_time, wire_length};
-use super::fragments::{FragmentTracker, Ipv4Fragment};
+use super::fragments::{Fragment, FragmentTracker};
 use super::keys::keys_from_parsed;
 use super::properties;
 
@@ -92,7 +92,7 @@ pub fn observe(
 
     // A later fragment has no transport header of its own, so it inherits the
     // endpoints its first fragment reported.
-    let fragment = innermost(&parsed).ipv4.as_ref().and_then(Ipv4Fragment::of);
+    let fragment = Fragment::of(innermost(&parsed));
     fragments.resolve(&mut observation, fragment.as_ref());
 
     Ok(observation)
