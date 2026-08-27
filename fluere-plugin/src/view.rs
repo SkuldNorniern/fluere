@@ -38,6 +38,25 @@ pub enum FieldValue {
 /// field for field. This is the part that says they are different traffic.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FlowIdentity {
+    /// Endpoint that sent the packet which opened the flow.
+    pub source: Option<IpAddr>,
+    /// The other endpoint.
+    pub destination: Option<IpAddr>,
+    /// Transport ports, for protocols that have them.
+    pub ports: Option<(u16, u16)>,
+    /// ICMP type and code, for the families that carry them instead of ports.
+    pub icmp: Option<(u8, u8)>,
+    /// IPsec security parameter index, which identifies the association.
+    pub spi: Option<u32>,
+    /// Protocol type a GRE tunnel carried, when its inner flow could not be
+    /// decoded.
+    pub gre_protocol: Option<u16>,
+    /// Readable protocol name: `tcp`, `udp`, `arp`, and so on.
+    pub protocol: String,
+    /// IANA protocol number, absent for traffic with none - such as ARP.
+    pub protocol_number: Option<u8>,
+    /// EtherType, for traffic that is not IP.
+    pub ethertype: Option<u16>,
     /// VLAN tags, outermost first. Empty when the traffic was untagged.
     pub vlan: Vec<u16>,
     /// Kind of tunnel that carried the flow, if any: `vxlan`, `gre`, ...
@@ -71,6 +90,8 @@ impl FlowView {
                 format!("{}->{}", source, destination)
             });
 
+        let ports = identity.ports.unwrap_or((0, 0));
+        let icmp = identity.icmp.unwrap_or((0, 0));
         let bound = |range: Option<Range<u32>>, take_max: bool| {
             Unsigned(range.map_or(0, |r| u64::from(if take_max { r.max } else { r.min })))
         };
@@ -81,6 +102,47 @@ impl FlowView {
         FlowView {
             schema_version: SCHEMA_VERSION,
             fields: vec![
+                (
+                    "source",
+                    Text(
+                        identity
+                            .source
+                            .map_or_else(String::new, |ip| ip.to_string()),
+                    ),
+                ),
+                (
+                    "destination",
+                    Text(
+                        identity
+                            .destination
+                            .map_or_else(String::new, |ip| ip.to_string()),
+                    ),
+                ),
+                (
+                    "ip_version",
+                    Unsigned(match identity.source {
+                        Some(IpAddr::V6(_)) => 6,
+                        _ => 4,
+                    }),
+                ),
+                ("src_port", Unsigned(u64::from(ports.0))),
+                ("dst_port", Unsigned(u64::from(ports.1))),
+                ("icmp_type", Unsigned(u64::from(icmp.0))),
+                ("icmp_code", Unsigned(u64::from(icmp.1))),
+                ("spi", Unsigned(u64::from(identity.spi.unwrap_or(0)))),
+                (
+                    "gre_protocol",
+                    Unsigned(u64::from(identity.gre_protocol.unwrap_or(0))),
+                ),
+                ("protocol", Text(identity.protocol.clone())),
+                (
+                    "prot",
+                    Unsigned(u64::from(identity.protocol_number.unwrap_or(0))),
+                ),
+                (
+                    "ethertype",
+                    Unsigned(u64::from(identity.ethertype.unwrap_or(0))),
+                ),
                 ("packets", Unsigned(record.packets())),
                 ("frame_octets", Unsigned(record.frame_octets())),
                 ("fwd_packets", Unsigned(record.forward.packets)),
@@ -200,7 +262,7 @@ mod tests {
 
         assert_eq!(
             view.fields.len(),
-            33,
+            45,
             "one entry per record field, plus what identified the flow"
         );
         assert_eq!(view.schema_version, SCHEMA_VERSION);
@@ -217,6 +279,11 @@ mod tests {
     #[test]
     fn identity_reaches_plugins() {
         let identity = FlowIdentity {
+            source: Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            destination: Some(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2))),
+            ports: Some((40_001, 443)),
+            protocol: "tcp".to_string(),
+            protocol_number: Some(6),
             vlan: vec![10, 20],
             encapsulation: Some("vxlan".to_string()),
             tunnel_id: 100,
@@ -224,9 +291,18 @@ mod tests {
                 IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1)),
                 IpAddr::V4(Ipv4Addr::new(203, 0, 113, 2)),
             )),
+            ..FlowIdentity::default()
         };
         let view = FlowView::new(&record(), &identity);
 
+        assert_eq!(
+            field(&view, "source"),
+            FieldValue::Text("192.0.2.1".into()),
+            "plugins must still see the addresses after they moved to the key"
+        );
+        assert_eq!(field(&view, "src_port"), FieldValue::Unsigned(40_001));
+        assert_eq!(field(&view, "protocol"), FieldValue::Text("tcp".into()));
+        assert_eq!(field(&view, "prot"), FieldValue::Unsigned(6));
         assert_eq!(field(&view, "vlan"), FieldValue::Text("10.20".into()));
         assert_eq!(field(&view, "encap"), FieldValue::Text("vxlan".into()));
         assert_eq!(field(&view, "tunnel_id"), FieldValue::Unsigned(100));
