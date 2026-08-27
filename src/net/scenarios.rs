@@ -16,7 +16,7 @@ use fluereflow::Flow;
 use pcap::{Packet, PacketHeader};
 
 use crate::net::flow_engine::FlowEngine;
-use crate::net::parser::{FragmentTracker, observe};
+use crate::net::parser::{ParserState, observe};
 
 const SRC_MAC: [u8; 6] = [0xaa; 6];
 const DST_MAC: [u8; 6] = [0xbb; 6];
@@ -169,6 +169,28 @@ pub fn pppoe(session_id: u16, payload: &[u8]) -> Vec<u8> {
     header
 }
 
+/// A QUIC long header announcing `scid` as this side's connection ID.
+///
+/// Only the fields a passive observer needs are filled in; the payload behind
+/// the header is opaque without the connection's keys.
+pub fn quic_long_header(scid: &[u8]) -> Vec<u8> {
+    let mut packet = vec![0xc0]; // long header, fixed bit set
+    packet.extend_from_slice(&1u32.to_be_bytes()); // version 1
+    packet.push(0); // empty destination connection ID
+    packet.push(scid.len() as u8);
+    packet.extend_from_slice(scid);
+    packet.extend_from_slice(&[0; 4]);
+    packet
+}
+
+/// A QUIC short header addressed to `dcid`, as every 1-RTT packet is.
+pub fn quic_short_header(dcid: &[u8]) -> Vec<u8> {
+    let mut packet = vec![0x40]; // short header, fixed bit set
+    packet.extend_from_slice(dcid);
+    packet.extend_from_slice(&[0; 8]);
+    packet
+}
+
 /// Wrap an inner Ethernet frame in a VXLAN header, ready to be a UDP payload.
 pub fn vxlan(vni: u32, inner_frame: &[u8]) -> Vec<u8> {
     let mut header = Vec::with_capacity(8 + inner_frame.len());
@@ -200,7 +222,7 @@ pub fn tenant_traffic() -> Vec<u8> {
 /// was offered so conservation can be checked at the end.
 pub struct Capture {
     engine: FlowEngine,
-    fragments: FragmentTracker,
+    parser_state: ParserState,
     time: u64,
     completed: Vec<Flow>,
     offered_packets: usize,
@@ -213,7 +235,7 @@ impl Capture {
     pub fn new(timeout: u64) -> Self {
         Capture {
             engine: FlowEngine::new(timeout),
-            fragments: FragmentTracker::new(),
+            parser_state: ParserState::new(),
             time: 1_000,
             completed: Vec::new(),
             offered_packets: 0,
@@ -242,7 +264,12 @@ impl Capture {
             len: frame.len() as u32,
         };
 
-        match observe(Packet::new(&header, frame), false, 1, &mut self.fragments) {
+        match observe(
+            Packet::new(&header, frame),
+            false,
+            1,
+            &mut self.parser_state,
+        ) {
             Ok(observation) => {
                 let outcome = self.engine.accept(observation);
                 self.completed.extend(outcome.completed);
@@ -556,6 +583,81 @@ mod tests {
             1,
             "the later fragment joined the datagram's flow"
         );
+    }
+
+    /// A QUIC connection survives its client changing address: the client keeps
+    /// the connection alive by its Connection ID, not its 5-tuple. Keyed on
+    /// addresses alone this reads as one flow going quiet and another starting.
+    #[test]
+    fn a_migrated_quic_connection_stays_one_flow() {
+        const CID: &[u8] = &[0xab, 0xcd, 0xef, 0x01];
+        let mut capture = Capture::new(600_000);
+
+        let client = [192, 0, 2, 10];
+        let roamed = [203, 0, 113, 77];
+        let server = [198, 51, 100, 20];
+
+        // Handshake: the server announces the ID the client will address.
+        capture.push(&v4(
+            17,
+            64,
+            server,
+            client,
+            &udp(443, 50_000, &quic_long_header(CID)),
+        ));
+        // 1-RTT traffic from the client's original address.
+        capture.push(&v4(
+            17,
+            64,
+            client,
+            server,
+            &udp(50_000, 443, &quic_short_header(CID)),
+        ));
+        // The client moves to a different network and keeps sending.
+        capture.push(&v4(
+            17,
+            64,
+            roamed,
+            server,
+            &udp(60_000, 443, &quic_short_header(CID)),
+        ));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.len(),
+            1,
+            "the migrated packet belongs to the connection it continues"
+        );
+        assert_eq!(flows.only(|f| f.key.protocol == 17).packets(), 3);
+    }
+
+    /// Without a handshake to learn the connection ID from, there is nothing to
+    /// attribute a migrated packet to, and it opens its own flow.
+    #[test]
+    fn quic_traffic_with_no_observed_handshake_is_not_reattributed() {
+        const CID: &[u8] = &[0x11, 0x22, 0x33, 0x44];
+        let mut capture = Capture::new(600_000);
+
+        capture.push(&v4(
+            17,
+            64,
+            [192, 0, 2, 10],
+            [198, 51, 100, 20],
+            &udp(50_000, 443, &quic_short_header(CID)),
+        ));
+        capture.push(&v4(
+            17,
+            64,
+            [203, 0, 113, 77],
+            [198, 51, 100, 20],
+            &udp(60_000, 443, &quic_short_header(CID)),
+        ));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+        assert_eq!(flows.len(), 2, "nothing was learned to attribute them to");
     }
 
     /// Tenants on different segments reuse the same private addresses, so

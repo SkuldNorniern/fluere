@@ -26,9 +26,9 @@ pub(crate) fn observe_packet(
     packet: pcap::Packet<'_>,
     use_mac: bool,
     linktype: u16,
-    fragments: &mut parser::FragmentTracker,
+    state: &mut parser::ParserState,
 ) -> Option<parser::PacketObservation> {
-    match parser::observe(packet, use_mac, linktype, fragments) {
+    match parser::observe(packet, use_mac, linktype, state) {
         Ok(observation) => Some(observation),
         Err(error) => {
             debug!("Skipping unparsable packet: {}", error);
