@@ -59,7 +59,7 @@ pub fn paths(flow: &Flow) -> String {
 /// EtherType, for traffic that is not IP. Empty otherwise, where the address
 /// family already says it.
 pub fn ethertype(flow: &Flow) -> String {
-    match flow.record.network.ethertype {
+    match flow.key.ethertype {
         Some(ethertype) if !flow.is_ip() => format!("0x{:04x}", ethertype),
         _ => String::new(),
     }
@@ -80,7 +80,7 @@ pub fn for_plugin(flow: &Flow) -> fluere_plugin::FlowIdentity {
         protocol: flow.protocol_name().to_string(),
         protocol_number: flow.is_ip().then_some(flow.key.protocol),
         ethertype: (!flow.is_ip())
-            .then_some(flow.record.network.ethertype)
+            .then_some(flow.key.ethertype)
             .flatten(),
         vlan: flow.key.vlan.tags().to_vec(),
         encapsulation: encapsulation.map(|e| e.kind.as_str().to_string()),

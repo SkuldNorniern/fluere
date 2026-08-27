@@ -204,6 +204,7 @@ mod tests {
                 destination: 443,
             },
             protocol: 17,
+            ethertype: None,
             source_mac: MacAddress::new([0; 6]),
             destination_mac: MacAddress::new([1; 6]),
             vlan: VlanTags::default(),

@@ -61,7 +61,9 @@ impl RawProtocolHeader {
                 Some(IpAddr::V4(arp.target_protocol_addr)),
                 0,
                 0,
-                4,
+                // No IP protocol number: ARP is identified by its EtherType,
+                // which the key carries.
+                0,
             ));
         }
         if let Some(ipv4) = &parsed.ipv4 {
@@ -423,7 +425,8 @@ mod tests {
         let header = RawProtocolHeader::from_ethertype(&packet, 0x0806).unwrap();
         assert_eq!(header.src_ip, Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
         assert_eq!(header.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))));
-        assert_eq!(header.protocol, 4);
+        // ARP has no IP protocol number, and no longer borrows IP-in-IP's.
+        assert_eq!(header.protocol, 0);
     }
 
     #[test]

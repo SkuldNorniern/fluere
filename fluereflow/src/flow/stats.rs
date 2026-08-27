@@ -119,12 +119,6 @@ pub struct NetworkStats {
     pub dscp: u8,
     /// Explicit congestion notification bits, from the first packet.
     pub ecn: u8,
-    /// EtherType of the traffic this flow carried.
-    ///
-    /// Names the network protocol for traffic that has no IP protocol number
-    /// of its own. ARP used to be reported as IP protocol 4, which is IANA's
-    /// number for IP-in-IP, a marker that read as a genuine measurement.
-    pub ethertype: Option<u16>,
 }
 
 /// Transport details that are not endpoints.

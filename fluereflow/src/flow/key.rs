@@ -86,9 +86,16 @@ pub struct FlowKey {
     /// The other endpoint.
     pub destination: IpAddr,
     pub endpoints: Endpoints,
-    /// IANA protocol number. Traffic with no IP protocol of its own, such as
-    /// ARP, is identified by the record's EtherType instead.
+    /// IANA protocol number, or `0` for traffic with no IP protocol of its
+    /// own. Such traffic is identified by `ethertype` instead.
     pub protocol: u8,
+    /// EtherType, for traffic that is not IP.
+    ///
+    /// `None` for IP traffic, where the address family already says what this
+    /// is. ARP used to be keyed as IP protocol 4 — IANA's number for IP-in-IP —
+    /// purely as a marker, which meant an ARP flow and a genuine IP-in-IP flow
+    /// between the same addresses shared a key.
+    pub ethertype: Option<u16>,
     /// Link-layer addresses, when the capture was asked to key on them.
     pub source_mac: MacAddress,
     pub destination_mac: MacAddress,
@@ -109,6 +116,7 @@ impl FlowKey {
             destination: self.source,
             endpoints: self.endpoints.reversed(),
             protocol: self.protocol,
+            ethertype: self.ethertype,
             source_mac: self.destination_mac,
             destination_mac: self.source_mac,
             vlan: self.vlan,
@@ -154,6 +162,7 @@ mod tests {
             destination: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
             endpoints,
             protocol: 6,
+            ethertype: None,
             source_mac: MacAddress::new([1; 6]),
             destination_mac: MacAddress::new([2; 6]),
             vlan: VlanTags::default(),
