@@ -15,6 +15,55 @@ pub struct Flow {
     pub record: FlowRecord,
 }
 
+/// EtherType for address resolution, which has no IP protocol number.
+const ETHERTYPE_ARP: u16 = 0x0806;
+
+impl Flow {
+    /// Readable name of the protocol this flow carried.
+    ///
+    /// Empty when the protocol has no well-known name; `prot` still carries the
+    /// number in that case.
+    pub fn protocol_name(&self) -> &'static str {
+        if self.key.encapsulation.is_none() && self.record.network.ethertype == Some(ETHERTYPE_ARP)
+        {
+            return "arp";
+        }
+
+        match self.key.protocol {
+            1 => "icmp",
+            2 => "igmp",
+            6 => "tcp",
+            17 => "udp",
+            41 => "ipv6",
+            47 => "gre",
+            50 => "esp",
+            51 => "ah",
+            58 => "icmpv6",
+            89 => "ospf",
+            112 => "vrrp",
+            132 => "sctp",
+            _ => "",
+        }
+    }
+
+    /// Whether this flow carried an IP protocol at all.
+    ///
+    /// ARP does not, and used to report IP protocol 4 - IANA's number for
+    /// IP-in-IP - purely as a flow-keying marker.
+    pub fn is_ip(&self) -> bool {
+        self.record.network.ethertype != Some(ETHERTYPE_ARP)
+    }
+
+    /// The EtherType, for traffic that is not IP. Empty otherwise, where the
+    /// address family already says it.
+    pub fn ethertype(&self) -> String {
+        match self.record.network.ethertype {
+            Some(ethertype) if !self.is_ip() => format!("0x{:04x}", ethertype),
+            _ => String::new(),
+        }
+    }
+}
+
 impl From<&Flow> for fluere_plugin::FlowIdentity {
     fn from(flow: &Flow) -> Self {
         let encapsulation = flow.key.encapsulation;
