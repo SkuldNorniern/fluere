@@ -56,7 +56,7 @@ async fn drain_engine(
     Ok(())
 }
 
-pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
+pub async fn run(arg: Args) -> Result<(), FluereError> {
     let csv_title = arg.files.csv;
     let file_name = arg
         .files
