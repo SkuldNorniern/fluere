@@ -35,62 +35,73 @@ FluereFlow is Fluere's own flow format. It is not NetFlow, and Fluere is not a N
     <i>Public IPs are masked to prevent privacy issues (except for DNS & Local broadcast)</i>
 </div>
 
-## Technical Overview
+## How it works
 
-Fluere is built with Rust and leverages the `libpcap` library for packet capture. The core functionalities are encapsulated within the `main.rs` file, which defines the command-line interface and handles various commands and options.
+```text
+Live interface / pcap file
+            |
+            v
+         paccel                packet decode
+            |
+            v
+   PacketObservation           one decode per packet
+            |
+            +---------- ParserState
+            |              fragment reassembly
+            |              QUIC connection identity
+            v
+       FlowEngine              keying, aggregation, expiry
+            |
+            v
+     FluereFlow::Flow
+         /       \
+        v         v
+      CSV       Plugins
+```
 
-## Command Line Arguments
+A flow is keyed on the addresses, ports and protocol of the first packet seen
+for it, plus the VLAN and tunnel that carried it. Separate segments reuse the
+same private ranges, so keying on addresses alone would put unrelated traffic in
+one record.
 
-Customize your Fluere experience using the following command-line arguments:
+See [Architecture](https://github.com/SkuldNorniern/fluere/wiki) in the wiki for
+the longer version.
 
-| Argument       | Description                          | Usage Example          |
-|----------------|--------------------------------------|------------------------|
-| `csv`          | Title of the exported CSV file       | `-c` or `--csv`        |
-| `list`         | List available network interfaces    | `-l` or `--list`       |
-| `interface`    | Select network interface to use      | `-i` or `--interface`  |
-| `duration`     | Set capture duration (in ms)         | `-d` or `--duration`   |
-| `timeout`      | Set flow timeout (in ms)             | `-t` or `--timeout`    |
-| `useMACaddress`| Use MAC address as key value         | `-M` or `--useMAC`     |
-| `interval`     | Set export interval (in ms)          | `-I` or `--interval`   |
-| `sleep_windows`| Set thread pause interval for Windows| `-s` or `--sleep`      |
-| `verbose`      | Set verbosity level                  | `-v` or `--verbose`    |
+## Getting started
 
-## Getting Started
-
-### Prerequisites
-
-Before installing Fluere, ensure to install `libpcap` (Linux/macOS) or `npcap` (Windows) in winpcap compatible mode.
-
-### Installation
-
-Install Fluere using the following command:
+Install `libpcap` (Linux/macOS) or `npcap` in WinPcap-compatible mode (Windows),
+then:
 
 ```sh
 cargo install fluere
 ```
 
-## Usage Examples
+Capture live traffic from an interface:
 
-Explore the diverse functionalities of Fluere with the following examples:
+```sh
+fluere capture -i eth0 -c flows
+```
 
-1. **Live Capture to Flow Records**
-   ```sh
-   fluere online -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
-   ```
+With a terminal UI:
 
-2. **Offline pcap to Flow Records**
-   ```sh
-   fluere offline -f input.pcap -c output
-   ```
+```sh
+fluere capture -i eth0 --tui
+```
 
-3. **Packet Capture in pcap Format**
-   ```sh
-   fluere pcap -i eth0 -d 1000
-   ```
+Convert a pcap file:
 
-4. **Live Fluereflow Capture and Conversion**
-   ```sh
-   fluere live -i eth0 -d 1000 -t 600000 -I 1800000 -v 1
-   ```
+```sh
+fluere convert -f input.pcap -c flows
+```
+
+List the interfaces available:
+
+```sh
+fluere devices
+```
+
+`fluere capture --help` lists the options. If you have scripts built against
+0.7, see [Migrating from 0.7](https://github.com/SkuldNorniern/fluere/wiki/Migrating-from-0.7):
+the old command names still work.
 
 For more detailed information and guidance, refer to the [Fluere Wiki](https://github.com/SkuldNorniern/fluere/wiki).
