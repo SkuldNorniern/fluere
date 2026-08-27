@@ -95,11 +95,7 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     let mut engine = FlowEngine::new(flow_timeout);
 
     let config = Config::new();
-    let plugin_manager =
-        PluginManager::new().map_err(|error| FluereError::Plugin(error.to_string()))?;
-    let plugin_worker = plugin_manager.start_worker();
-    plugin_manager
-        .load_plugins(&config)
+    let (plugin_manager, plugin_worker) = PluginManager::start(&config)
         .await
         .map_err(|error| FluereError::Plugin(error.to_string()))?;
 

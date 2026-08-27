@@ -25,7 +25,7 @@ csv = "1.3"
 
 paccel = "0.1.0"
 
-fluere_plugin = { version = "0.5.0", path = "./fluere-plugin", default-features = false, features = ["log"] }
+fluere_plugin = { version = "0.6.0", path = "./fluere-plugin", default-features = false, features = ["log"] }
 fluere-config = { version = "0.3.0", path = "./fluere-config", features = ["log"] }
 fluereflow = { version = "0.5.0", path = "./fluereflow" }
 

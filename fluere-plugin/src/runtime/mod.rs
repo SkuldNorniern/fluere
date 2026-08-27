@@ -47,12 +47,86 @@ pub trait PluginRuntime: Send {
     fn is_empty(&self) -> bool;
 }
 
-/// Every runtime compiled into this build, in the order plugin directories are
-/// offered to them.
-pub fn available() -> Vec<Box<dyn PluginRuntime>> {
-    let runtimes: Vec<Box<dyn PluginRuntime>> = vec![
-        #[cfg(feature = "lua")]
-        Box::new(lua::LuaRuntime::new()),
-    ];
-    runtimes
+/// A runtime compiled into this build.
+///
+/// An enum rather than a boxed trait object: the set of runtimes is fixed at
+/// compile time by the feature flags, so there is nothing to gain from dynamic
+/// dispatch and an allocation per runtime. [`PluginRuntime`] stays as the shared
+/// interface each variant implements, which is what makes adding a language a
+/// self-contained change.
+#[derive(Debug)]
+pub enum Runtime {
+    #[cfg(feature = "lua")]
+    Lua(lua::LuaRuntime),
+    /// Present only when no runtime feature is enabled, so the enum is never
+    /// empty and the manager needs no special case for it.
+    #[cfg(not(feature = "lua"))]
+    None,
+}
+
+impl Runtime {
+    /// Every runtime this build can use, in the order plugin directories are
+    /// offered to them.
+    pub fn available() -> Vec<Runtime> {
+        vec![
+            #[cfg(feature = "lua")]
+            Runtime::Lua(lua::LuaRuntime::new()),
+        ]
+    }
+
+    /// Borrow the variant as the shared interface.
+    fn as_runtime(&mut self) -> &mut dyn PluginRuntime {
+        match self {
+            #[cfg(feature = "lua")]
+            Runtime::Lua(runtime) => runtime,
+            #[cfg(not(feature = "lua"))]
+            Runtime::None => unreachable!("no runtime is compiled into this build"),
+        }
+    }
+}
+
+impl PluginRuntime for Runtime {
+    fn name(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "lua")]
+            Runtime::Lua(runtime) => runtime.name(),
+            #[cfg(not(feature = "lua"))]
+            Runtime::None => "none",
+        }
+    }
+
+    fn entry_file(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "lua")]
+            Runtime::Lua(runtime) => runtime.entry_file(),
+            #[cfg(not(feature = "lua"))]
+            Runtime::None => "",
+        }
+    }
+
+    fn load(
+        &mut self,
+        plugin: &str,
+        directory: &Path,
+        arguments: &HashMap<String, String>,
+    ) -> Result<(), PluginError> {
+        self.as_runtime().load(plugin, directory, arguments)
+    }
+
+    fn on_flow(&mut self, view: &FlowView) {
+        self.as_runtime().on_flow(view);
+    }
+
+    fn cleanup(&mut self) {
+        self.as_runtime().cleanup();
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            #[cfg(feature = "lua")]
+            Runtime::Lua(runtime) => runtime.is_empty(),
+            #[cfg(not(feature = "lua"))]
+            Runtime::None => true,
+        }
+    }
 }
