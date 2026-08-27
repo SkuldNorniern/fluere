@@ -57,8 +57,12 @@ fn endpoints_of(parsed: &ParsedPacket, protocol: u8, ports: (u16, u16)) -> Endpo
         47 => parsed.gre.as_ref().map_or(Endpoints::None, |gre| {
             Endpoints::GreProtocol(gre.protocol_type)
         }),
-        // ARP and ICMP have no endpoints of their own.
-        1 | 4 | 58 => Endpoints::None,
+        // None of these have endpoints of their own: 0 is traffic with no IP
+        // protocol number at all, such as ARP; ICMP identifies a direction by
+        // type and code, which the record carries; and a key of 4 means an
+        // IP-in-IP tunnel whose inner flow could not be decoded, so there is
+        // nothing below it to read ports from.
+        0 | 1 | 4 | 58 => Endpoints::None,
         _ => Endpoints::Ports {
             source: ports.0,
             destination: ports.1,

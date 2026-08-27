@@ -167,7 +167,7 @@ impl Flow {
     /// Readable name of the protocol this flow carried, or empty when it has no
     /// well-known one.
     pub fn protocol_name(&self) -> &'static str {
-        if self.record.network.ethertype == Some(ETHERTYPE_ARP) {
+        if self.key.ethertype == Some(ETHERTYPE_ARP) {
             return "arp";
         }
 
@@ -190,10 +190,10 @@ impl Flow {
 
     /// Whether this flow carried an IP protocol at all.
     ///
-    /// ARP does not. It used to report IP protocol 4, IANA's number for IP-in-IP,
-    /// purely as a flow-keying marker.
+    /// Traffic with an EtherType of its own does not: the EtherType is there
+    /// precisely because there was no IP protocol number to key on.
     pub fn is_ip(&self) -> bool {
-        self.record.network.ethertype != Some(ETHERTYPE_ARP)
+        self.key.ethertype.is_none()
     }
 }
 

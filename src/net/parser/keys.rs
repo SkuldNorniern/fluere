@@ -11,6 +11,22 @@ use super::raw::RawProtocolHeader;
 
 type FlowTuple = (IpAddr, IpAddr, u16, u16, u8);
 
+/// A flow tuple and, for traffic that is not IP, the EtherType identifying it.
+type Identity = (FlowTuple, Option<u16>);
+
+/// EtherTypes whose traffic is identified by its IP protocol number instead.
+const ETHERTYPE_IPV4: u16 = 0x0800;
+const ETHERTYPE_IPV6: u16 = 0x86DD;
+
+/// The EtherType to key on, or `None` when the address family already says
+/// what the traffic is.
+fn identifying_ethertype(ethertype: u16) -> Option<u16> {
+    match ethertype {
+        ETHERTYPE_IPV4 | ETHERTYPE_IPV6 => None,
+        other => Some(other),
+    }
+}
+
 pub fn parse_keys(packet: pcap::Packet, linktype: u16) -> Result<(Key, Key), ParseError> {
     if packet.is_empty() {
         return Err(ParseError::EmptyPacket);
@@ -30,7 +46,7 @@ pub(super) fn keys_from_parsed(
 ) -> Result<(Key, Key), ParseError> {
     trace!("Parsing keys");
     let (source_mac, destination_mac) = mac_addresses(parsed);
-    let (source, destination, src_port, dst_port, protocol) =
+    let ((source, destination, src_port, dst_port, protocol), ethertype) =
         extract_flow_tuple(parsed, packet_data)?;
     let endpoints = super::endpoints_of(parsed, protocol, (src_port, dst_port));
     let encapsulation = encapsulation_of(parsed);
@@ -45,6 +61,7 @@ pub(super) fn keys_from_parsed(
         destination,
         endpoints,
         protocol,
+        ethertype,
         source_mac,
         destination_mac,
         vlan,
@@ -67,31 +84,42 @@ fn mac_addresses(parsed: &ParsedPacket) -> (MacAddress, MacAddress) {
     )
 }
 
-fn extract_flow_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<FlowTuple, ParseError> {
+fn extract_flow_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<Identity, ParseError> {
     if let Some(arp) = parsed.arp.as_ref() {
+        // ARP has no IP protocol number. It used to be keyed as protocol 4,
+        // IANA's number for IP-in-IP, purely as a marker, which meant an ARP
+        // flow and a real IP-in-IP flow between the same addresses shared a key.
         return Ok((
-            IpAddr::V4(arp.sender_protocol_addr),
-            IpAddr::V4(arp.target_protocol_addr),
-            0,
-            0,
-            4,
+            (
+                IpAddr::V4(arp.sender_protocol_addr),
+                IpAddr::V4(arp.target_protocol_addr),
+                0,
+                0,
+                0,
+            ),
+            Some(fluereflow::ETHERTYPE_ARP),
         ));
     }
 
     if let Some(flow_key) = parsed.flow_key() {
+        // Decoded IP traffic: the address family says what it is, so there is
+        // no EtherType to key on.
         return Ok((
-            flow_key.src_ip,
-            flow_key.dst_ip,
-            flow_key.src_port,
-            flow_key.dst_port,
-            flow_key.protocol,
+            (
+                flow_key.src_ip,
+                flow_key.dst_ip,
+                flow_key.src_port,
+                flow_key.dst_port,
+                flow_key.protocol,
+            ),
+            None,
         ));
     }
 
     raw_fallback_tuple(parsed, packet_data)
 }
 
-fn raw_fallback_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<FlowTuple, ParseError> {
+fn raw_fallback_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<Identity, ParseError> {
     let ethernet = parsed
         .ethernet
         .as_ref()
@@ -102,16 +130,29 @@ fn raw_fallback_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<FlowT
     let raw_header = RawProtocolHeader::from_ethertype(payload, ethernet.ethertype)
         .ok_or_else(|| ParseError::UnknownEtherType(ethernet.ethertype.to_string()))?;
 
+    let ethertype = identifying_ethertype(ethernet.ethertype);
+    // A frame with no IP header has no IP protocol number either. The raw
+    // parser derives one from the EtherType to get something through, which is
+    // a hint rather than a measurement, so it is not what the flow is keyed on.
+    let protocol = if ethertype.is_some() {
+        0
+    } else {
+        raw_header.protocol
+    };
+
     Ok((
-        raw_header
-            .src_ip
-            .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
-        raw_header
-            .dst_ip
-            .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
-        raw_header.src_port,
-        raw_header.dst_port,
-        raw_header.protocol,
+        (
+            raw_header
+                .src_ip
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            raw_header
+                .dst_ip
+                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            raw_header.src_port,
+            raw_header.dst_port,
+            protocol,
+        ),
+        ethertype,
     ))
 }
 
@@ -182,6 +223,7 @@ fn build_key_pair(
     destination: IpAddr,
     endpoints: Endpoints,
     protocol: u8,
+    ethertype: Option<u16>,
     source_mac: MacAddress,
     destination_mac: MacAddress,
     vlan: VlanTags,
@@ -192,6 +234,7 @@ fn build_key_pair(
         destination,
         endpoints,
         protocol,
+        ethertype,
         source_mac,
         destination_mac,
         vlan,
@@ -306,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn extracts_arp_with_fluere_protocol_convention() {
+    fn arp_is_keyed_on_its_ethertype_not_a_protocol_number() {
         let mut arp = Vec::with_capacity(28);
         arp.extend_from_slice(&[0, 1, 0x08, 0, 6, 4, 0, 1]);
         arp.extend_from_slice(&SRC_MAC);
@@ -319,7 +362,32 @@ mod tests {
 
         assert_eq!(key.source, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)));
         assert_eq!(key.destination, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)));
-        assert_eq!((key.ports().0, key.ports().1, key.protocol), (0, 0, 4));
+        assert_eq!(key.ports(), (0, 0));
+        // Not protocol 4. That is IANA's number for IP-in-IP, and using it as
+        // an ARP marker meant the two shared a key.
+        assert_eq!(key.protocol, 0);
+        assert_eq!(key.ethertype, Some(fluereflow::ETHERTYPE_ARP));
+    }
+
+    /// The collision the EtherType exists to prevent: ARP and IP-in-IP between
+    /// the same pair of addresses are not the same conversation.
+    #[test]
+    fn arp_does_not_share_a_key_with_ip_in_ip() {
+        let mut arp = Vec::with_capacity(28);
+        arp.extend_from_slice(&[0, 1, 0x08, 0, 6, 4, 0, 1]);
+        arp.extend_from_slice(&SRC_MAC);
+        arp.extend_from_slice(&[10, 0, 0, 1]);
+        arp.extend_from_slice(&[0; 6]);
+        arp.extend_from_slice(&[10, 0, 0, 2]);
+        let arp_key = parse_frame(&ethernet_frame(0x0806, &arp))
+            .expect("valid ARP frame")
+            .0;
+
+        let mut ip_in_ip = arp_key;
+        ip_in_ip.protocol = 4;
+        ip_in_ip.ethertype = None;
+
+        assert_ne!(arp_key, ip_in_ip);
     }
 
     #[test]

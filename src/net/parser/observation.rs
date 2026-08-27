@@ -33,7 +33,6 @@ pub struct PacketObservation {
     /// Explicit congestion notification bits, from this packet's IP header.
     pub ecn: u8,
     /// EtherType of the traffic this packet carried.
-    pub ethertype: Option<u16>,
     /// The endpoint this packet physically arrived from, before any
     /// reattribution to a flow its own addresses do not name.
     pub arrived_from: (std::net::IpAddr, u16),
@@ -90,7 +89,6 @@ pub fn observe(
         facts: properties.facts,
         dscp: properties.dscp,
         ecn: properties.ecn,
-        ethertype: properties.ethertype,
         tcp_flags: properties.facts.tcp_flags,
         // Filled in below, once fragment reattribution has supplied the ports a
         // later fragment does not carry.
