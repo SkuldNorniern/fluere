@@ -1,32 +1,50 @@
 use pcap::Packet;
 
 use crate::error::ParseError;
-use crate::net::types::{Key, TcpFlags};
-use fluereflow::FluereRecord;
+use crate::net::types::Key;
 
-use super::fluereflows::{innermost, packet_time, record_from_parsed, wire_length};
+use fluereflow::{PacketFacts, TcpFlags, Timestamp};
+
+use super::fluereflows::{innermost, packet_time, wire_length};
 use super::fragments::{FragmentTracker, Ipv4Fragment};
 use super::keys::keys_from_parsed;
+use super::properties;
 
 /// Everything one captured frame contributes to a flow.
 ///
-/// Produced by a single decode of the frame: the flow keys and the opening
-/// record both come from the same parse, rather than each parser decoding the
-/// packet again for itself.
+/// Produced by a single decode of the frame: the flow keys and the packet's
+/// measurements both come from the same parse, rather than each parser decoding
+/// the packet again for itself.
+///
+/// Note what is *not* here: a partly built flow record. The parser reports what
+/// it measured and the engine does the accumulating, so a packet cannot be
+/// counted once by the parser and again by the engine.
 #[derive(Debug, Clone, Copy)]
 pub struct PacketObservation {
     /// Flow key in the direction this packet travelled.
     pub key: Key,
     /// The same flow key with source and destination swapped.
     pub reverse_key: Key,
-    /// A flow's opening state, with every aggregate counter still at zero.
-    pub record: FluereRecord,
-    /// The frame's length on the wire.
-    pub doctets: usize,
-    /// TCP flags seen on this packet.
-    pub flags: TcpFlags,
-    /// Capture timestamp, in microseconds since the epoch.
-    pub packet_time: u64,
+    /// What this packet measured.
+    pub facts: PacketFacts,
+    /// Differentiated services code point, from this packet's IP header.
+    pub dscp: u8,
+    /// Explicit congestion notification bits, from this packet's IP header.
+    pub ecn: u8,
+    /// TCP control bits, `None` for anything that is not TCP.
+    pub tcp_flags: Option<TcpFlags>,
+}
+
+impl PacketObservation {
+    /// When this packet was captured.
+    pub fn time(&self) -> Timestamp {
+        self.facts.time
+    }
+
+    /// Bytes this packet contributed, as seen on the wire.
+    pub fn frame_octets(&self) -> u32 {
+        self.facts.frame_octets
+    }
 }
 
 /// Decode one captured frame into the pieces the flow engine needs.
@@ -52,17 +70,21 @@ pub fn observe(
         reverse_key.mac_defaultate();
     }
 
-    let packet_time = packet_time(&packet);
-    let (doctets, raw_flags, record) =
-        record_from_parsed(&parsed, packet.data, wire_length(&packet), packet_time)?;
+    let properties = properties::from_parsed(
+        &parsed,
+        packet.data,
+        wire_length(&packet) as u32,
+        packet.data.len() as u32,
+        packet_time(&packet),
+    );
 
     let mut observation = PacketObservation {
         key,
         reverse_key,
-        record,
-        doctets,
-        flags: TcpFlags::new(raw_flags),
-        packet_time,
+        facts: properties.facts,
+        dscp: properties.dscp,
+        ecn: properties.ecn,
+        tcp_flags: properties.facts.tcp_flags,
     };
 
     // A later fragment has no transport header of its own, so it inherits the
@@ -78,7 +100,7 @@ mod tests {
     use pcap::PacketHeader;
 
     use super::{FragmentTracker, PacketObservation, observe};
-    use crate::net::parser::{parse_fluereflow, parse_keys};
+    use crate::net::parser::parse_keys;
 
     const SRC_MAC: [u8; 6] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
     const DST_MAC: [u8; 6] = [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
@@ -113,31 +135,32 @@ mod tests {
         }
     }
 
-    /// One decode has to produce exactly what the two standalone parsers did.
+    /// One decode produces both the key and the packet's measurements.
     #[test]
-    fn matches_the_standalone_parsers() {
+    fn a_single_decode_yields_the_key_and_the_measurements() {
         let frame = tcp_frame();
         let header = header(&frame);
 
-        let observation = observe(
-            pcap::Packet::new(&header, &frame),
-            true,
-            1,
-            &mut FragmentTracker::new(),
-        )
-        .expect("observed");
+        let observation = observed(&frame);
 
         let (key, reverse_key) =
             parse_keys(pcap::Packet::new(&header, &frame), 1).expect("keys parse");
-        let (doctets, raw_flags, record) =
-            parse_fluereflow(pcap::Packet::new(&header, &frame), 1).expect("record parses");
-
         assert_eq!(observation.key, key);
         assert_eq!(observation.reverse_key, reverse_key);
-        assert_eq!(observation.record, record);
-        assert_eq!(observation.doctets, doctets);
-        assert_eq!(observation.flags.syn, raw_flags[1]);
-        assert_eq!(observation.packet_time, 7_000_008);
+
+        assert_eq!(observation.frame_octets(), frame.len() as u32);
+        assert_eq!(observation.facts.captured_octets, frame.len() as u32);
+        assert!(!observation.facts.truncated());
+        assert_eq!(observation.facts.ttl, Some(42));
+        assert_eq!(observation.time().micros(), 7_000_008);
+        assert!(
+            observation.tcp_flags.expect("a TCP packet").syn,
+            "the SYN bit is reported"
+        );
+        assert_eq!(
+            observation.dscp, 10,
+            "the DSCP field, not a shifted ToS byte"
+        );
     }
 
     #[test]
@@ -235,7 +258,7 @@ mod tests {
         let request = observed(&ipv6_icmp(1, 2, 128));
         let reply = observed(&ipv6_icmp(2, 1, 129));
 
-        assert_eq!(request.record.prot, 58);
+        assert_eq!(request.key.protocol, 58);
         assert_eq!((request.key.src_port, request.key.dst_port), (0, 0));
         assert_eq!(request.reverse_key.src_ip, reply.key.src_ip);
         assert_eq!(request.reverse_key.dst_ip, reply.key.dst_ip);
@@ -272,14 +295,10 @@ mod tests {
         )
         .expect("observed");
 
-        assert_eq!(observation.record.prot, 132);
+        assert_eq!(observation.key.protocol, 132);
         assert_eq!(
             (observation.key.src_port, observation.key.dst_port),
             (50_005, 38_412)
-        );
-        assert_eq!(
-            (observation.record.src_port, observation.record.dst_port),
-            (observation.key.src_port, observation.key.dst_port)
         );
     }
 
@@ -306,7 +325,7 @@ mod tests {
         let first = observed(&esp(0x1111_1111));
         let second = observed(&esp(0x2222_2222));
 
-        assert_eq!(first.record.prot, 50);
+        assert_eq!(first.key.protocol, 50);
         let spi_of =
             |o: &PacketObservation| (u32::from(o.key.src_port) << 16) | u32::from(o.key.dst_port);
         assert_eq!(spi_of(&first), 0x1111_1111);
@@ -314,10 +333,6 @@ mod tests {
         assert_ne!(
             first.key, second.key,
             "different associations must be different flows"
-        );
-        assert_eq!(
-            (first.record.src_port, first.record.dst_port),
-            (first.key.src_port, first.key.dst_port)
         );
     }
 

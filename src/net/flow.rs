@@ -1,4 +1,4 @@
-use fluereflow::FluereRecord;
+use fluereflow::FlowRecord;
 
 use crate::net::types::Key;
 
@@ -12,7 +12,7 @@ use crate::net::types::Key;
 #[derive(Debug, Clone, Copy)]
 pub struct Flow {
     pub key: Key,
-    pub record: FluereRecord,
+    pub record: FlowRecord,
 }
 
 impl From<&Flow> for fluere_plugin::FlowIdentity {
@@ -29,7 +29,7 @@ impl From<&Flow> for fluere_plugin::FlowIdentity {
 }
 
 impl Flow {
-    pub fn new(key: Key, record: FluereRecord) -> Self {
+    pub fn new(key: Key, record: FlowRecord) -> Self {
         Flow { key, record }
     }
 
