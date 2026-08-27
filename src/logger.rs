@@ -95,33 +95,38 @@ impl Log for Logger {
     }
 
     fn log(&self, record: &Record) {
-        let _timestamp = Local::now().format("%Y-%m-%d %H:%M:%S %z").to_string();
-        let formatted_message = format!(
-            "[{}] [{}:{}]: {}",
+        let to_std = self
+            .write_to_std
+            .as_ref()
+            .filter(|_| record.level() <= self.severity);
+
+        if to_std.is_none() && !self.write_to_file {
+            // Nothing would be written, so nothing needs formatting. The
+            // timestamp in particular is not free, and this runs for every
+            // filtered-out message on the capture path.
+            return;
+        }
+
+        let message = format!(
+            "{} [{}] [{}:{}]: {}",
+            Local::now().format("%Y-%m-%d %H:%M:%S %z"),
             record.level(),
             record.file().unwrap_or("unknown"),
             record.line().unwrap_or(0),
             record.args()
         );
 
-        if let Some(write_to_std) = self.write_to_std.as_ref()
-            && record.level() <= self.severity
-        {
-            match write_to_std {
-                Logstdout::Stdout => {
-                    println!("{}", formatted_message);
-                }
-                Logstdout::StdErr => {
-                    eprintln!("{}", formatted_message);
-                }
-            }
+        match to_std {
+            Some(Logstdout::Stdout) => println!("{}", message),
+            Some(Logstdout::StdErr) => eprintln!("{}", message),
+            None => {}
         }
 
         if self.write_to_file
             && let Some(mut file_ref) = self.file.as_ref()
         {
             // A logger cannot report its own failure to log; drop the error.
-            let _ = writeln!(file_ref, "{}", formatted_message);
+            let _ = writeln!(file_ref, "{}", message);
         }
     }
 
