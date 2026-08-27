@@ -6,7 +6,7 @@ use crate::{
     net::{
         flow_engine::FlowEngine,
         observe_packet,
-        parser::{FragmentTracker, PacketObservation},
+        parser::{PacketObservation, ParserState},
     },
     types::Args,
     utils::fluere_exporter,
@@ -102,11 +102,11 @@ pub async fn fluereflow_fileparse(arg: Args) -> Result<(), FluereError> {
     info!("Converting file: {}", file_name);
 
     let bar = ProgressBar::new_spinner();
-    let mut fragments = FragmentTracker::new();
+    let mut parser_state = ParserState::new();
 
     while let Ok(packet) = cap.next_packet() {
         trace!("Parsing packet");
-        let Some(observation) = observe_packet(packet, use_mac, linktype, &mut fragments) else {
+        let Some(observation) = observe_packet(packet, use_mac, linktype, &mut parser_state) else {
             continue;
         };
         process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;

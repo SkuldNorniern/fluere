@@ -9,6 +9,7 @@ use super::fluereflows::{innermost, packet_time, wire_length};
 use super::fragments::{Fragment, FragmentTracker};
 use super::keys::keys_from_parsed;
 use super::properties;
+use super::quic::QuicTracker;
 
 /// Everything one captured frame contributes to a flow.
 ///
@@ -58,7 +59,7 @@ pub fn observe(
     packet: Packet<'_>,
     use_mac: bool,
     linktype: u16,
-    fragments: &mut FragmentTracker,
+    state: &mut ParserState,
 ) -> Result<PacketObservation, ParseError> {
     if packet.is_empty() {
         return Err(ParseError::EmptyPacket);
@@ -93,16 +94,37 @@ pub fn observe(
     // A later fragment has no transport header of its own, so it inherits the
     // endpoints its first fragment reported.
     let fragment = Fragment::of(innermost(&parsed));
-    fragments.resolve(&mut observation, fragment.as_ref());
+    state.fragments.resolve(&mut observation, fragment.as_ref());
+
+    // A QUIC connection that changed address is still the same connection, and
+    // its Connection ID says which one.
+    state.quic.resolve(&mut observation, &parsed, packet.data);
 
     Ok(observation)
+}
+
+/// What the parser remembers between packets.
+///
+/// Both trackers exist because a packet can belong to a flow its own addresses
+/// do not name: a later fragment has no ports, and a migrated QUIC packet has
+/// neither the addresses nor the ports of the connection it continues.
+#[derive(Debug, Default)]
+pub struct ParserState {
+    pub fragments: FragmentTracker,
+    pub quic: QuicTracker,
+}
+
+impl ParserState {
+    pub fn new() -> Self {
+        ParserState::default()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use pcap::PacketHeader;
 
-    use super::{FragmentTracker, PacketObservation, observe};
+    use super::{PacketObservation, ParserState, observe};
     use crate::net::parser::parse_keys;
 
     const SRC_MAC: [u8; 6] = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
@@ -175,14 +197,14 @@ mod tests {
             pcap::Packet::new(&header, &frame),
             true,
             1,
-            &mut FragmentTracker::new(),
+            &mut ParserState::new(),
         )
         .expect("observed");
         let without = observe(
             pcap::Packet::new(&header, &frame),
             false,
             1,
-            &mut FragmentTracker::new(),
+            &mut ParserState::new(),
         )
         .expect("observed");
 
@@ -226,7 +248,7 @@ mod tests {
             pcap::Packet::new(&header, frame),
             true,
             1,
-            &mut FragmentTracker::new(),
+            &mut ParserState::new(),
         )
         .expect("observed")
     }
@@ -294,7 +316,7 @@ mod tests {
             pcap::Packet::new(&header, &frame),
             true,
             1,
-            &mut FragmentTracker::new(),
+            &mut ParserState::new(),
         )
         .expect("observed");
 
@@ -432,7 +454,7 @@ mod tests {
                 pcap::Packet::new(&header, &[]),
                 true,
                 1,
-                &mut FragmentTracker::new()
+                &mut ParserState::new()
             )
             .is_err()
         );

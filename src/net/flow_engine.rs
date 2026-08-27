@@ -362,7 +362,7 @@ mod tests {
             Packet::new(&header, frame),
             false,
             1,
-            &mut crate::net::parser::FragmentTracker::new(),
+            &mut crate::net::parser::ParserState::new(),
         )
         .expect("parsable frame")
     }
