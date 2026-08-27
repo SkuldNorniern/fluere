@@ -44,10 +44,10 @@ pub fn get_log_level(verbose: u8) -> LevelFilter {
 // Add a new function to handle mode execution
 pub async fn execute_mode(mode: Mode, args: types::Args) -> Result<(), FluereError> {
     match mode {
-        Mode::Online => net::online_fluereflow::packet_capture(args).await?,
-        Mode::Offline => net::fluereflow_fileparse(args).await?,
-        Mode::Live => net::live_fluereflow::packet_capture(args).await?,
-        Mode::Pcap => net::pcap_capture(args).await?,
+        Mode::Online => net::capture::run(args).await?,
+        Mode::Offline => net::convert::run(args).await?,
+        Mode::Live => net::capture_tui::run(args).await?,
+        Mode::Pcap => net::write_pcap(args).await?,
     }
     Ok(())
 }
