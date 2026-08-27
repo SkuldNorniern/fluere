@@ -127,6 +127,19 @@ impl FlowKey {
     pub fn ports(&self) -> (u16, u16) {
         self.endpoints.ports().unwrap_or((0, 0))
     }
+
+    /// `4` or `6`.
+    ///
+    /// Derived rather than stored: the addresses already carry it, and a stored
+    /// copy could disagree with them. Reported so consumers need not inspect an
+    /// address to find out.
+    pub fn ip_version(&self) -> u8 {
+        if self.source.is_ipv6() {
+            6
+        } else {
+            4
+        }
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +204,15 @@ mod tests {
 
         assert_eq!(reply.endpoints, Endpoints::None);
         assert_eq!(reply.reversed(), request);
+    }
+
+    #[test]
+    fn the_ip_version_follows_the_addresses() {
+        let mut key = key(Endpoints::None);
+        assert_eq!(key.ip_version(), 4);
+
+        key.source = IpAddr::V6("2001:db8::1".parse().expect("valid address"));
+        assert_eq!(key.ip_version(), 6);
     }
 
     #[test]
