@@ -9,7 +9,7 @@ use crate::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
         observe_packet,
-        parser::{PacketObservation, ParserState, microseconds_to_timestamp},
+        parser::{PacketObservation, ParserState, unix_seconds_to_timestamp},
         types::Key,
     },
     types::Args,
@@ -552,7 +552,7 @@ fn draw_ui(
         format!("Active Flow Count: {}", active_flow_count),
         format!(
             "Recent Exported Time: {}",
-            microseconds_to_timestamp(recent_exported_time).as_str()
+            unix_seconds_to_timestamp(recent_exported_time).as_str()
         ),
     ];
     let summary_paragraph = Paragraph::new(summary_text.join("  |  "))
