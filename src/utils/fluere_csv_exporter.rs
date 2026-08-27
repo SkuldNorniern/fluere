@@ -53,7 +53,7 @@ impl Endpoints {
 }
 
 /// Columns, in order. Kept next to the row builder so the two cannot drift.
-const COLUMNS: [&str; 42] = [
+const COLUMNS: [&str; 44] = [
     "source",
     "destination",
     "ip_version",
@@ -65,7 +65,9 @@ const COLUMNS: [&str; 42] = [
     "icmp_code",
     "spi",
     "gre_protocol",
+    "protocol",
     "prot",
+    "ethertype",
     "packets",
     "frame_octets",
     "fwd_packets",
@@ -151,7 +153,14 @@ fn row(flow: &Flow) -> Vec<String> {
         endpoints.icmp_code,
         endpoints.spi,
         endpoints.gre_protocol,
-        key.protocol.to_string(),
+        flow.protocol_name().to_string(),
+        // Empty for traffic with no IP protocol number of its own.
+        if flow.is_ip() {
+            key.protocol.to_string()
+        } else {
+            String::new()
+        },
+        flow.ethertype(),
         record.packets().to_string(),
         record.frame_octets().to_string(),
         record.forward.packets.to_string(),
