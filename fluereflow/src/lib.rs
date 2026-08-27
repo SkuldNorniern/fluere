@@ -1,6 +1,13 @@
 // This file is part of the fluereflow library, which provides data structures and functions for working with NetFlow data.
 // It exports the FluereFlow, FluereHeader, and FluereRecord data structures, which represent different aspects of NetFlow data.
+pub mod flow;
 mod types;
+
+pub use flow::{
+    CaptureStats, Direction, DirectionStats, EndReason, FlowRecord, FlowTime, NetworkStats,
+    PacketFacts, Range, StartState, TcpFlagCounts, TcpFlags, TimeResolution, Timestamp,
+    SCHEMA_VERSION,
+};
 
 // The FluereFlow data structure represents a single flow of network traffic.
 // It includes fields for the source and destination IP addresses, the source and destination ports, the protocol, and other information about the flow.
