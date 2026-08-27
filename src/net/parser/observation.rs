@@ -34,6 +34,9 @@ pub struct PacketObservation {
     pub ecn: u8,
     /// EtherType of the traffic this packet carried.
     pub ethertype: Option<u16>,
+    /// The endpoint this packet physically arrived from, before any
+    /// reattribution to a flow its own addresses do not name.
+    pub arrived_from: (std::net::IpAddr, u16),
     /// TCP control bits, `None` for anything that is not TCP.
     pub tcp_flags: Option<TcpFlags>,
 }
@@ -89,12 +92,20 @@ pub fn observe(
         ecn: properties.ecn,
         ethertype: properties.ethertype,
         tcp_flags: properties.facts.tcp_flags,
+        // Filled in below, once fragment reattribution has supplied the ports a
+        // later fragment does not carry.
+        arrived_from: (key.source, 0),
     };
 
     // A later fragment has no transport header of its own, so it inherits the
     // endpoints its first fragment reported.
     let fragment = Fragment::of(innermost(&parsed));
     state.fragments.resolve(&mut observation, fragment.as_ref());
+
+    // Where the packet came from on the wire. Taken after fragment handling,
+    // which recovers the ports a later fragment lacks, but before QUIC
+    // migration, which is exactly the move worth recording.
+    observation.arrived_from = (observation.key.source, observation.key.ports().0);
 
     // A QUIC connection that changed address is still the same connection, and
     // its Connection ID says which one.

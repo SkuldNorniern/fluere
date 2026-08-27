@@ -45,7 +45,7 @@ impl Endpoints {
 }
 
 /// Columns, in order. Kept next to the row builder so the two cannot drift.
-const COLUMNS: [&str; 44] = [
+const COLUMNS: [&str; 46] = [
     "source",
     "destination",
     "ip_version",
@@ -86,6 +86,8 @@ const COLUMNS: [&str; 44] = [
     "ecn",
     "start_state",
     "end_reason",
+    "path_count",
+    "paths",
     "vlan",
     "encap",
     "tunnel_id",
@@ -107,6 +109,14 @@ pub async fn fluere_exporter(records: Vec<Flow>, file: File) -> Result<(), csv::
             e
         })?;
     }
+
+    // Flush explicitly: relying on the writer's destructor would swallow a
+    // failure on the last buffered rows, which is exactly when the caller most
+    // needs to hear about it.
+    wtr.flush().map_err(|error| {
+        error!("Failed to flush CSV output: {}", error);
+        csv::Error::from(error)
+    })?;
 
     debug!("Wrote {} records", records.len());
     Ok(())
@@ -187,6 +197,8 @@ fn row(flow: &Flow) -> Vec<String> {
             .time
             .end_reason
             .map_or_else(String::new, |reason| format!("{:?}", reason).to_lowercase()),
+        record.paths.count().to_string(),
+        crate::net::identity::paths(flow),
         crate::net::identity::vlan(flow),
         crate::net::identity::encapsulation(flow).to_string(),
         crate::net::identity::tunnel_id(flow),

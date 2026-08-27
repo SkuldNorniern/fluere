@@ -1,20 +1,17 @@
-// This file is part of the fluereflow library, which provides data structures and functions for working with NetFlow data.
-// It exports the FluereFlow, FluereHeader, and FluereRecord data structures, which represent different aspects of NetFlow data.
+//! FluereFlow: Fluere's own network flow format.
+//!
+//! A flow is one conversation: [`FlowKey`] says which one, and [`FlowRecord`]
+//! says what it carried. [`Flow`] pairs them, which is what an exporter or a
+//! plugin receives.
+//!
+//! This is not NetFlow. The shape is chosen for what a passive capture can
+//! actually observe, and it records things NetFlow has no field for, such as
+//! the VLAN or tunnel a flow arrived on and the endpoints it moved between.
+
 pub mod flow;
-mod types;
 
 pub use flow::{
     CaptureStats, Direction, DirectionStats, EncapKind, Encapsulation, EndReason, Endpoints, Flow,
-    FlowKey, FlowRecord, FlowTime, MacAddress, NetworkStats, PacketFacts, Range, StartState,
+    FlowKey, FlowRecord, FlowTime, MacAddress, NetworkStats, PacketFacts, Paths, Range, StartState,
     TcpFlagCounts, TcpFlags, TimeResolution, Timestamp, TransportStats, VlanTags, SCHEMA_VERSION,
 };
-
-// The FluereFlow data structure represents a single flow of network traffic.
-// It includes fields for the source and destination IP addresses, the source and destination ports, the protocol, and other information about the flow.
-pub use types::FluereFlow;
-// The FluereHeader data structure represents the header of a NetFlow record.
-// It includes fields for the version of the NetFlow protocol, the count of records in the flow, and other information about the flow.
-pub use types::FluereHeader;
-// The FluereRecord data structure represents a single record in a NetFlow flow.
-// It includes fields for the source and destination IP addresses, the source and destination ports, the protocol, and other information about the record.
-pub use types::FluereRecord;

@@ -630,7 +630,32 @@ mod tests {
             1,
             "the migrated packet belongs to the connection it continues"
         );
-        assert_eq!(flows.only(|f| f.key.protocol == 17).packets(), 3);
+
+        let flow = flows.only(|f| f.key.protocol == 17);
+        assert_eq!(flow.packets(), 3);
+        assert!(flow.paths.migrated(), "and the record says it moved");
+        assert_eq!(
+            flow.paths.count(),
+            2,
+            "where it opened, plus where it moved to"
+        );
+    }
+
+    /// A flow that stays where it started reports a single path, so `migrated`
+    /// means what it says.
+    #[test]
+    fn a_flow_that_never_moves_reports_one_path() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, SYN)))
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, ACK)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        let flow = flows.only(|f| f.key.protocol == 6);
+        assert_eq!(flow.paths.count(), 1);
+        assert!(!flow.paths.migrated());
     }
 
     /// Without a handshake to learn the connection ID from, there is nothing to

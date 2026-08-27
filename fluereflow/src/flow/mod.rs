@@ -18,6 +18,7 @@
 mod encapsulation;
 mod key;
 mod link;
+mod paths;
 mod stats;
 mod time;
 mod vlan;
@@ -25,6 +26,7 @@ mod vlan;
 pub use encapsulation::{EncapKind, Encapsulation};
 pub use key::{Endpoints, FlowKey};
 pub use link::MacAddress;
+pub use paths::Paths;
 pub use stats::{
     CaptureStats, DirectionStats, NetworkStats, Range, TcpFlagCounts, TcpFlags, TransportStats,
 };
@@ -79,6 +81,9 @@ pub struct FlowRecord {
     pub reverse: DirectionStats,
     pub network: NetworkStats,
     pub transport: TransportStats,
+    /// Endpoints this flow was seen arriving from, which is more than one when
+    /// it migrated.
+    pub paths: Paths,
     pub capture: CaptureStats,
 }
 
@@ -93,6 +98,7 @@ impl FlowRecord {
             reverse: DirectionStats::default(),
             network: NetworkStats::default(),
             transport: TransportStats::default(),
+            paths: Paths::default(),
             capture: CaptureStats::default(),
         }
     }
