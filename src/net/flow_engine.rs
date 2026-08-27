@@ -55,6 +55,13 @@ pub struct AcceptOutcome {
     pub opened_flow: bool,
 }
 
+/// Whether `endpoint` is one of the two the key already names.
+fn names_endpoint(key: &Key, endpoint: (std::net::IpAddr, u16)) -> bool {
+    let (source_port, destination_port) = key.ports();
+
+    endpoint == (key.source, source_port) || endpoint == (key.destination, destination_port)
+}
+
 /// Open a flow for the first packet seen on it.
 ///
 /// A TCP flow whose first packet has no SYN began before the capture did; other
@@ -143,6 +150,11 @@ impl FlowEngine {
             Direction::Forward
         };
         state.record.observe(direction, observation.facts);
+        // Only somewhere the key does not already name: ordinary traffic in
+        // either direction arrives from one of the flow's own two endpoints.
+        if !names_endpoint(&flow_key, observation.arrived_from) {
+            state.record.paths.observe(observation.arrived_from);
+        }
 
         // A half-close only ends this direction. The flow stays open until the
         // other side closes too, so data still flowing the other way keeps
