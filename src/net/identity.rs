@@ -40,6 +40,22 @@ pub fn tunnel_endpoints(flow: &Flow) -> String {
     }
 }
 
+/// Endpoints the flow arrived from, semicolon-separated. Empty when it never
+/// moved, where the key's own addresses already say where it was.
+pub fn paths(flow: &Flow) -> String {
+    if !flow.record.paths.migrated() {
+        return String::new();
+    }
+
+    flow.record
+        .paths
+        .endpoints()
+        .iter()
+        .map(|(address, port)| format!("{}:{}", address, port))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
 /// EtherType, for traffic that is not IP. Empty otherwise, where the address
 /// family already says it.
 pub fn ethertype(flow: &Flow) -> String {

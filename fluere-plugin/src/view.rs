@@ -1,7 +1,7 @@
 //! A runtime-neutral view of a flow record.
 //!
 //! Every plugin runtime marshals from this rather than reaching into
-//! [`FluereRecord`] itself, so the field list is written down once instead of
+//! [`FlowRecord`] itself, so the field list is written down once instead of
 //! once per supported language.
 
 use std::net::IpAddr;
