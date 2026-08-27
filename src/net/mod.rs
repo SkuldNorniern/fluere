@@ -1,6 +1,6 @@
 mod capture;
-mod flow;
 mod flow_engine;
+pub mod identity;
 pub mod live_fluereflow;
 mod offline_fluereflows;
 pub mod online_fluereflow;
@@ -12,7 +12,7 @@ pub mod types;
 
 pub use capture::CaptureDevice;
 pub use capture::find_device;
-pub use flow::Flow;
+pub use fluereflow::Flow;
 pub use offline_fluereflows::fluereflow_fileparse;
 pub use packet_pcap::pcap_capture;
 

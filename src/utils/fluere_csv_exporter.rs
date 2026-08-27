@@ -19,33 +19,25 @@ struct Endpoints {
 
 impl Endpoints {
     fn of(flow: &Flow) -> Self {
-        let key = &flow.key;
         let mut endpoints = Endpoints::default();
 
-        match key.protocol {
-            // ICMP and ICMPv6: the type and code are a measurement, taken from
-            // the flow's first packet rather than from the key.
-            1 | 58 => {
-                if let Some((icmp_type, code)) = flow.record.transport.icmp {
-                    endpoints.icmp_type = icmp_type.to_string();
-                    endpoints.icmp_code = code.to_string();
-                }
-            }
-            // IPsec: the key holds the two halves of the SPI.
-            50 | 51 => {
-                let spi = (u32::from(key.src_port) << 16) | u32::from(key.dst_port);
-                endpoints.spi = format!("0x{:08x}", spi);
-            }
-            // GRE whose inner flow could not be decoded reports the protocol it
-            // was carrying.
-            47 if key.src_port != 0 => {
-                endpoints.gre_protocol = format!("0x{:04x}", key.src_port);
-            }
-            // ARP has no endpoints at all.
-            4 => {}
-            _ => {
-                endpoints.ports = (key.src_port.to_string(), key.dst_port.to_string());
-            }
+        // Each kind is read from the key's own typed endpoint rather than
+        // guessed from the protocol number, so this cannot drift from how the
+        // flow was actually keyed.
+        if let Some((source, destination)) = flow.key.endpoints.ports() {
+            endpoints.ports = (source.to_string(), destination.to_string());
+        }
+        if let Some(spi) = flow.key.endpoints.security_association() {
+            endpoints.spi = format!("0x{:08x}", spi);
+        }
+        if let Some(protocol) = flow.key.endpoints.gre_protocol() {
+            endpoints.gre_protocol = format!("0x{:04x}", protocol);
+        }
+        // ICMP type and code are a measurement, not an endpoint: they identify
+        // the direction, and an echo exchange is one flow.
+        if let Some((icmp_type, code)) = flow.record.transport.icmp {
+            endpoints.icmp_type = icmp_type.to_string();
+            endpoints.icmp_code = code.to_string();
         }
 
         endpoints
@@ -57,8 +49,6 @@ const COLUMNS: [&str; 44] = [
     "source",
     "destination",
     "ip_version",
-    // Only ever real transport ports. Anything else a protocol puts in their
-    // place has a column of its own below, so no column means two things.
     "src_port",
     "dst_port",
     "icmp_type",
@@ -96,7 +86,6 @@ const COLUMNS: [&str; 44] = [
     "ecn",
     "start_state",
     "end_reason",
-    // What separated this flow from another with the same addresses and ports.
     "vlan",
     "encap",
     "tunnel_id",
@@ -144,9 +133,9 @@ fn row(flow: &Flow) -> Vec<String> {
     };
 
     vec![
-        key.src_ip.to_string(),
-        key.dst_ip.to_string(),
-        if key.src_ip.is_ipv6() { "6" } else { "4" }.to_string(),
+        key.source.to_string(),
+        key.destination.to_string(),
+        if key.source.is_ipv6() { "6" } else { "4" }.to_string(),
         endpoints.ports.0.clone(),
         endpoints.ports.1.clone(),
         endpoints.icmp_type,
@@ -160,7 +149,7 @@ fn row(flow: &Flow) -> Vec<String> {
         } else {
             String::new()
         },
-        flow.ethertype(),
+        crate::net::identity::ethertype(flow),
         record.packets().to_string(),
         record.frame_octets().to_string(),
         record.forward.packets.to_string(),
@@ -198,9 +187,9 @@ fn row(flow: &Flow) -> Vec<String> {
             .time
             .end_reason
             .map_or_else(String::new, |reason| format!("{:?}", reason).to_lowercase()),
-        flow.vlan(),
-        flow.encapsulation().to_string(),
-        flow.tunnel_id(),
-        flow.tunnel_endpoints(),
+        crate::net::identity::vlan(flow),
+        crate::net::identity::encapsulation(flow).to_string(),
+        crate::net::identity::tunnel_id(flow),
+        crate::net::identity::tunnel_endpoints(flow),
     ]
 }
