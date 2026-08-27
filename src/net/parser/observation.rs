@@ -68,8 +68,8 @@ pub fn observe(
 
     let (mut key, mut reverse_key) = keys_from_parsed(&parsed, packet.data)?;
     if !use_mac {
-        key.mac_defaultate();
-        reverse_key.mac_defaultate();
+        key.forget_link_addresses();
+        reverse_key.forget_link_addresses();
     }
 
     let properties = properties::from_parsed(
@@ -187,9 +187,9 @@ mod tests {
         .expect("observed");
 
         assert_ne!(with_mac.key, without.key);
-        assert_eq!(without.key.src_mac.0, [0; 6]);
-        assert_eq!(without.key.dst_mac.0, [0; 6]);
-        assert_eq!(without.reverse_key.src_mac.0, [0; 6]);
+        assert_eq!(without.key.source_mac.0, [0; 6]);
+        assert_eq!(without.key.destination_mac.0, [0; 6]);
+        assert_eq!(without.reverse_key.source_mac.0, [0; 6]);
     }
 
     fn ipv4_icmp(src: [u8; 4], dst: [u8; 4], icmp_type: u8) -> Vec<u8> {
@@ -243,15 +243,15 @@ mod tests {
         let request = observed(&ipv4_icmp(a, b, 8));
         let reply = observed(&ipv4_icmp(b, a, 0));
 
-        assert_eq!(request.key.src_port, 0, "no endpoint to report");
-        assert_eq!(request.key.dst_port, 0);
+        assert_eq!(request.key.ports().0, 0, "no endpoint to report");
+        assert_eq!(request.key.ports().1, 0);
         assert_eq!(
-            request.reverse_key.src_ip, reply.key.src_ip,
+            request.reverse_key.source, reply.key.source,
             "the reply must match the request's reverse key"
         );
-        assert_eq!(request.reverse_key.dst_ip, reply.key.dst_ip);
-        assert_eq!(request.reverse_key.src_port, reply.key.src_port);
-        assert_eq!(request.reverse_key.dst_port, reply.key.dst_port);
+        assert_eq!(request.reverse_key.destination, reply.key.destination);
+        assert_eq!(request.reverse_key.ports().0, reply.key.ports().0);
+        assert_eq!(request.reverse_key.ports().1, reply.key.ports().1);
         assert_eq!(request.reverse_key.protocol, reply.key.protocol);
     }
 
@@ -262,11 +262,11 @@ mod tests {
         let reply = observed(&ipv6_icmp(2, 1, 129));
 
         assert_eq!(request.key.protocol, 58);
-        assert_eq!((request.key.src_port, request.key.dst_port), (0, 0));
-        assert_eq!(request.reverse_key.src_ip, reply.key.src_ip);
-        assert_eq!(request.reverse_key.dst_ip, reply.key.dst_ip);
-        assert_eq!(request.reverse_key.src_port, reply.key.src_port);
-        assert_eq!(request.reverse_key.dst_port, reply.key.dst_port);
+        assert_eq!((request.key.ports().0, request.key.ports().1), (0, 0));
+        assert_eq!(request.reverse_key.source, reply.key.source);
+        assert_eq!(request.reverse_key.destination, reply.key.destination);
+        assert_eq!(request.reverse_key.ports().0, reply.key.ports().0);
+        assert_eq!(request.reverse_key.ports().1, reply.key.ports().1);
     }
 
     /// SCTP carries ports like TCP and UDP do, but paccel reports them on
@@ -300,7 +300,7 @@ mod tests {
 
         assert_eq!(observation.key.protocol, 132);
         assert_eq!(
-            (observation.key.src_port, observation.key.dst_port),
+            (observation.key.ports().0, observation.key.ports().1),
             (50_005, 38_412)
         );
     }
@@ -329,10 +329,16 @@ mod tests {
         let second = observed(&esp(0x2222_2222));
 
         assert_eq!(first.key.protocol, 50);
-        let spi_of =
-            |o: &PacketObservation| (u32::from(o.key.src_port) << 16) | u32::from(o.key.dst_port);
-        assert_eq!(spi_of(&first), 0x1111_1111);
-        assert_eq!(spi_of(&second), 0x2222_2222);
+        assert_eq!(
+            first.key.endpoints,
+            fluereflow::Endpoints::SecurityAssociation(0x1111_1111),
+            "the SPI whole, not split across two port fields"
+        );
+        assert_eq!(
+            second.key.endpoints,
+            fluereflow::Endpoints::SecurityAssociation(0x2222_2222)
+        );
+        assert_eq!(first.key.ports(), (0, 0), "IPsec has no transport ports");
         assert_ne!(
             first.key, second.key,
             "different associations must be different flows"
@@ -388,8 +394,8 @@ mod tests {
         let tenant_a = observed(&vxlan(2, 100));
         let tenant_b = observed(&vxlan(2, 200));
 
-        assert_eq!(tenant_a.key.src_ip, tenant_b.key.src_ip, "same inner tuple");
-        assert_eq!(tenant_a.key.src_port, tenant_b.key.src_port);
+        assert_eq!(tenant_a.key.source, tenant_b.key.source, "same inner tuple");
+        assert_eq!(tenant_a.key.ports().0, tenant_b.key.ports().0);
         assert_ne!(tenant_a.key, tenant_b.key, "but different flows");
 
         let encap = tenant_a.key.encapsulation.expect("tunnel recorded");

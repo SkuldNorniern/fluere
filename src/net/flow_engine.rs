@@ -9,10 +9,9 @@ use log::trace;
 /// the delay is never a large fraction of the timeout itself.
 const MAX_BUCKET: u64 = 1_000_000_000;
 
-use crate::net::flow::Flow;
 use crate::net::parser::PacketObservation;
 use crate::net::types::Key;
-use fluereflow::{Direction, EndReason, FlowRecord, StartState, TimeResolution};
+use fluereflow::{Direction, EndReason, Flow, FlowRecord, StartState, TimeResolution};
 
 /// Per-flow state the engine keeps but the record does not carry.
 #[derive(Debug, Clone, Copy)]

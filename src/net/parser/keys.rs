@@ -1,7 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use crate::error::ParseError;
-use crate::net::types::{EncapKind, Encapsulation, Key, MacAddress, VlanTags};
+use crate::net::types::Key;
+use fluereflow::{EncapKind, Encapsulation, Endpoints, MacAddress, VlanTags};
 
 use log::trace;
 use paccel::engine::ParsedPacket;
@@ -28,23 +29,24 @@ pub(super) fn keys_from_parsed(
     packet_data: &[u8],
 ) -> Result<(Key, Key), ParseError> {
     trace!("Parsing keys");
-    let (src_mac, dst_mac) = mac_addresses(parsed);
-    let (src_ip, dst_ip, src_port, dst_port, protocol) = extract_flow_tuple(parsed, packet_data)?;
+    let (source_mac, destination_mac) = mac_addresses(parsed);
+    let (source, destination, src_port, dst_port, protocol) =
+        extract_flow_tuple(parsed, packet_data)?;
+    let endpoints = super::endpoints_of(parsed, protocol, (src_port, dst_port));
     let encapsulation = encapsulation_of(parsed);
     let vlan = vlan_of(parsed);
 
     trace!(
-        "Parsed keys: src_ip={:?} dst_ip={:?} src_port={:?} dst_port={:?} protocol={:?} src_mac={:?} dst_mac={:?}",
-        src_ip, dst_ip, src_port, dst_port, protocol, src_mac, dst_mac
+        "Parsed keys: source={:?} destination={:?} endpoints={:?} protocol={:?}",
+        source, destination, endpoints, protocol
     );
     Ok(build_key_pair(
-        src_ip,
-        dst_ip,
-        src_port,
-        dst_port,
+        source,
+        destination,
+        endpoints,
         protocol,
-        src_mac,
-        dst_mac,
+        source_mac,
+        destination_mac,
         vlan,
         encapsulation,
     ))
@@ -77,26 +79,16 @@ fn extract_flow_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<FlowT
     }
 
     if let Some(flow_key) = parsed.flow_key() {
-        return Ok(flow_tuple_with_overrides(parsed, flow_key));
+        return Ok((
+            flow_key.src_ip,
+            flow_key.dst_ip,
+            flow_key.src_port,
+            flow_key.dst_port,
+            flow_key.protocol,
+        ));
     }
 
     raw_fallback_tuple(parsed, packet_data)
-}
-
-fn flow_tuple_with_overrides(
-    parsed: &ParsedPacket,
-    flow_key: paccel::engine::FlowKey,
-) -> FlowTuple {
-    let (src_port, dst_port) = super::pseudo_ports(parsed, flow_key.protocol)
-        .unwrap_or((flow_key.src_port, flow_key.dst_port));
-
-    (
-        flow_key.src_ip,
-        flow_key.dst_ip,
-        src_port,
-        dst_port,
-        flow_key.protocol,
-    )
 }
 
 fn raw_fallback_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<FlowTuple, ParseError> {
@@ -186,43 +178,30 @@ fn outer_addresses(parsed: &ParsedPacket) -> Option<(IpAddr, IpAddr)> {
 /// Build the forward and reverse `Key` for a flow from its extracted fields.
 #[allow(clippy::too_many_arguments)]
 fn build_key_pair(
-    src_ip: IpAddr,
-    dst_ip: IpAddr,
-    src_port: u16,
-    dst_port: u16,
+    source: IpAddr,
+    destination: IpAddr,
+    endpoints: Endpoints,
     protocol: u8,
-    src_mac: MacAddress,
-    dst_mac: MacAddress,
+    source_mac: MacAddress,
+    destination_mac: MacAddress,
     vlan: VlanTags,
     encapsulation: Option<Encapsulation>,
 ) -> (Key, Key) {
-    let key_value = Key {
-        src_ip,
-        src_port,
-        dst_ip,
-        dst_port,
+    let key = Key {
+        source,
+        destination,
+        endpoints,
         protocol,
-        src_mac,
-        dst_mac,
+        source_mac,
+        destination_mac,
         vlan,
         encapsulation,
     };
-    // The tunnel is not reversed with the inner addresses: the return traffic
-    // of a flow comes back through the same tunnel, in the same direction.
-    let key_reverse_value = Key {
-        src_ip: dst_ip,
-        src_port: dst_port,
-        dst_ip: src_ip,
-        dst_port: src_port,
-        protocol,
-        src_mac: dst_mac,
-        dst_mac: src_mac,
-        // Return traffic comes back on the same segment and through the same
-        // tunnel, so neither is reversed with the addresses.
-        vlan,
-        encapsulation,
-    };
-    (key_value, key_reverse_value)
+    // Reversing swaps the addresses, ports and MACs but not the VLAN or the
+    // tunnel: return traffic comes back on the same segment, through the same
+    // tunnel.
+    let reverse = key.reversed();
+    (key, reverse)
 }
 
 #[cfg(test)]
@@ -290,8 +269,8 @@ mod tests {
     }
 
     fn assert_outer_ips(key: &Key) {
-        assert_eq!(key.src_ip, IpAddr::V4(Ipv4Addr::from(OUTER_SRC)));
-        assert_eq!(key.dst_ip, IpAddr::V4(Ipv4Addr::from(OUTER_DST)));
+        assert_eq!(key.source, IpAddr::V4(Ipv4Addr::from(OUTER_SRC)));
+        assert_eq!(key.destination, IpAddr::V4(Ipv4Addr::from(OUTER_DST)));
     }
 
     #[test]
@@ -303,9 +282,12 @@ mod tests {
             .0;
 
         assert_outer_ips(&key);
-        assert_eq!((key.src_port, key.dst_port, key.protocol), (12_345, 443, 6));
-        assert_eq!(key.src_mac, MacAddress::new(SRC_MAC));
-        assert_eq!(key.dst_mac, MacAddress::new(DST_MAC));
+        assert_eq!(
+            (key.ports().0, key.ports().1, key.protocol),
+            (12_345, 443, 6)
+        );
+        assert_eq!(key.source_mac, MacAddress::new(SRC_MAC));
+        assert_eq!(key.destination_mac, MacAddress::new(DST_MAC));
     }
 
     #[test]
@@ -317,7 +299,10 @@ mod tests {
             .0;
 
         assert_outer_ips(&key);
-        assert_eq!((key.src_port, key.dst_port, key.protocol), (53, 53_000, 17));
+        assert_eq!(
+            (key.ports().0, key.ports().1, key.protocol),
+            (53, 53_000, 17)
+        );
     }
 
     #[test]
@@ -332,9 +317,9 @@ mod tests {
             .expect("valid ARP frame")
             .0;
 
-        assert_eq!(key.src_ip, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)));
-        assert_eq!(key.dst_ip, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)));
-        assert_eq!((key.src_port, key.dst_port, key.protocol), (0, 0, 4));
+        assert_eq!(key.source, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)));
+        assert_eq!(key.destination, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)));
+        assert_eq!((key.ports().0, key.ports().1, key.protocol), (0, 0, 4));
     }
 
     #[test]
@@ -351,16 +336,16 @@ mod tests {
             .expect("valid ICMPv6 frame")
             .0;
 
-        assert_eq!(key.src_ip, IpAddr::from(source));
-        assert_eq!(key.dst_ip, IpAddr::from(destination));
+        assert_eq!(key.source, IpAddr::from(source));
+        assert_eq!(key.destination, IpAddr::from(destination));
         // Type and code say which direction this is, not which endpoint, so
         // they stay out of the port slots: the reverse key swaps those, and an
         // echo reply has to match the request's reverse key.
-        assert_eq!((key.src_port, key.dst_port, key.protocol), (0, 0, 58));
+        assert_eq!((key.ports().0, key.ports().1, key.protocol), (0, 0, 58));
     }
 
     #[test]
-    fn falls_back_to_gre_protocol_type_pseudo_port() {
+    fn an_undecodable_gre_tunnel_reports_the_protocol_it_carried() {
         let gre = [0, 0, 0x08, 0, 0xde, 0xad];
         let ipv4 = ipv4_packet(47, OUTER_SRC, OUTER_DST, &gre);
         let key = parse_frame(&ethernet_frame(0x0800, &ipv4))
@@ -368,7 +353,13 @@ mod tests {
             .0;
 
         assert_outer_ips(&key);
-        assert_eq!((key.src_port, key.dst_port, key.protocol), (0x0800, 0, 47));
+        assert_eq!(key.protocol, 47);
+        assert_eq!(
+            key.endpoints,
+            fluereflow::Endpoints::GreProtocol(0x0800),
+            "the carried protocol, not a pair of fields named for ports"
+        );
+        assert_eq!(key.ports(), (0, 0), "a GRE tunnel has no transport ports");
     }
 
     #[test]
@@ -382,10 +373,10 @@ mod tests {
             .expect("valid GRE tunnel")
             .0;
 
-        assert_eq!(key.src_ip, IpAddr::V4(Ipv4Addr::new(10, 1, 0, 1)));
-        assert_eq!(key.dst_ip, IpAddr::V4(Ipv4Addr::new(10, 2, 0, 2)));
+        assert_eq!(key.source, IpAddr::V4(Ipv4Addr::new(10, 1, 0, 1)));
+        assert_eq!(key.destination, IpAddr::V4(Ipv4Addr::new(10, 2, 0, 2)));
         assert_eq!(
-            (key.src_port, key.dst_port, key.protocol),
+            (key.ports().0, key.ports().1, key.protocol),
             (23_456, 8443, 6)
         );
     }
@@ -402,7 +393,7 @@ mod tests {
 
         assert_outer_ips(&key);
         assert_eq!(
-            (key.src_port, key.dst_port, key.protocol),
+            (key.ports().0, key.ports().1, key.protocol),
             (5353, 42_000, 17)
         );
     }

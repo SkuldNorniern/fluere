@@ -4,9 +4,9 @@ pub mod flow;
 mod types;
 
 pub use flow::{
-    CaptureStats, Direction, DirectionStats, EndReason, FlowRecord, FlowTime, NetworkStats,
-    PacketFacts, Range, StartState, TcpFlagCounts, TcpFlags, TimeResolution, Timestamp,
-    TransportStats, SCHEMA_VERSION,
+    CaptureStats, Direction, DirectionStats, EncapKind, Encapsulation, EndReason, Endpoints, Flow,
+    FlowKey, FlowRecord, FlowTime, MacAddress, NetworkStats, PacketFacts, Range, StartState,
+    TcpFlagCounts, TcpFlags, TimeResolution, Timestamp, TransportStats, VlanTags, SCHEMA_VERSION,
 };
 
 // The FluereFlow data structure represents a single flow of network traffic.

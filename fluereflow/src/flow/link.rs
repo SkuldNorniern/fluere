@@ -1,3 +1,5 @@
+//! Link-layer identity.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct MacAddress(pub [u8; 6]);
 
