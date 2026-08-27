@@ -167,25 +167,7 @@ impl Flow {
     /// Readable name of the protocol this flow carried, or empty when it has no
     /// well-known one.
     pub fn protocol_name(&self) -> &'static str {
-        if self.key.ethertype == Some(ETHERTYPE_ARP) {
-            return "arp";
-        }
-
-        match self.key.protocol {
-            1 => "icmp",
-            2 => "igmp",
-            6 => "tcp",
-            17 => "udp",
-            41 => "ipv6",
-            47 => "gre",
-            50 => "esp",
-            51 => "ah",
-            58 => "icmpv6",
-            89 => "ospf",
-            112 => "vrrp",
-            132 => "sctp",
-            _ => "",
-        }
+        self.key.protocol_name()
     }
 
     /// Whether this flow carried an IP protocol at all.
