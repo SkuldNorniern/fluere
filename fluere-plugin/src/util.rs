@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// so a privileged capture uses the same cache the user's own runs do.
 pub fn home_cache_path() -> Result<PathBuf, std::io::Error> {
     let base = match fluere_config::sudo_user_home() {
-        Some(home) => home.join(".cache"),
+        Some(home) => fluere_config::cache_dir_in(&home),
         None => cache_dir().ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
