@@ -10,7 +10,7 @@
 //! quietly loses or duplicates traffic fails here even if no named assertion
 //! covers it.
 
-use fluereflow::FluereRecord;
+use fluereflow::{FlowRecord, StartState};
 
 use crate::net::flow::Flow;
 use pcap::{Packet, PacketHeader};
@@ -274,12 +274,15 @@ impl Flows {
     }
 
     /// The one flow matching `predicate`, failing if there is not exactly one.
-    pub fn only(&self, predicate: impl Fn(&FluereRecord) -> bool) -> &FluereRecord {
-        let matched: Vec<&FluereRecord> = self
+    ///
+    /// Predicates take the whole flow: what identifies it - addresses, ports,
+    /// protocol - lives on the key, and what it counted lives on the record.
+    pub fn only(&self, predicate: impl Fn(&Flow) -> bool) -> &FlowRecord {
+        let matched: Vec<&FlowRecord> = self
             .flows
             .iter()
+            .filter(|flow| predicate(flow))
             .map(|flow| &flow.record)
-            .filter(|r| predicate(r))
             .collect();
         assert_eq!(
             matched.len(),
@@ -290,11 +293,8 @@ impl Flows {
         matched[0]
     }
 
-    pub fn count(&self, predicate: impl Fn(&FluereRecord) -> bool) -> usize {
-        self.flows
-            .iter()
-            .filter(|flow| predicate(&flow.record))
-            .count()
+    pub fn count(&self, predicate: impl Fn(&Flow) -> bool) -> usize {
+        self.flows.iter().filter(|flow| predicate(flow)).count()
     }
 
     /// Nothing was lost, duplicated, or invented.
@@ -302,8 +302,12 @@ impl Flows {
     /// Called by every scenario, so a change that quietly miscounts fails even
     /// where no named assertion covers it.
     pub fn assert_conserved(&self) {
-        let packets: u32 = self.flows.iter().map(|flow| flow.record.d_pkts).sum();
-        let octets: usize = self.flows.iter().map(|flow| flow.record.d_octets).sum();
+        let packets: u64 = self.flows.iter().map(|flow| flow.record.packets()).sum();
+        let octets: u64 = self
+            .flows
+            .iter()
+            .map(|flow| flow.record.frame_octets())
+            .sum();
 
         assert_eq!(
             packets as usize,
@@ -311,39 +315,39 @@ impl Flows {
             "every parsed packet must appear in exactly one flow"
         );
         assert_eq!(
-            octets, self.offered_octets,
+            octets as usize, self.offered_octets,
             "flow octets must equal the bytes offered"
         );
 
         for record in self.flows.iter().map(|flow| &flow.record) {
-            assert_eq!(
-                record.in_pkts + record.out_pkts,
-                record.d_pkts,
-                "directional packet counts must sum to the total"
-            );
-            assert_eq!(
-                record.in_bytes + record.out_bytes,
-                record.d_octets,
-                "directional byte counts must sum to the total"
-            );
-            if record.in_pkts == 0 {
+            // Totals are derived, so they cannot disagree with the directions.
+            // What can still go wrong is a direction reporting bytes it never
+            // carried, which is the shape of the original double-count bug.
+            if record.reverse.packets == 0 {
                 assert_eq!(
-                    record.in_bytes, 0,
+                    record.reverse.frame_octets, 0,
                     "no reverse packets means no reverse bytes"
                 );
+                assert_eq!(record.reverse.packet_length, None);
             }
-            if record.out_pkts == 0 {
+            if record.forward.packets == 0 {
                 assert_eq!(
-                    record.out_bytes, 0,
+                    record.forward.frame_octets, 0,
                     "no forward packets means no forward bytes"
                 );
             }
             assert!(
-                record.first <= record.last,
+                record.time.start <= record.time.end,
                 "a flow cannot end before it starts"
             );
-            assert!(record.min_pkt <= record.max_pkt);
-            assert!(record.min_ttl <= record.max_ttl);
+            for direction in [&record.forward, &record.reverse] {
+                if let Some(range) = direction.packet_length {
+                    assert!(range.min <= range.max);
+                }
+            }
+            if let Some(ttl) = record.network.ttl {
+                assert!(ttl.min <= ttl.max);
+            }
         }
     }
 }
@@ -391,13 +395,19 @@ mod tests {
             1,
             "a half-close must not split the conversation"
         );
-        let flow = flows.only(|r| r.prot == 6);
-        assert_eq!(flow.d_pkts, 6);
-        assert_eq!((flow.out_pkts, flow.in_pkts), (3, 3));
-        assert_eq!(flow.fin_cnt, 2);
-        assert_eq!(flow.syn_cnt, 2);
-        assert!(!flow.mid_stream);
-        assert_eq!((flow.min_ttl, flow.max_ttl), (52, 64));
+        let flow = flows.only(|f| f.key.protocol == 6);
+        assert_eq!(flow.packets(), 6);
+        assert_eq!((flow.forward.packets, flow.reverse.packets), (3, 3));
+        assert_eq!(flow.forward.tcp_flags.fin + flow.reverse.tcp_flags.fin, 2);
+        assert_eq!(flow.forward.tcp_flags.syn + flow.reverse.tcp_flags.syn, 2);
+        assert_eq!(flow.time.start_state, StartState::SynObserved);
+        assert_eq!(
+            (
+                flow.network.ttl.expect("ttl").min,
+                flow.network.ttl.expect("ttl").max
+            ),
+            (52, 64)
+        );
     }
 
     #[test]
@@ -410,7 +420,8 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(flows.len(), 1);
-        assert_eq!(flows.only(|r| r.prot == 6).rst_cnt, 1);
+        let flow = flows.only(|f| f.key.protocol == 6);
+        assert_eq!(flow.forward.tcp_flags.rst + flow.reverse.tcp_flags.rst, 1);
     }
 
     #[test]
@@ -423,9 +434,13 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
 
-        let flow = flows.only(|r| r.prot == 6);
-        assert!(flow.mid_stream, "no SYN was ever seen");
-        assert_eq!(flow.syn_cnt, 0);
+        let flow = flows.only(|f| f.key.protocol == 6);
+        assert_eq!(
+            flow.time.start_state,
+            StartState::MidStream,
+            "no SYN was ever seen"
+        );
+        assert_eq!(flow.forward.tcp_flags.syn + flow.reverse.tcp_flags.syn, 0);
     }
 
     /// Reusing a port pair after the first conversation closed starts a new
@@ -444,7 +459,7 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(
-            flows.count(|r| r.src_port == 40_006 || r.dst_port == 40_006),
+            flows.count(|f| f.key.src_port == 40_006 || f.key.dst_port == 40_006),
             2
         );
     }
@@ -464,14 +479,9 @@ mod tests {
         flows.assert_conserved();
 
         for protocol in [1, 58] {
-            let flow = flows.only(|r| r.prot == protocol);
-            assert_eq!(flow.d_pkts, 2, "protocol {} exchange", protocol);
-            assert_eq!((flow.out_pkts, flow.in_pkts), (1, 1));
-            assert_eq!(
-                (flow.src_port, flow.dst_port),
-                (0, 0),
-                "ICMP has no endpoints"
-            );
+            let flow = flows.only(|f| f.key.protocol == protocol);
+            assert_eq!(flow.packets(), 2, "protocol {} exchange", protocol);
+            assert_eq!((flow.forward.packets, flow.reverse.packets), (1, 1));
         }
     }
 
@@ -498,9 +508,12 @@ mod tests {
         flows.assert_conserved();
 
         assert_eq!(flows.len(), 1, "one datagram is one flow");
-        let flow = flows.only(|r| r.prot == 17);
-        assert_eq!(flow.d_pkts, 2);
-        assert_eq!((flow.src_port, flow.dst_port), (50_003, 9_999));
+        assert_eq!(flows.only(|f| f.key.protocol == 17).packets(), 2);
+        assert_eq!(
+            flows.count(|f| f.key.src_port == 50_003 && f.key.dst_port == 9_999),
+            1,
+            "the later fragment joined the datagram's flow"
+        );
     }
 
     /// Tenants on different segments reuse the same private addresses, so
@@ -523,7 +536,7 @@ mod tests {
         flows.assert_conserved();
 
         assert_eq!(
-            flows.count(|r| r.src_port == 41_001),
+            flows.count(|f| f.key.src_port == 41_001),
             2,
             "two tenants with the same inner tuple must not share a record"
         );
@@ -550,7 +563,7 @@ mod tests {
         flows.assert_conserved();
 
         assert_eq!(
-            flows.count(|r| r.src_port == 41_001),
+            flows.count(|f| f.key.src_port == 41_001),
             2,
             "two segments with the same inner tuple must not share a record"
         );
@@ -580,7 +593,7 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|r| r.src_port == 41_002), 2);
+        assert_eq!(flows.count(|f| f.key.src_port == 41_002), 2);
     }
 
     /// Stacked tags identify a service and a customer separately.
@@ -602,7 +615,7 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(
-            flows.count(|r| r.src_port == 41_003),
+            flows.count(|f| f.key.src_port == 41_003),
             2,
             "same outer tag, different customer"
         );
@@ -629,13 +642,8 @@ mod tests {
         flows.assert_conserved();
 
         assert_eq!(flows.len(), 1);
-        assert_eq!(
-            (
-                flows.only(|r| r.prot == 6).out_pkts,
-                flows.only(|r| r.prot == 6).in_pkts
-            ),
-            (1, 1)
-        );
+        let flow = flows.only(|f| f.key.protocol == 6);
+        assert_eq!((flow.forward.packets, flow.reverse.packets), (1, 1));
     }
 
     /// Two GRE tunnels can share a pair of endpoints and be told apart only by
@@ -659,7 +667,7 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|r| r.src_port == 41_001), 2, "two tunnels");
+        assert_eq!(flows.count(|f| f.key.src_port == 41_001), 2, "two tunnels");
     }
 
     /// MPLS sits below IP and has no addresses of its own, but the label still
@@ -683,7 +691,11 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|r| r.src_port == 41_004), 2, "two label paths");
+        assert_eq!(
+            flows.count(|f| f.key.src_port == 41_004),
+            2,
+            "two label paths"
+        );
     }
 
     /// Subscribers on one access network share addresses and are told apart
@@ -705,7 +717,11 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|r| r.src_port == 41_005), 2, "two subscribers");
+        assert_eq!(
+            flows.count(|f| f.key.src_port == 41_005),
+            2,
+            "two subscribers"
+        );
     }
 
     /// IPsec associations are one-way and identified by their SPI, not by ports.
@@ -719,7 +735,7 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|r| r.prot == 50), 2, "two associations");
+        assert_eq!(flows.count(|f| f.key.protocol == 50), 2, "two associations");
     }
 
     #[test]
@@ -731,7 +747,7 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|r| r.prot == 132), 2);
+        assert_eq!(flows.count(|f| f.key.protocol == 132), 2);
     }
 
     /// A flow that goes quiet for longer than the timeout is closed, and later
@@ -747,7 +763,11 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|r| r.src_port == 1111), 2, "one gap, two flows");
+        assert_eq!(
+            flows.count(|f| f.key.src_port == 1111),
+            2,
+            "one gap, two flows"
+        );
     }
 
     #[test]
@@ -795,7 +815,7 @@ mod tests {
 
         assert_eq!(flows.len(), 8, "one flow per distinct conversation");
         assert_eq!(
-            flows.count(|r| r.prot == 6),
+            flows.count(|f| f.key.protocol == 6),
             3,
             "two plain TCP plus the tunnelled one"
         );

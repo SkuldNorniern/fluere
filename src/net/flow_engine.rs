@@ -2,41 +2,22 @@ use std::collections::{BTreeMap, HashMap};
 
 use log::trace;
 
-/// Widest expiry bucket, in microseconds. Coarse on purpose: flows falling due
+/// Widest expiry bucket, in nanoseconds. Coarse on purpose: flows falling due
 /// within the same second share one queue entry instead of each taking their
 /// own. A flow can idle out up to one bucket late, which is immaterial against
 /// a timeout measured in minutes. Short timeouts narrow the bucket to match, so
 /// the delay is never a large fraction of the timeout itself.
-const MAX_BUCKET: u64 = 1_000_000;
+const MAX_BUCKET: u64 = 1_000_000_000;
 
 use crate::net::flow::Flow;
-use crate::net::flows::update_flow;
 use crate::net::parser::PacketObservation;
-use crate::net::types::{Key, TcpFlags};
-use crate::types::UDFlowKey;
-use fluereflow::FluereRecord;
-
-/// Why a flow stopped being tracked.
-///
-/// Not carried on `FluereRecord` yet: that needs a schema change, and the flat
-/// record is being replaced. The engine reports it so the reason a flow ended
-/// is at least observable today.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FlowEndReason {
-    /// Both directions sent a FIN, so the connection closed normally.
-    Fin,
-    /// One side reset the connection.
-    Rst,
-    /// Nothing arrived for the flow within the idle timeout.
-    IdleTimeout,
-    /// Capture stopped while the flow was still open.
-    CaptureEnd,
-}
+use crate::net::types::Key;
+use fluereflow::{Direction, EndReason, FlowRecord, StartState, TimeResolution};
 
 /// Per-flow state the engine keeps but the record does not carry.
 #[derive(Debug, Clone, Copy)]
 struct FlowState {
-    record: FluereRecord,
+    record: FlowRecord,
     /// FIN seen travelling in the direction the flow was opened in.
     forward_fin: bool,
     /// FIN seen travelling the other way.
@@ -49,7 +30,7 @@ struct FlowState {
 }
 
 impl FlowState {
-    fn new(record: FluereRecord, scheduled: u64) -> Self {
+    fn new(record: FlowRecord, scheduled: u64) -> Self {
         FlowState {
             record,
             forward_fin: false,
@@ -75,6 +56,30 @@ pub struct AcceptOutcome {
     pub opened_flow: bool,
 }
 
+/// Open a flow for the first packet seen on it.
+///
+/// A TCP flow whose first packet has no SYN began before the capture did; other
+/// protocols have no handshake to have missed.
+fn open_record(observation: &PacketObservation) -> FlowRecord {
+    let start_state = if observation.key.protocol == 6 {
+        match observation.tcp_flags {
+            Some(flags) if flags.syn => StartState::SynObserved,
+            _ => StartState::MidStream,
+        }
+    } else {
+        StartState::NotApplicable
+    };
+
+    let mut record = FlowRecord::open(
+        observation.time(),
+        TimeResolution::Microseconds,
+        start_state,
+    );
+    record.network.dscp = observation.dscp;
+    record.network.ecn = observation.ecn;
+    record
+}
+
 pub struct FlowEngine {
     active: HashMap<Key, FlowState>,
     /// Flows due to be checked, bucketed by second. A flow is queued once when
@@ -94,7 +99,9 @@ impl FlowEngine {
     /// `flow_timeout` is an idle timeout in milliseconds; zero means flows
     /// never expire on their own, matching what the CLI documents.
     pub fn new(flow_timeout: u64) -> Self {
-        let timeout = (flow_timeout > 0).then_some(flow_timeout * 1_000);
+        // Milliseconds in, nanoseconds inside: the record's timestamps are
+        // nanoseconds, so the deadline arithmetic is too.
+        let timeout = (flow_timeout > 0).then_some(flow_timeout * 1_000_000);
 
         Self {
             active: HashMap::new(),
@@ -106,43 +113,21 @@ impl FlowEngine {
         }
     }
 
-    /// Feed one packet in directly. `accept` is what the capture modes use;
-    /// this stays for tests that drive the engine a packet at a time.
-    #[cfg(test)]
-    pub fn offer(
-        &mut self,
-        key: Key,
-        reverse: Key,
-        record: FluereRecord,
-        doctets: usize,
-        flags: TcpFlags,
-        packet_time: u64,
-    ) -> Option<FluereRecord> {
-        self.offer_with_reason(key, reverse, record, doctets, flags, packet_time)
-            .map(|(flow, _)| flow.record)
-    }
+    /// Fold one observed packet into its flow, reporting the flow if it ended.
+    fn offer_with_reason(&mut self, observation: PacketObservation) -> Option<(Flow, EndReason)> {
+        let key = observation.key;
+        let reverse = observation.reverse_key;
+        let flags = observation.tcp_flags.unwrap_or_default();
+        let at = observation.time().nanos();
 
-    /// As [`offer`](Self::offer), but also reporting why the flow ended.
-    fn offer_with_reason(
-        &mut self,
-        key: Key,
-        reverse: Key,
-        mut record: FluereRecord,
-        doctets: usize,
-        flags: TcpFlags,
-        packet_time: u64,
-    ) -> Option<(Flow, FlowEndReason)> {
         let is_reverse = match self.active.get(&key) {
             Some(_) => false,
             None => match self.active.get(&reverse) {
                 Some(_) => true,
                 None => {
-                    // No SYN on the first packet means the capture started
-                    // partway through an existing connection.
-                    record.mid_stream = record.prot == 6 && flags.syn == 0;
-
-                    let deadline = self.deadline_from(packet_time);
-                    self.active.insert(key, FlowState::new(record, deadline));
+                    let deadline = self.deadline_from(at);
+                    self.active
+                        .insert(key, FlowState::new(open_record(&observation), deadline));
                     self.enqueue(key, deadline);
                     false
                 }
@@ -152,22 +137,17 @@ impl FlowEngine {
         let flow_key = if is_reverse { reverse } else { key };
         let state = self.active.get_mut(&flow_key)?;
 
-        update_flow(
-            &mut state.record,
-            is_reverse,
-            UDFlowKey {
-                doctets,
-                pkt: record.min_pkt,
-                ttl: record.min_ttl,
-                flags,
-                time: packet_time,
-            },
-        );
+        let direction = if is_reverse {
+            Direction::Reverse
+        } else {
+            Direction::Forward
+        };
+        state.record.observe(direction, observation.facts);
 
         // A half-close only ends this direction. The flow stays open until the
         // other side closes too, so data still flowing the other way keeps
         // belonging to the same connection.
-        if flags.fin == 1 {
+        if flags.fin {
             if is_reverse {
                 state.reverse_fin = true;
             } else {
@@ -175,20 +155,22 @@ impl FlowEngine {
             }
         }
 
-        let reason = if flags.rst == 1 {
-            Some(FlowEndReason::Rst)
+        let reason = if flags.rst {
+            Some(EndReason::Rst)
         } else if state.both_halves_closed() {
-            Some(FlowEndReason::Fin)
+            Some(EndReason::Fin)
         } else {
             None
         };
 
-        // Nothing to update here: `record.last` is the authoritative deadline
-        // and the sweep reads it directly, so a packet costs no bookkeeping.
+        // Nothing else to update: the record's own end time is the authoritative
+        // deadline, and the sweep reads it directly, so a packet costs no
+        // expiry bookkeeping.
         let reason = reason?;
-        self.active
-            .remove(&flow_key)
-            .map(|state| (Flow::new(flow_key, state.record), reason))
+        self.active.remove(&flow_key).map(|mut state| {
+            state.record.close(reason);
+            (Flow::new(flow_key, state.record), reason)
+        })
     }
 
     /// Feed one observed packet into the engine.
@@ -201,19 +183,12 @@ impl FlowEngine {
         // before this packet is looked at, so traffic resuming on the same
         // tuple opens a new flow instead of reviving the old one and reporting
         // a single flow spanning the silence.
-        let expired = self.sweep_expired(observation.packet_time);
+        let expired = self.sweep_expired(observation.time().nanos());
 
         let was_active = self.active.contains_key(&observation.key)
             || self.active.contains_key(&observation.reverse_key);
 
-        let finished = self.offer_with_reason(
-            observation.key,
-            observation.reverse_key,
-            observation.record,
-            observation.doctets,
-            observation.flags,
-            observation.packet_time,
-        );
+        let finished = self.offer_with_reason(observation);
         let opened_flow = !was_active && self.active.contains_key(&observation.key);
 
         let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
@@ -260,10 +235,11 @@ impl FlowEngine {
                     continue;
                 }
 
-                let deadline = state.record.last + timeout;
+                let deadline = state.record.time.end.nanos() + timeout;
                 if deadline <= current_time {
-                    if let Some(state) = self.active.remove(&key) {
-                        trace!("flow ended: {:?}", FlowEndReason::IdleTimeout);
+                    if let Some(mut state) = self.active.remove(&key) {
+                        trace!("flow ended: {:?}", EndReason::IdleTimeout);
+                        state.record.close(EndReason::IdleTimeout);
                         expired.push(Flow::new(key, state.record));
                     }
                 } else {
@@ -286,8 +262,9 @@ impl FlowEngine {
         self.due.clear();
         self.active
             .drain()
-            .map(|(key, state)| {
-                trace!("flow ended: {:?}", FlowEndReason::CaptureEnd);
+            .map(|(key, mut state)| {
+                trace!("flow ended: {:?}", EndReason::CaptureEnd);
+                state.record.close(EndReason::CaptureEnd);
                 Flow::new(key, state.record)
             })
             .collect()
@@ -296,7 +273,7 @@ impl FlowEngine {
     /// The flows currently held open. Only the tests inspect this directly;
     /// callers go through `accept`.
     #[cfg(test)]
-    pub fn active(&self) -> HashMap<Key, FluereRecord> {
+    pub fn active(&self) -> HashMap<Key, FlowRecord> {
         self.active
             .iter()
             .map(|(key, state)| (*key, state.record))
@@ -334,252 +311,44 @@ impl FlowEngine {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
-
     use pcap::{Packet, PacketHeader};
 
     use super::*;
-    use crate::net::parser::{parse_fluereflow, parse_keys};
-    use crate::net::types::{MacAddress, VlanTags};
+    use crate::net::scenarios::{ethernet, ipv4, tcp, udp};
 
-    fn keys(protocol: u8) -> (Key, Key) {
-        let key = Key {
-            src_ip: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
-            src_port: 12_345,
-            dst_ip: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
-            dst_port: 443,
-            protocol,
-            src_mac: MacAddress::new([0; 6]),
-            dst_mac: MacAddress::new([1; 6]),
-            vlan: VlanTags::default(),
-            encapsulation: None,
+    const SYN: u8 = 0x02;
+    const FIN: u8 = 0x01;
+    const RST: u8 = 0x04;
+
+    const A: [u8; 4] = [192, 0, 2, 1];
+    const B: [u8; 4] = [198, 51, 100, 2];
+
+    /// One direction of a TCP conversation.
+    fn tcp_frame(forward: bool, flags: u8) -> Vec<u8> {
+        let (src, dst) = if forward { (A, B) } else { (B, A) };
+        let (sport, dport) = if forward {
+            (12_345, 443)
+        } else {
+            (443, 12_345)
         };
-        let reverse = Key {
-            src_ip: key.dst_ip,
-            src_port: key.dst_port,
-            dst_ip: key.src_ip,
-            dst_port: key.src_port,
-            protocol,
-            src_mac: key.dst_mac,
-            dst_mac: key.src_mac,
-            vlan: key.vlan,
-            encapsulation: None,
-        };
-        (key, reverse)
+        ethernet(0x0800, &ipv4(6, 64, src, dst, &tcp(sport, dport, flags)))
     }
 
-    fn record(protocol: u8, time: u64) -> FluereRecord {
-        FluereRecord::new(
-            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
-            IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
-            0,
-            0,
-            time,
-            time,
-            12_345,
-            443,
-            60,
-            60,
-            64,
-            64,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            protocol,
-            0,
-            false,
+    /// A UDP flow distinct from the TCP one.
+    fn udp_frame() -> Vec<u8> {
+        ethernet(
+            0x0800,
+            &ipv4(
+                17,
+                64,
+                [203, 0, 113, 5],
+                [203, 0, 113, 6],
+                &udp(53, 5353, &[]),
+            ),
         )
     }
 
-    fn flags(syn: u8, fin: u8, rst: u8) -> TcpFlags {
-        TcpFlags::new([fin, syn, rst, 0, 0, 0, 0, 0, 0])
-    }
-
-    #[test]
-    fn opens_new_tcp_flow_without_syn_and_flags_mid_stream() {
-        let (key, reverse) = keys(6);
-        let mut engine = FlowEngine::new(10);
-
-        assert!(
-            engine
-                .offer(key, reverse, record(6, 1), 60, flags(0, 0, 0), 1)
-                .is_none()
-        );
-        assert_eq!(engine.active_count(), 1);
-        assert!(engine.active().get(&key).unwrap().mid_stream);
-    }
-
-    #[test]
-    fn new_tcp_flow_with_syn_is_not_mid_stream() {
-        let (key, reverse) = keys(6);
-        let mut engine = FlowEngine::new(10);
-
-        engine.offer(key, reverse, record(6, 1), 60, flags(1, 0, 0), 1);
-        assert!(!engine.active().get(&key).unwrap().mid_stream);
-    }
-
-    #[test]
-    fn stale_expiration_does_not_evict_touched_flow() {
-        let (key, reverse) = keys(17);
-        let mut engine = FlowEngine::new(10);
-
-        engine.offer(key, reverse, record(17, 1_000), 60, flags(0, 0, 0), 1_000);
-        engine.offer(reverse, key, record(17, 5_000), 70, flags(0, 0, 0), 5_000);
-
-        assert!(engine.sweep_expired(11_000).is_empty());
-        assert_eq!(engine.active().get(&key).unwrap().in_pkts, 1);
-
-        let expired = engine.sweep_expired(15_000);
-        assert_eq!(expired.len(), 1);
-        assert_eq!(expired[0].record.d_pkts, 2);
-        assert_eq!(engine.active_count(), 0);
-    }
-
-    #[test]
-    fn a_flow_ends_once_both_directions_have_sent_a_fin() {
-        let (key, reverse) = keys(6);
-        let mut engine = FlowEngine::new(10);
-
-        engine.offer(key, reverse, record(6, 1), 60, flags(1, 0, 0), 1);
-
-        // One FIN closes only that half of the connection.
-        assert!(
-            engine
-                .offer(key, reverse, record(6, 2), 60, flags(0, 1, 0), 2)
-                .is_none(),
-            "a half-close must not end the flow"
-        );
-        assert_eq!(engine.active_count(), 1);
-
-        // Data still flowing the other way belongs to the same flow.
-        assert!(
-            engine
-                .offer(reverse, key, record(6, 3), 70, flags(0, 0, 0), 3)
-                .is_none()
-        );
-
-        let finished = engine
-            .offer(reverse, key, record(6, 4), 70, flags(0, 1, 0), 4)
-            .expect("the second FIN ends the flow");
-
-        assert_eq!(finished.d_pkts, 4, "every packet stayed in one flow");
-        assert_eq!(finished.fin_cnt, 2);
-        assert!(!finished.mid_stream);
-        assert_eq!(engine.active_count(), 0);
-        assert!(engine.sweep_expired(20_000).is_empty());
-    }
-
-    #[test]
-    fn a_reset_ends_the_flow_immediately() {
-        let (key, reverse) = keys(6);
-        let mut engine = FlowEngine::new(10);
-
-        engine.offer(key, reverse, record(6, 1), 60, flags(1, 0, 0), 1);
-        let finished = engine
-            .offer(reverse, key, record(6, 2), 70, flags(0, 0, 1), 2)
-            .expect("a RST needs no second half");
-
-        assert_eq!(finished.rst_cnt, 1);
-        assert_eq!(engine.active_count(), 0);
-    }
-
-    #[test]
-    fn a_half_closed_flow_still_leaves_on_the_idle_timeout() {
-        let (key, reverse) = keys(6);
-        let mut engine = FlowEngine::new(10);
-
-        engine.offer(key, reverse, record(6, 1_000), 60, flags(1, 0, 0), 1_000);
-        engine.offer(key, reverse, record(6, 2_000), 60, flags(0, 1, 0), 2_000);
-        assert_eq!(engine.active_count(), 1, "still waiting on the other FIN");
-
-        let expired = engine.sweep_expired(30_000);
-        assert_eq!(expired.len(), 1, "the idle timeout still applies");
-        assert_eq!(engine.active_count(), 0);
-    }
-
-    #[test]
-    fn a_udp_flow_is_unaffected_by_tcp_close_handling() {
-        let (key, reverse) = keys(17);
-        let mut engine = FlowEngine::new(10);
-
-        engine.offer(key, reverse, record(17, 1), 60, flags(0, 0, 0), 1);
-        engine.offer(reverse, key, record(17, 2), 60, flags(0, 0, 0), 2);
-
-        assert_eq!(engine.active_count(), 1);
-    }
-
-    /// Build an Ethernet + IPv4 + TCP frame for one direction of a flow.
-    /// The reverse direction swaps MAC addresses, IP addresses and ports so it
-    /// hashes to the reverse `Key` rather than opening a second flow.
-    fn tcp_frame(forward: bool, tcp_flags: u8) -> Vec<u8> {
-        let (src_mac, dst_mac) = ([0xaau8; 6], [0xbbu8; 6]);
-        let (src_ip, dst_ip) = ([192u8, 0, 2, 1], [198u8, 51, 100, 2]);
-        let (src_port, dst_port) = (12_345u16, 443u16);
-
-        let (src_mac, dst_mac) = if forward {
-            (src_mac, dst_mac)
-        } else {
-            (dst_mac, src_mac)
-        };
-        let (src_ip, dst_ip) = if forward {
-            (src_ip, dst_ip)
-        } else {
-            (dst_ip, src_ip)
-        };
-        let (src_port, dst_port) = if forward {
-            (src_port, dst_port)
-        } else {
-            (dst_port, src_port)
-        };
-
-        let mut frame = Vec::with_capacity(54);
-        frame.extend_from_slice(&dst_mac);
-        frame.extend_from_slice(&src_mac);
-        frame.extend_from_slice(&0x0800u16.to_be_bytes());
-
-        frame.extend_from_slice(&[0x45, 0x00]);
-        frame.extend_from_slice(&40u16.to_be_bytes());
-        frame.extend_from_slice(&[0, 1, 0, 0, 64, 6, 0, 0]);
-        frame.extend_from_slice(&src_ip);
-        frame.extend_from_slice(&dst_ip);
-
-        frame.extend_from_slice(&src_port.to_be_bytes());
-        frame.extend_from_slice(&dst_port.to_be_bytes());
-        frame.extend_from_slice(&[0; 8]);
-        frame.extend_from_slice(&[0x50, tcp_flags, 0x20, 0x00, 0, 0, 0, 0]);
-        frame
-    }
-
-    /// An Ethernet + IPv4 + UDP frame, for a flow distinct from `tcp_frame`.
-    fn udp_frame() -> Vec<u8> {
-        let mut frame = vec![0xaa; 6];
-        frame.extend_from_slice(&[0xbb; 6]);
-        frame.extend_from_slice(&0x0800u16.to_be_bytes());
-
-        frame.extend_from_slice(&[0x45, 0x00]);
-        frame.extend_from_slice(&28u16.to_be_bytes());
-        frame.extend_from_slice(&[0, 1, 0, 0, 64, 17, 0, 0]);
-        frame.extend_from_slice(&[203, 0, 113, 5]);
-        frame.extend_from_slice(&[203, 0, 113, 6]);
-
-        frame.extend_from_slice(&53u16.to_be_bytes());
-        frame.extend_from_slice(&5353u16.to_be_bytes());
-        frame.extend_from_slice(&8u16.to_be_bytes());
-        frame.extend_from_slice(&[0, 0]);
-        frame
-    }
-
-    /// Decode a frame the way the capture loops do.
+    /// Decode a frame the way the capture loops do. `time` is microseconds.
     fn observe_frame(frame: &[u8], time: u64) -> PacketObservation {
         let header = PacketHeader {
             ts: libc::timeval {
@@ -598,142 +367,118 @@ mod tests {
         .expect("parsable frame")
     }
 
-    /// Feed one captured frame through the real parser into the engine, the
-    /// way the capture loops do.
-    fn offer_frame(engine: &mut FlowEngine, frame: &[u8], time: u64) -> Option<FluereRecord> {
-        let header = PacketHeader {
-            ts: libc::timeval {
-                tv_sec: 0,
-                tv_usec: time as i64,
-            },
-            caplen: frame.len() as u32,
-            len: frame.len() as u32,
-        };
-        let (key, reverse) = parse_keys(Packet::new(&header, frame), 1).expect("parsable frame");
-        let (doctets, raw_flags, record) =
-            parse_fluereflow(Packet::new(&header, frame), 1).expect("parsable frame");
-        engine.offer(
-            key,
-            reverse,
-            record,
-            doctets,
-            TcpFlags::new(raw_flags),
-            time,
-        )
-    }
-
-    fn assert_counter_invariants(flow: &FluereRecord) {
-        assert_eq!(
-            flow.in_pkts + flow.out_pkts,
-            flow.d_pkts,
-            "directional packet counts must sum to the total"
-        );
-        assert_eq!(
-            flow.in_bytes + flow.out_bytes,
-            flow.d_octets,
-            "directional byte counts must sum to the total"
-        );
-        if flow.in_pkts == 0 {
-            assert_eq!(
-                flow.in_bytes, 0,
-                "no reverse packets means no reverse bytes"
-            );
-        }
-        if flow.out_pkts == 0 {
-            assert_eq!(
-                flow.out_bytes, 0,
-                "no forward packets means no forward bytes"
-            );
-        }
+    /// Feed a frame in at `time` microseconds.
+    fn accept_at(engine: &mut FlowEngine, frame: &[u8], time: u64) -> AcceptOutcome {
+        engine.accept(observe_frame(frame, time))
     }
 
     #[test]
-    fn first_packet_is_counted_exactly_once() {
-        let frame = tcp_frame(true, 0x02);
+    fn a_tcp_flow_without_a_syn_started_before_the_capture() {
         let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &tcp_frame(true, 0), 1);
 
-        offer_frame(&mut engine, &frame, 1);
-        let flow = *engine.active().values().next().expect("one active flow");
-
-        assert_eq!(flow.d_pkts, 1);
-        assert_eq!(flow.d_octets, frame.len());
-        assert_eq!((flow.out_pkts, flow.out_bytes), (1, frame.len()));
-        assert_eq!((flow.in_pkts, flow.in_bytes), (0, 0));
-        assert_counter_invariants(&flow);
+        let record = *engine.active().values().next().expect("one flow");
+        assert_eq!(record.time.start_state, StartState::MidStream);
     }
 
     #[test]
-    fn bidirectional_totals_match_the_captured_bytes() {
-        let forward = tcp_frame(true, 0x02);
-        let backward = tcp_frame(false, 0x12);
+    fn a_tcp_flow_with_a_syn_did_not() {
         let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 1);
 
-        offer_frame(&mut engine, &forward, 1);
-        offer_frame(&mut engine, &forward, 2);
-        offer_frame(&mut engine, &backward, 3);
+        let record = *engine.active().values().next().expect("one flow");
+        assert_eq!(record.time.start_state, StartState::SynObserved);
+    }
 
-        let flow = *engine.active().values().next().expect("one active flow");
+    /// UDP has no handshake, so it cannot have missed one.
+    #[test]
+    fn a_udp_flow_has_no_handshake_to_miss() {
+        let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &udp_frame(), 1);
 
-        assert_eq!(flow.d_pkts, 3);
-        assert_eq!(flow.d_octets, forward.len() * 2 + backward.len());
-        assert_eq!((flow.out_pkts, flow.out_bytes), (2, forward.len() * 2));
-        assert_eq!((flow.in_pkts, flow.in_bytes), (1, backward.len()));
-        assert_counter_invariants(&flow);
+        let record = *engine.active().values().next().expect("one flow");
+        assert_eq!(record.time.start_state, StartState::NotApplicable);
     }
 
     #[test]
-    fn accept_reports_a_newly_opened_flow_once() {
-        let frame = tcp_frame(true, 0x02);
+    fn a_flow_ends_once_both_directions_have_sent_a_fin() {
         let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 1);
 
-        let first = engine.accept(observe_frame(&frame, 1));
-        assert!(first.opened_flow, "the first packet opens the flow");
-        assert!(first.completed.is_empty());
-
-        let second = engine.accept(observe_frame(&frame, 2));
-        assert!(!second.opened_flow, "a second packet joins the same flow");
-
-        let reverse = engine.accept(observe_frame(&tcp_frame(false, 0x12), 3));
         assert!(
-            !reverse.opened_flow,
-            "the reverse direction is the same flow, not a new one"
-        );
-    }
-
-    #[test]
-    fn accept_returns_terminated_and_expired_flows_together() {
-        let mut engine = FlowEngine::new(10);
-
-        // A UDP flow that will idle out, and a TCP flow that closes properly.
-        engine.accept(observe_frame(&udp_frame(), 1_000));
-        engine.accept(observe_frame(&tcp_frame(true, 0x02), 2_000));
-        let outcome = engine.accept(observe_frame(&tcp_frame(true, 0x01), 3_000));
-        assert!(
-            outcome.completed.is_empty(),
-            "only one half of the TCP connection has closed"
+            accept_at(&mut engine, &tcp_frame(true, FIN), 2)
+                .completed
+                .is_empty(),
+            "a half-close must not end the flow"
         );
 
-        // Past the UDP flow's deadline but inside the TCP flow's, and carrying
-        // the FIN that closes the other half of the connection: one packet
-        // ends two flows, for two different reasons.
-        let outcome = engine.accept(observe_frame(&tcp_frame(false, 0x11), 12_000));
+        let outcome = accept_at(&mut engine, &tcp_frame(false, FIN), 3);
+        assert_eq!(outcome.completed.len(), 1);
         assert_eq!(
-            outcome.completed.len(),
-            2,
-            "the closed connection and the idled-out flow both come back"
+            outcome.completed[0].record.time.end_reason,
+            Some(EndReason::Fin)
         );
         assert_eq!(engine.active_count(), 0);
     }
 
     #[test]
-    fn expiry_bookkeeping_tracks_flows_not_packets() {
-        let (key, reverse) = keys(17);
+    fn a_reset_ends_the_flow_on_its_own() {
+        let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 1);
+
+        let outcome = accept_at(&mut engine, &tcp_frame(false, RST), 2);
+        assert_eq!(
+            outcome.completed[0].record.time.end_reason,
+            Some(EndReason::Rst)
+        );
+    }
+
+    #[test]
+    fn a_half_closed_flow_still_leaves_on_the_idle_timeout() {
+        let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 1_000);
+        accept_at(&mut engine, &tcp_frame(true, FIN), 2_000);
+        assert_eq!(engine.active_count(), 1, "still waiting on the other FIN");
+
+        let expired = engine.sweep_expired(30_000_000);
+        assert_eq!(expired.len(), 1);
+        assert_eq!(
+            expired[0].record.time.end_reason,
+            Some(EndReason::IdleTimeout)
+        );
+    }
+
+    #[test]
+    fn accept_reports_a_newly_opened_flow_once() {
         let mut engine = FlowEngine::new(10);
 
-        // One flow, a thousand packets. The old design queued an entry per
-        // packet and only dropped them once the clock walked past.
+        assert!(accept_at(&mut engine, &tcp_frame(true, SYN), 1).opened_flow);
+        assert!(!accept_at(&mut engine, &tcp_frame(true, 0), 2).opened_flow);
+        assert!(
+            !accept_at(&mut engine, &tcp_frame(false, 0), 3).opened_flow,
+            "the reverse direction is the same flow"
+        );
+    }
+
+    /// One packet can finish two flows for two different reasons.
+    #[test]
+    fn accept_returns_terminated_and_expired_flows_together() {
+        let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &udp_frame(), 1_000);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 2_000);
+        accept_at(&mut engine, &tcp_frame(true, FIN), 3_000);
+
+        let outcome = accept_at(&mut engine, &tcp_frame(false, FIN), 12_000);
+        assert_eq!(outcome.completed.len(), 2);
+        assert_eq!(engine.active_count(), 0);
+    }
+
+    /// The point of the bucketed design: bookkeeping tracks flows, not packets.
+    #[test]
+    fn expiry_bookkeeping_tracks_flows_not_packets() {
+        let mut engine = FlowEngine::new(10);
         for packet in 0..1_000u64 {
-            engine.offer(key, reverse, record(17, packet), 60, flags(0, 0, 0), packet);
+            accept_at(&mut engine, &udp_frame(), packet);
         }
 
         assert_eq!(engine.active_count(), 1);
@@ -746,46 +491,34 @@ mod tests {
 
     #[test]
     fn a_flow_touched_before_its_deadline_is_requeued_not_expired() {
-        let (key, reverse) = keys(17);
         let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &udp_frame(), 1_000);
+        accept_at(&mut engine, &udp_frame(), 9_000);
 
-        engine.offer(key, reverse, record(17, 1_000), 60, flags(0, 0, 0), 1_000);
-        engine.offer(key, reverse, record(17, 9_000), 60, flags(0, 0, 0), 9_000);
-
-        // Past the original deadline, but the flow was touched at 9_000.
-        assert!(engine.sweep_expired(12_000).is_empty());
+        assert!(engine.sweep_expired(12_000_000).is_empty());
         assert_eq!(engine.active_count(), 1);
         assert_eq!(engine.queued_count(), 1, "re-queued exactly once");
 
-        // Past the deadline that the later packet set.
-        assert_eq!(engine.sweep_expired(19_000).len(), 1);
+        assert_eq!(engine.sweep_expired(19_000_000).len(), 1);
         assert_eq!(engine.active_count(), 0);
     }
 
     #[test]
     fn a_closed_flow_leaves_no_entry_behind() {
-        let (key, reverse) = keys(6);
         let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 1);
+        accept_at(&mut engine, &tcp_frame(false, RST), 2);
 
-        engine.offer(key, reverse, record(6, 1), 60, flags(1, 0, 0), 1);
-        engine
-            .offer(reverse, key, record(6, 2), 60, flags(0, 0, 1), 2)
-            .expect("RST closes the flow");
-
-        // The queue entry outlives the flow; the sweep drops it on lookup.
-        assert!(engine.sweep_expired(1_000_000).is_empty());
+        assert!(engine.sweep_expired(1_000_000_000).is_empty());
         assert_eq!(engine.queued_count(), 0);
         assert_eq!(engine.active_count(), 0);
     }
 
     #[test]
     fn zero_timeout_means_flows_never_expire() {
-        let (key, reverse) = keys(17);
         let mut engine = FlowEngine::new(0);
+        accept_at(&mut engine, &udp_frame(), 1);
 
-        engine.offer(key, reverse, record(17, 1), 60, flags(0, 0, 0), 1);
-
-        assert!(engine.sweep_expired(1).is_empty());
         assert!(engine.sweep_expired(u64::MAX).is_empty());
         assert_eq!(engine.active_count(), 1);
         assert_eq!(engine.drain().len(), 1);
@@ -793,12 +526,30 @@ mod tests {
 
     #[test]
     fn drain_returns_and_clears_active_flows() {
-        let (key, reverse) = keys(17);
         let mut engine = FlowEngine::new(10);
-        engine.offer(key, reverse, record(17, 1), 60, flags(0, 0, 0), 1);
+        accept_at(&mut engine, &udp_frame(), 1);
 
-        assert_eq!(engine.drain().len(), 1);
+        let drained = engine.drain();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(
+            drained[0].record.time.end_reason,
+            Some(EndReason::CaptureEnd)
+        );
         assert_eq!(engine.active_count(), 0);
-        assert!(engine.sweep_expired(20_000).is_empty());
+    }
+
+    /// The first packet is counted once, by the engine and not the parser.
+    #[test]
+    fn the_first_packet_is_counted_exactly_once() {
+        let frame = tcp_frame(true, SYN);
+        let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &frame, 1);
+
+        let record = *engine.active().values().next().expect("one flow");
+        assert_eq!(record.packets(), 1);
+        assert_eq!(record.frame_octets(), frame.len() as u64);
+        assert_eq!(record.forward.packets, 1);
+        assert_eq!(record.reverse.packets, 0);
+        assert_eq!(record.reverse.frame_octets, 0);
     }
 }

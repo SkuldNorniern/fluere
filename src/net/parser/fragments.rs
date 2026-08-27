@@ -20,9 +20,9 @@ use super::observation::PacketObservation;
 /// traffic is in flight; the oldest entries are dropped first.
 const MAX_TRACKED: usize = 8192;
 
-/// How long a datagram's endpoints stay useful, in microseconds. Past this the
+/// How long a datagram's endpoints stay useful, in nanoseconds. Past this the
 /// rest of it is never going to arrive.
-const MAX_AGE: u64 = 30_000_000;
+const MAX_AGE: u64 = 30_000_000_000;
 
 /// Identifies one IP datagram, across all of its fragments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -68,7 +68,7 @@ impl FragmentTracker {
             identification: fragment.identification,
             protocol: fragment.protocol,
         };
-        let now = observation.packet_time;
+        let now = observation.time().nanos();
 
         if fragment.offset == 0 {
             // The first fragment carries the transport header. Remember where
@@ -171,8 +171,6 @@ fn apply(observation: &mut PacketObservation, src_port: u16, dst_port: u16) {
     observation.key.dst_port = dst_port;
     observation.reverse_key.src_port = dst_port;
     observation.reverse_key.dst_port = src_port;
-    observation.record.src_port = src_port;
-    observation.record.dst_port = dst_port;
 }
 
 #[cfg(test)]

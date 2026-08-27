@@ -1,14 +1,13 @@
 mod capture;
 mod flow;
 mod flow_engine;
-mod flows;
 pub mod live_fluereflow;
 mod offline_fluereflows;
 pub mod online_fluereflow;
 mod packet_pcap;
 pub mod parser;
 #[cfg(test)]
-mod scenarios;
+pub(crate) mod scenarios;
 pub mod types;
 
 pub use capture::CaptureDevice;

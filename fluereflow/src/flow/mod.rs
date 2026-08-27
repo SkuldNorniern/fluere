@@ -44,8 +44,9 @@ pub struct PacketFacts {
     pub frame_octets: u32,
     /// Length actually captured, which is smaller when a snaplen truncated it.
     pub captured_octets: u32,
-    /// IPv4 TTL or IPv6 hop limit. `None` for traffic with neither.
-    pub hop_limit: Option<u8>,
+    /// Time to live, or its IPv6 spelling, hop limit. `None` for traffic with
+    /// neither.
+    pub ttl: Option<u8>,
     /// TCP control bits, `None` for anything that is not TCP.
     pub tcp_flags: Option<TcpFlags>,
 }
@@ -91,8 +92,8 @@ impl FlowRecord {
         stats.observe(facts.frame_octets, facts.tcp_flags.unwrap_or_default());
 
         self.time.end = facts.time;
-        if let Some(hop_limit) = facts.hop_limit {
-            stats::observe(&mut self.network.hop_limit, hop_limit);
+        if let Some(ttl) = facts.ttl {
+            stats::observe(&mut self.network.ttl, ttl);
         }
 
         self.capture.captured_octets += u64::from(facts.captured_octets);
@@ -133,7 +134,7 @@ mod tests {
             time: at(micros),
             frame_octets,
             captured_octets: frame_octets,
-            hop_limit: Some(64),
+            ttl: Some(64),
             tcp_flags: None,
         }
     }
@@ -228,41 +229,42 @@ mod tests {
         assert_eq!(record.capture.captured_octets, 1_500);
     }
 
-    /// IPv6 reports its hop limit, where the previous model recorded zero and
-    /// left the field meaning two different things by address family.
+    /// IPv6 reports its hop limit under the same name, where the previous model
+    /// recorded zero and left the field meaning two different things by address
+    /// family.
     #[test]
-    fn hop_limits_span_both_directions() {
+    fn ttl_spans_both_directions() {
         let mut record = open();
         record.observe(
             Direction::Forward,
             PacketFacts {
-                hop_limit: Some(64),
+                ttl: Some(64),
                 ..packet(1_000, 54)
             },
         );
         record.observe(
             Direction::Reverse,
             PacketFacts {
-                hop_limit: Some(52),
+                ttl: Some(52),
                 ..packet(2_000, 54)
             },
         );
 
-        assert_eq!(record.network.hop_limit, Some(Range { min: 52, max: 64 }));
+        assert_eq!(record.network.ttl, Some(Range { min: 52, max: 64 }));
     }
 
     #[test]
-    fn traffic_without_a_hop_limit_reports_none() {
+    fn traffic_without_a_ttl_reports_none() {
         let mut record = open();
         record.observe(
             Direction::Forward,
             PacketFacts {
-                hop_limit: None,
+                ttl: None,
                 ..packet(1_000, 54)
             },
         );
 
-        assert_eq!(record.network.hop_limit, None);
+        assert_eq!(record.network.ttl, None);
     }
 
     #[test]
