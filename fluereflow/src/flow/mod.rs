@@ -18,7 +18,9 @@
 mod stats;
 mod time;
 
-pub use stats::{CaptureStats, DirectionStats, NetworkStats, Range, TcpFlagCounts, TcpFlags};
+pub use stats::{
+    CaptureStats, DirectionStats, NetworkStats, Range, TcpFlagCounts, TcpFlags, TransportStats,
+};
 pub use time::{EndReason, FlowTime, StartState, TimeResolution, Timestamp};
 
 /// Version of this record shape.
@@ -49,6 +51,8 @@ pub struct PacketFacts {
     pub ttl: Option<u8>,
     /// TCP control bits, `None` for anything that is not TCP.
     pub tcp_flags: Option<TcpFlags>,
+    /// ICMP or ICMPv6 type and code, `None` for anything else.
+    pub icmp: Option<(u8, u8)>,
 }
 
 impl PacketFacts {
@@ -66,6 +70,7 @@ pub struct FlowRecord {
     pub forward: DirectionStats,
     pub reverse: DirectionStats,
     pub network: NetworkStats,
+    pub transport: TransportStats,
     pub capture: CaptureStats,
 }
 
@@ -79,6 +84,7 @@ impl FlowRecord {
             forward: DirectionStats::default(),
             reverse: DirectionStats::default(),
             network: NetworkStats::default(),
+            transport: TransportStats::default(),
             capture: CaptureStats::default(),
         }
     }
@@ -94,6 +100,12 @@ impl FlowRecord {
         self.time.end = facts.time;
         if let Some(ttl) = facts.ttl {
             stats::observe(&mut self.network.ttl, ttl);
+        }
+
+        // The first packet's type and code: for an echo exchange that is the
+        // request, which is the useful half to report.
+        if self.transport.icmp.is_none() {
+            self.transport.icmp = facts.icmp;
         }
 
         self.capture.captured_octets += u64::from(facts.captured_octets);
@@ -136,6 +148,7 @@ mod tests {
             captured_octets: frame_octets,
             ttl: Some(64),
             tcp_flags: None,
+            icmp: None,
         }
     }
 

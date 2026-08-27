@@ -169,6 +169,7 @@ mod tests {
                 captured_octets: 54,
                 ttl: Some(64),
                 tcp_flags: Some(syn),
+                icmp: None,
             },
         );
         record.observe(
@@ -179,6 +180,7 @@ mod tests {
                 captured_octets: 120,
                 ttl: Some(52),
                 tcp_flags: Some(syn),
+                icmp: None,
             },
         );
         record

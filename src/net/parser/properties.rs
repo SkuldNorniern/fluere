@@ -59,6 +59,7 @@ pub(super) fn from_parsed(
             captured_octets,
             ttl,
             tcp_flags: tcp_flags(inner),
+            icmp: icmp_type_and_code(inner),
         },
         dscp,
         ecn,
@@ -81,6 +82,17 @@ fn tcp_flags(parsed: &ParsedPacket) -> Option<TcpFlags> {
         }),
         _ => None,
     }
+}
+
+/// ICMP or ICMPv6 type and code, for the families that have them.
+fn icmp_type_and_code(parsed: &ParsedPacket) -> Option<(u8, u8)> {
+    if let Some(icmp) = parsed.icmp.as_ref() {
+        return Some((icmp.icmp_type, icmp.icmp_code));
+    }
+    parsed
+        .icmpv6
+        .as_ref()
+        .map(|icmpv6| (icmpv6.icmp_type, icmpv6.icmp_code))
 }
 
 /// Last resort for a frame with no IP header paccel could reach.

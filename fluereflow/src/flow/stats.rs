@@ -121,6 +121,18 @@ pub struct NetworkStats {
     pub ecn: u8,
 }
 
+/// Transport details that are not endpoints.
+///
+/// ICMP has no ports; its type and code identify the message. They are recorded
+/// here, as a measurement, rather than being squeezed into fields named for
+/// ports - which is what the previous model did, and what made an echo request
+/// and its reply look like different endpoints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TransportStats {
+    /// ICMP or ICMPv6 type and code, from the flow's first packet.
+    pub icmp: Option<(u8, u8)>,
+}
+
 /// How much of the traffic the capture actually saw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureStats {

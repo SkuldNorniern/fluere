@@ -298,6 +298,7 @@ return plugin
                 captured_octets: u32::from(marker),
                 ttl: Some(64),
                 tcp_flags: None,
+                icmp: None,
             },
         );
         record
