@@ -27,11 +27,13 @@ const MAX_TRACKED: usize = 8192;
 const MAX_AGE: u64 = 30_000_000_000;
 
 /// Identifies one IP datagram, across all of its fragments.
+///
+/// IPv4 identification is 16 bits and IPv6's is 32; the wider one holds both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct DatagramId {
     source: IpAddr,
     destination: IpAddr,
-    identification: u16,
+    identification: u32,
     protocol: u8,
 }
 
@@ -61,8 +63,8 @@ impl FragmentTracker {
     /// The first fragment supplies them; a later one is rewritten to match, so
     /// both key onto the same flow. A packet that is not a fragment, and a
     /// fragment whose first part was never seen, are left as they are.
-    pub fn resolve(&mut self, observation: &mut PacketObservation, ipv4: Option<&Ipv4Fragment>) {
-        let Some(fragment) = ipv4 else {
+    pub fn resolve(&mut self, observation: &mut PacketObservation, fragment: Option<&Fragment>) {
+        let Some(fragment) = fragment else {
             return;
         };
 
@@ -140,20 +142,41 @@ impl FragmentTracker {
     }
 }
 
-/// The fragmentation fields of an IPv4 header, for a packet that is one.
+/// A packet that is part of a fragmented datagram, in either address family.
 #[derive(Debug, Clone, Copy)]
-pub struct Ipv4Fragment {
-    pub identification: u16,
+pub struct Fragment {
+    pub identification: u32,
     pub offset: u16,
     pub protocol: u8,
 }
 
-impl Ipv4Fragment {
-    /// `None` when the packet is not part of a fragmented datagram.
+impl Fragment {
+    /// The fragment a packet belongs to, or `None` if it is not fragmented.
     ///
+    /// IPv4 carries fragmentation in its own header; IPv6 carries it in an
+    /// extension header, which paccel reports separately.
+    pub fn of(parsed: &paccel::engine::ParsedPacket) -> Option<Self> {
+        if let Some(fragment) = parsed.ipv6_fragment.as_ref() {
+            // The next header after the fragment header is the transport, and
+            // `resolved_next_header` has already walked to it.
+            let protocol = parsed
+                .ipv6
+                .as_ref()
+                .map_or(0, |ipv6| ipv6.resolved_next_header);
+
+            return Some(Fragment {
+                identification: fragment.identification,
+                offset: fragment.offset,
+                protocol,
+            });
+        }
+
+        Self::of_ipv4(parsed.ipv4.as_ref()?)
+    }
+
     /// A datagram is fragmented if More Fragments is set or the offset is
     /// non-zero; a lone packet has neither.
-    pub fn of(header: &paccel::layer::network::ipv4::Ipv4Header) -> Option<Self> {
+    fn of_ipv4(header: &paccel::layer::network::ipv4::Ipv4Header) -> Option<Self> {
         const MORE_FRAGMENTS: u8 = 0x1;
 
         let more = header.flags & MORE_FRAGMENTS != 0;
@@ -161,8 +184,8 @@ impl Ipv4Fragment {
             return None;
         }
 
-        Some(Ipv4Fragment {
-            identification: header.identification,
+        Some(Fragment {
+            identification: u32::from(header.identification),
             offset: header.fragment_offset,
             protocol: header.protocol,
         })
@@ -188,7 +211,7 @@ mod tests {
     const A: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
     const B: IpAddr = IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2));
 
-    fn id(identification: u16) -> DatagramId {
+    fn id(identification: u32) -> DatagramId {
         DatagramId {
             source: A,
             destination: B,
@@ -227,7 +250,7 @@ mod tests {
         let mut tracker = FragmentTracker::new();
 
         for i in 0..(MAX_TRACKED as u32 * 2) {
-            tracker.remember(id(i as u16), 1, 2, u64::from(i));
+            tracker.remember(id(i), 1, 2, u64::from(i));
         }
 
         assert!(
@@ -239,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fragment_is_recognised_only_when_the_header_says_so() {
+    fn an_ipv4_fragment_is_recognised_only_when_the_header_says_so() {
         use paccel::layer::network::ipv4::Ipv4Header;
 
         let header = |flags: u8, offset: u16| Ipv4Header {
@@ -259,16 +282,16 @@ mod tests {
             options: None,
         };
 
-        assert!(Ipv4Fragment::of(&header(0, 0)).is_none(), "not fragmented");
+        assert!(Fragment::of_ipv4(&header(0, 0)).is_none(), "not fragmented");
         assert!(
-            Ipv4Fragment::of(&header(0x2, 0)).is_none(),
+            Fragment::of_ipv4(&header(0x2, 0)).is_none(),
             "don't fragment"
         );
 
-        let first = Ipv4Fragment::of(&header(0x1, 0)).expect("first fragment");
+        let first = Fragment::of_ipv4(&header(0x1, 0)).expect("first fragment");
         assert_eq!(first.offset, 0);
 
-        let later = Ipv4Fragment::of(&header(0, 185)).expect("later fragment");
+        let later = Fragment::of_ipv4(&header(0, 185)).expect("later fragment");
         assert_eq!(later.offset, 185);
     }
 }

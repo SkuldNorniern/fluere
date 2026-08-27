@@ -77,6 +77,18 @@ pub fn ipv4(protocol: u8, ttl: u8, src: [u8; 4], dst: [u8; 4], payload: &[u8]) -
     ipv4_with(protocol, ttl, src, dst, None, payload)
 }
 
+/// An IPv6 fragment header, followed by its payload.
+pub fn ipv6_fragment(next_header: u8, identification: u32, offset: u16, more: bool) -> Vec<u8> {
+    let offset_and_flags = (offset << 3) | u16::from(more);
+
+    let mut header = Vec::with_capacity(8);
+    header.push(next_header);
+    header.push(0);
+    header.extend_from_slice(&offset_and_flags.to_be_bytes());
+    header.extend_from_slice(&identification.to_be_bytes());
+    header
+}
+
 pub fn ipv6(next_header: u8, src: [u8; 16], dst: [u8; 16], payload: &[u8]) -> Vec<u8> {
     let mut packet = Vec::with_capacity(40 + payload.len());
     packet.extend_from_slice(&[0x60, 0, 0, 0]);
@@ -511,6 +523,36 @@ mod tests {
         assert_eq!(flows.only(|f| f.key.protocol == 17).packets(), 2);
         assert_eq!(
             flows.count(|f| f.key.ports().0 == 50_003 && f.key.ports().1 == 9_999),
+            1,
+            "the later fragment joined the datagram's flow"
+        );
+    }
+
+    /// IPv6 carries fragmentation in an extension header rather than the IP
+    /// header, so it needs its own handling - but the outcome must match IPv4's:
+    /// one datagram is one flow.
+    #[test]
+    fn the_fragments_of_an_ipv6_datagram_stay_together() {
+        const FRAGMENT_HEADER: u8 = 44;
+        let mut capture = Capture::new(600_000);
+
+        let mut first = ipv6_fragment(17, 7, 0, true);
+        first.extend_from_slice(&udp(5_000, 6_000, &[b'F'; 200]));
+
+        let mut rest = ipv6_fragment(17, 7, 26, false);
+        rest.extend_from_slice(&[b'F'; 100]);
+
+        capture
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &first)))
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &rest)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.len(), 1, "one datagram is one flow");
+        assert_eq!(flows.only(|f| f.key.protocol == 17).packets(), 2);
+        assert_eq!(
+            flows.count(|f| f.key.ports() == (5_000, 6_000)),
             1,
             "the later fragment joined the datagram's flow"
         );
