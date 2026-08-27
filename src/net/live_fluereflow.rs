@@ -167,10 +167,10 @@ fn duration_reached(start: Instant, duration: u64) -> bool {
 
 fn add_recent_flow(recent_flows: &mut Vec<FlowSummary>, key: Key) {
     recent_flows.push(FlowSummary {
-        src: Cow::from(key.src_ip.to_string()),
-        dst: Cow::from(key.dst_ip.to_string()),
-        src_port: Cow::from(key.src_port.to_string()),
-        dst_port: Cow::from(key.dst_port.to_string()),
+        src: Cow::from(key.source.to_string()),
+        dst: Cow::from(key.destination.to_string()),
+        src_port: Cow::from(key.ports().0.to_string()),
+        dst_port: Cow::from(key.ports().1.to_string()),
         protocol: Cow::from(key.protocol.to_string()),
     });
     if recent_flows.len() > MAX_RECENT_FLOWS {
@@ -186,7 +186,7 @@ async fn emit_completed_flows(
     for flow in completed {
         trace!("flow completed");
         plugin_manager
-            .process_flow_data(flow.record, (&flow).into())
+            .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -372,7 +372,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         debug!("Captured in {:?}", start.elapsed());
         for flow in engine.drain() {
             plugin_manager
-                .process_flow_data(flow.record, (&flow).into())
+                .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
                 .await
                 .map_err(|error| FluereError::Plugin(error.to_string()))?;
             records.push(flow);
@@ -687,7 +687,8 @@ mod tests {
     /// snapshot the capture loop clones on every publish.
     #[test]
     fn the_recent_flow_list_stays_bounded() {
-        use crate::net::types::{Key, MacAddress, VlanTags};
+        use crate::net::types::Key;
+        use fluereflow::{Endpoints, MacAddress, VlanTags};
         use std::net::{IpAddr, Ipv4Addr};
 
         let mut recent = Vec::new();
@@ -695,13 +696,15 @@ mod tests {
             add_recent_flow(
                 &mut recent,
                 Key {
-                    src_ip: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
-                    src_port: port,
-                    dst_ip: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
-                    dst_port: 443,
+                    source: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+                    destination: IpAddr::V4(Ipv4Addr::new(198, 51, 100, 2)),
+                    endpoints: Endpoints::Ports {
+                        source: port,
+                        destination: 443,
+                    },
                     protocol: 6,
-                    src_mac: MacAddress::new([0; 6]),
-                    dst_mac: MacAddress::new([1; 6]),
+                    source_mac: MacAddress::new([0; 6]),
+                    destination_mac: MacAddress::new([1; 6]),
                     vlan: VlanTags::default(),
                     encapsulation: None,
                 },

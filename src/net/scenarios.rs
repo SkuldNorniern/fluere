@@ -12,7 +12,7 @@
 
 use fluereflow::{FlowRecord, StartState};
 
-use crate::net::flow::Flow;
+use fluereflow::Flow;
 use pcap::{Packet, PacketHeader};
 
 use crate::net::flow_engine::FlowEngine;
@@ -459,7 +459,7 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(
-            flows.count(|f| f.key.src_port == 40_006 || f.key.dst_port == 40_006),
+            flows.count(|f| f.key.ports().0 == 40_006 || f.key.ports().1 == 40_006),
             2
         );
     }
@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(flows.len(), 1, "one datagram is one flow");
         assert_eq!(flows.only(|f| f.key.protocol == 17).packets(), 2);
         assert_eq!(
-            flows.count(|f| f.key.src_port == 50_003 && f.key.dst_port == 9_999),
+            flows.count(|f| f.key.ports().0 == 50_003 && f.key.ports().1 == 9_999),
             1,
             "the later fragment joined the datagram's flow"
         );
@@ -536,7 +536,7 @@ mod tests {
         flows.assert_conserved();
 
         assert_eq!(
-            flows.count(|f| f.key.src_port == 41_001),
+            flows.count(|f| f.key.ports().0 == 41_001),
             2,
             "two tenants with the same inner tuple must not share a record"
         );
@@ -563,7 +563,7 @@ mod tests {
         flows.assert_conserved();
 
         assert_eq!(
-            flows.count(|f| f.key.src_port == 41_001),
+            flows.count(|f| f.key.ports().0 == 41_001),
             2,
             "two segments with the same inner tuple must not share a record"
         );
@@ -593,7 +593,7 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|f| f.key.src_port == 41_002), 2);
+        assert_eq!(flows.count(|f| f.key.ports().0 == 41_002), 2);
     }
 
     /// Stacked tags identify a service and a customer separately.
@@ -615,7 +615,7 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(
-            flows.count(|f| f.key.src_port == 41_003),
+            flows.count(|f| f.key.ports().0 == 41_003),
             2,
             "same outer tag, different customer"
         );
@@ -667,7 +667,7 @@ mod tests {
 
         let flows = capture.finish();
         flows.assert_conserved();
-        assert_eq!(flows.count(|f| f.key.src_port == 41_001), 2, "two tunnels");
+        assert_eq!(flows.count(|f| f.key.ports().0 == 41_001), 2, "two tunnels");
     }
 
     /// MPLS sits below IP and has no addresses of its own, but the label still
@@ -692,7 +692,7 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(
-            flows.count(|f| f.key.src_port == 41_004),
+            flows.count(|f| f.key.ports().0 == 41_004),
             2,
             "two label paths"
         );
@@ -718,7 +718,7 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(
-            flows.count(|f| f.key.src_port == 41_005),
+            flows.count(|f| f.key.ports().0 == 41_005),
             2,
             "two subscribers"
         );
@@ -764,7 +764,7 @@ mod tests {
         let flows = capture.finish();
         flows.assert_conserved();
         assert_eq!(
-            flows.count(|f| f.key.src_port == 1111),
+            flows.count(|f| f.key.ports().0 == 1111),
             2,
             "one gap, two flows"
         );

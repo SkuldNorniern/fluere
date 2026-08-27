@@ -14,6 +14,8 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
 
+use fluereflow::Endpoints;
+
 use super::observation::PacketObservation;
 
 /// Most datagrams to track at once. Reached only when a lot of fragmented
@@ -33,8 +35,10 @@ struct DatagramId {
     protocol: u8,
 }
 
+/// The endpoints a datagram's first fragment reported, and when they were last
+/// useful.
 #[derive(Debug, Clone, Copy)]
-struct Endpoints {
+struct Remembered {
     src_port: u16,
     dst_port: u16,
     last_seen: u64,
@@ -42,7 +46,7 @@ struct Endpoints {
 
 #[derive(Debug, Default)]
 pub struct FragmentTracker {
-    datagrams: HashMap<DatagramId, Endpoints>,
+    datagrams: HashMap<DatagramId, Remembered>,
 }
 
 impl FragmentTracker {
@@ -63,8 +67,8 @@ impl FragmentTracker {
         };
 
         let id = DatagramId {
-            source: observation.key.src_ip,
-            destination: observation.key.dst_ip,
+            source: observation.key.source,
+            destination: observation.key.destination,
             identification: fragment.identification,
             protocol: fragment.protocol,
         };
@@ -73,7 +77,8 @@ impl FragmentTracker {
         if fragment.offset == 0 {
             // The first fragment carries the transport header. Remember where
             // it was going for the fragments that follow.
-            self.remember(id, observation.key.src_port, observation.key.dst_port, now);
+            let (source, destination) = observation.key.ports();
+            self.remember(id, source, destination, now);
             return;
         }
 
@@ -89,7 +94,7 @@ impl FragmentTracker {
 
         self.datagrams.insert(
             id,
-            Endpoints {
+            Remembered {
                 src_port,
                 dst_port,
                 last_seen: now,
@@ -166,11 +171,12 @@ impl Ipv4Fragment {
 
 /// Rewrite every endpoint on the observation at once, so the key, its reverse
 /// and the record cannot end up disagreeing.
-fn apply(observation: &mut PacketObservation, src_port: u16, dst_port: u16) {
-    observation.key.src_port = src_port;
-    observation.key.dst_port = dst_port;
-    observation.reverse_key.src_port = dst_port;
-    observation.reverse_key.dst_port = src_port;
+fn apply(observation: &mut PacketObservation, source: u16, destination: u16) {
+    observation.key.endpoints = Endpoints::Ports {
+        source,
+        destination,
+    };
+    observation.reverse_key.endpoints = observation.key.endpoints.reversed();
 }
 
 #[cfg(test)]

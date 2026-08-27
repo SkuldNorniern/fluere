@@ -15,13 +15,21 @@
 //! timestamps are nanoseconds, so a record means the same thing whatever
 //! machine wrote it.
 
+mod encapsulation;
+mod key;
+mod link;
 mod stats;
 mod time;
+mod vlan;
 
+pub use encapsulation::{EncapKind, Encapsulation};
+pub use key::{Endpoints, FlowKey};
+pub use link::MacAddress;
 pub use stats::{
     CaptureStats, DirectionStats, NetworkStats, Range, TcpFlagCounts, TcpFlags, TransportStats,
 };
 pub use time::{EndReason, FlowTime, StartState, TimeResolution, Timestamp};
+pub use vlan::VlanTags;
 
 /// Version of this record shape.
 ///
@@ -132,6 +140,59 @@ impl FlowRecord {
         !self.forward.is_empty() && !self.reverse.is_empty()
     }
 }
+
+/// A finished flow: what identified it, alongside what it accumulated.
+///
+/// The record holds the counters. Everything that distinguishes one flow from
+/// another lives on the key, so anything consuming flows needs both: two
+/// tenants on different segments produce records that are identical field for
+/// field, and only the key says they are different traffic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Flow {
+    pub key: FlowKey,
+    pub record: FlowRecord,
+}
+
+impl Flow {
+    pub fn new(key: FlowKey, record: FlowRecord) -> Self {
+        Flow { key, record }
+    }
+
+    /// Readable name of the protocol this flow carried, or empty when it has no
+    /// well-known one.
+    pub fn protocol_name(&self) -> &'static str {
+        if self.record.network.ethertype == Some(ETHERTYPE_ARP) {
+            return "arp";
+        }
+
+        match self.key.protocol {
+            1 => "icmp",
+            2 => "igmp",
+            6 => "tcp",
+            17 => "udp",
+            41 => "ipv6",
+            47 => "gre",
+            50 => "esp",
+            51 => "ah",
+            58 => "icmpv6",
+            89 => "ospf",
+            112 => "vrrp",
+            132 => "sctp",
+            _ => "",
+        }
+    }
+
+    /// Whether this flow carried an IP protocol at all.
+    ///
+    /// ARP does not. It used to report IP protocol 4 - IANA's number for
+    /// IP-in-IP - purely as a flow-keying marker.
+    pub fn is_ip(&self) -> bool {
+        self.record.network.ethertype != Some(ETHERTYPE_ARP)
+    }
+}
+
+/// EtherType for address resolution, which has no IP protocol number.
+pub const ETHERTYPE_ARP: u16 = 0x0806;
 
 #[cfg(test)]
 mod tests {
