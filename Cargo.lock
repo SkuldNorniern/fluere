@@ -1389,7 +1389,7 @@ dependencies = [
 [[package]]
 name = "paccel"
 version = "0.1.0"
-source = "git+https://github.com/SkuldNorniern/paccel.git?branch=main#168b0374e1ed94d58fe2a4ba1355493cf0b8a07b"
+source = "git+https://github.com/SkuldNorniern/paccel.git?rev=e9c3043#e9c3043b93861140796665773b3cd132cf133e07"
 
 [[package]]
 name = "parking_lot"
