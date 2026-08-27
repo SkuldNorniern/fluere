@@ -25,7 +25,7 @@ use util::home_cache_path;
 pub use downloader::DownloadError;
 pub use error::PluginError;
 pub use runtime::PluginRuntime;
-pub use view::{FieldValue, FlowView, SCHEMA_VERSION};
+pub use view::{FieldValue, FlowIdentity, FlowView, SCHEMA_VERSION};
 
 use fluere_config::{Config, Plugin};
 use fluereflow::FluereRecord;
@@ -69,15 +69,15 @@ pub struct PluginWorker {
 
 pub struct PluginManager {
     runtimes: Arc<Mutex<Vec<Box<dyn PluginRuntime>>>>,
-    sender: mpsc::Sender<FluereRecord>,
-    receiver: Arc<Mutex<mpsc::Receiver<FluereRecord>>>,
+    sender: mpsc::Sender<(FluereRecord, FlowIdentity)>,
+    receiver: Arc<Mutex<mpsc::Receiver<(FluereRecord, FlowIdentity)>>>,
     /// Names of the plugins that loaded, for reporting.
     loaded: Arc<Mutex<HashSet<String>>>,
 }
 
 impl PluginManager {
     pub fn new() -> Result<Self, PluginError> {
-        let (sender, receiver) = mpsc::channel::<FluereRecord>(CHANNEL_CAPACITY);
+        let (sender, receiver) = mpsc::channel::<(FluereRecord, FlowIdentity)>(CHANNEL_CAPACITY);
 
         Ok(PluginManager {
             runtimes: Arc::new(Mutex::new(runtime::available())),
@@ -153,10 +153,10 @@ impl PluginManager {
         let handle = tokio::spawn(async move {
             let mut receiver = receiver.lock().await;
 
-            while let Some(record) = receiver.recv().await {
+            while let Some((record, identity)) = receiver.recv().await {
                 // Built once and marshalled by each runtime, so the field list
                 // lives in one place however many languages are loaded.
-                let view = FlowView::new(&record);
+                let view = FlowView::new(&record, &identity);
 
                 let mut runtimes = runtimes.lock().await;
                 for runtime in runtimes.iter_mut() {
@@ -170,10 +170,17 @@ impl PluginManager {
         PluginWorker { handle }
     }
 
-    /// Queue one record for the plugins.
-    pub async fn process_flow_data(&self, data: FluereRecord) -> Result<(), PluginError> {
+    /// Queue one finished flow for the plugins.
+    ///
+    /// `identity` is what separated this flow from another with the same
+    /// addresses and ports; it lives on the flow key rather than the record.
+    pub async fn process_flow_data(
+        &self,
+        data: FluereRecord,
+        identity: FlowIdentity,
+    ) -> Result<(), PluginError> {
         self.sender
-            .send(data)
+            .send((data, identity))
             .await
             .map_err(|_| PluginError::WorkerStopped)
     }
@@ -349,7 +356,7 @@ return plugin
 
         for port in 0..25u16 {
             manager
-                .process_flow_data(record(port))
+                .process_flow_data(record(port), FlowIdentity::default())
                 .await
                 .expect("queued");
         }
@@ -410,7 +417,10 @@ return plugin
             .await
             .expect("plugins load");
         let worker = manager.start_worker();
-        manager.process_flow_data(record(21)).await.expect("queued");
+        manager
+            .process_flow_data(record(21), FlowIdentity::default())
+            .await
+            .expect("queued");
         manager.shutdown(worker).await;
 
         let written = std::fs::read_to_string(&output).expect("plugin output");
@@ -442,7 +452,10 @@ return plugin
             .expect("a plugin with no extra_arguments must not fail to load");
 
         let worker = manager.start_worker();
-        manager.process_flow_data(record(1)).await.expect("queued");
+        manager
+            .process_flow_data(record(1), FlowIdentity::default())
+            .await
+            .expect("queued");
         manager.shutdown(worker).await;
     }
 
@@ -458,7 +471,10 @@ return plugin
             .expect("a broken plugin must not fail the whole load");
 
         let worker = manager.start_worker();
-        manager.process_flow_data(record(1)).await.expect("queued");
+        manager
+            .process_flow_data(record(1), FlowIdentity::default())
+            .await
+            .expect("queued");
         manager.shutdown(worker).await;
     }
 }

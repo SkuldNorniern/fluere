@@ -15,6 +15,19 @@ pub struct Flow {
     pub record: FluereRecord,
 }
 
+impl From<&Flow> for fluere_plugin::FlowIdentity {
+    fn from(flow: &Flow) -> Self {
+        let encapsulation = flow.key.encapsulation;
+
+        fluere_plugin::FlowIdentity {
+            vlan: flow.key.vlan.tags().to_vec(),
+            encapsulation: encapsulation.map(|e| e.kind.as_str().to_string()),
+            tunnel_id: encapsulation.map_or(0, |e| e.id),
+            tunnel_endpoints: encapsulation.and_then(|e| e.outer),
+        }
+    }
+}
+
 impl Flow {
     pub fn new(key: Key, record: FluereRecord) -> Self {
         Flow { key, record }

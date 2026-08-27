@@ -154,7 +154,7 @@ async fn emit_completed_flows(
     for flow in completed {
         trace!("flow completed");
         plugin_manager
-            .process_flow_data(flow.record)
+            .process_flow_data(flow.record, (&flow).into())
             .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
@@ -350,7 +350,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         };
         for flow in remaining {
             plugin_manager
-                .process_flow_data(flow.record)
+                .process_flow_data(flow.record, (&flow).into())
                 .await
                 .map_err(|error| FluereError::Plugin(error.to_string()))?;
             records.push(flow);
