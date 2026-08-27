@@ -8,7 +8,7 @@ use crate::utils::cur_time_file;
 
 use log::{debug, trace};
 
-pub async fn pcap_capture(args: Args) -> Result<(), FluereError> {
+pub async fn write_pcap(args: Args) -> Result<(), FluereError> {
     let pcap_file = args.files.pcap.required("pcap")?;
     let interface_name = args.interface.required("interface")?;
     let duration = args.parameters.duration.required("duration")?;

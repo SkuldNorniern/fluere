@@ -1,6 +1,7 @@
-// This file contains the implementation of the live packet capture functionality.
-// It uses the pcap library to capture packets from a network interface and the fluereflow library to convert the packets into NetFlow data.
-// The data is then displayed in a terminal user interface using the ratatui library.
+//! Live capture with a terminal interface, drawn with ratatui.
+//!
+//! Same capture path as [`super::capture`], with flows displayed as they are
+//! built rather than only written out.
 use crate::{
     FluereError,
     error::OptionExt,
@@ -95,7 +96,7 @@ fn extract_live_args(arg: Args) -> Result<LiveArgs, FluereError> {
 // This function is the entry point for the live packet capture functionality.
 // It takes the command line arguments as input and calls the online_packet_capture function.
 // It returns a Result indicating whether the operation was successful.
-pub async fn packet_capture(arg: Args) -> Result<(), FluereError> {
+pub async fn run(arg: Args) -> Result<(), FluereError> {
     debug!("Starting Terminal User Interface");
 
     online_packet_capture(arg).await?;
