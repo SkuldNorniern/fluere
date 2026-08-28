@@ -92,7 +92,7 @@ pub struct FlowKey {
     /// EtherType, for traffic that is not IP.
     ///
     /// `None` for IP traffic, where the address family already says what this
-    /// is. ARP used to be keyed as IP protocol 4 — IANA's number for IP-in-IP —
+    /// is. ARP used to be keyed as IP protocol 4, IANA's number for IP-in-IP,
     /// purely as a marker, which meant an ARP flow and a genuine IP-in-IP flow
     /// between the same addresses shared a key.
     pub ethertype: Option<u16>,
