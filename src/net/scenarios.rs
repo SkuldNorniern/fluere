@@ -721,6 +721,49 @@ mod tests {
         );
     }
 
+    /// A connection ID says which connection a packet belongs to, not which
+    /// segment it is on. Two tenants can carry the same ID through a replayed
+    /// capture or a mirror that sees both copies of one connection, and
+    /// following it across the boundary would merge their traffic.
+    #[test]
+    fn quic_migration_does_not_cross_a_segment_boundary() {
+        const CID: &[u8] = &[0xab, 0xcd, 0xef, 0x02];
+        let mut capture = Capture::new(600_000);
+
+        let client = [192, 0, 2, 10];
+        let roamed = [203, 0, 113, 77];
+        let server = [198, 51, 100, 20];
+
+        // The connection is established on one tenant's VLAN.
+        capture.push(&vlan_ethernet(
+            &[100],
+            0x0800,
+            &ipv4(17, 64, server, client, &udp(443, 50_000, &quic_long_header(CID))),
+        ));
+        capture.push(&vlan_ethernet(
+            &[100],
+            0x0800,
+            &ipv4(17, 64, client, server, &udp(50_000, 443, &quic_short_header(CID))),
+        ));
+        // The same ID turns up on another tenant's VLAN.
+        capture.push(&vlan_ethernet(
+            &[200],
+            0x0800,
+            &ipv4(17, 64, roamed, server, &udp(60_000, 443, &quic_short_header(CID))),
+        ));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.len(), 2, "one flow per tenant");
+        let tenant = flows.only_flow(|f| f.key.vlan.tags() == [100]);
+        assert_eq!(tenant.record.packets(), 2);
+        assert!(
+            !tenant.record.paths.migrated(),
+            "the other tenant's packet is not this connection moving"
+        );
+    }
+
     /// A flow that stays where it started reports a single path, so `migrated`
     /// means what it says.
     #[test]
