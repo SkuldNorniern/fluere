@@ -4,11 +4,11 @@
 //! built rather than only written out.
 use crate::{
     FluereError,
-    error::OptionExt,
+    error::{CaptureError, OptionExt},
     net::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
-        observe_packet,
+        observe_packet, source,
         parser::{PacketObservation, ParserState, unix_seconds_to_timestamp},
         types::Key,
     },
@@ -152,16 +152,6 @@ impl Default for UiSnapshot {
 /// The terminal redraws every 100ms, so publishing faster than this would only
 /// copy the recent-flow list for frames nobody sees.
 const UI_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
-
-fn next_packet(cap: &mut pcap::Capture<pcap::Active>) -> Option<pcap::Packet<'_>> {
-    match cap.next_packet() {
-        Ok(packet) => Some(packet),
-        Err(error) => {
-            trace!("Error capturing packet: {}", error);
-            None
-        }
-    }
-}
 
 fn duration_reached(start: Instant, duration: u64) -> bool {
     start.elapsed() >= Duration::from_millis(duration) && duration != 0
@@ -345,21 +335,46 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         io::Error::other(format!("render task stopped during setup: {error}"))
     })??;
 
-    let exit_key_task = tokio::spawn(listen_for_exit_keys());
+    // A key press asks the capture loop to stop rather than ending the process
+    // where it stands: the shutdown that follows the loop is what drains the
+    // engine, hands the last flows to plugins, writes the final CSV and puts
+    // the terminal back.
+    let (stop_tx, stop_rx) = watch::channel(false);
+    let exit_key_task = tokio::spawn(listen_for_exit_keys(stop_tx));
     let mut export_tasks = vec![];
 
     let mut parser_state = ParserState::new();
 
     let capture_result: Result<(), FluereError> = async {
         loop {
-            let Some(packet) = next_packet(cap) else {
+            // Both stop conditions are checked before the read, so a quiet
+            // interface still honours `--duration` and still answers a key
+            // press.
+            if *stop_rx.borrow() {
+                debug!("stopping at the operator's request");
+                break;
+            }
+            if duration_reached(start, duration) {
+                break;
+            }
+
+            let observation = match source::read(cap) {
+                source::Read::Packet(packet) => {
+                    trace!("received packet");
+                    observe_packet(packet, use_mac, linktype, &mut parser_state)
+                }
+                source::Read::Timeout => continue,
+                source::Read::Eof => break,
+                source::Read::Fatal(error) => {
+                    error!("Capture failed: {}", error);
+                    return Err(FluereError::Capture(CaptureError::Pcap(error)));
+                }
+            };
+
+            let Some(observation) = observation else {
                 continue;
             };
-            trace!("received packet");
-            let Some(observation) = observe_packet(packet, use_mac, linktype, &mut parser_state)
-            else {
-                continue;
-            };
+
             process_packet(
                 observation,
                 &mut engine,
@@ -397,9 +412,6 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                 });
             }
 
-            if duration_reached(start, duration) {
-                break;
-            }
         }
 
         debug!("Captured in {:?}", start.elapsed());
@@ -658,24 +670,27 @@ fn draw_ui(
         flow_columns[5],
     );
 }
-async fn listen_for_exit_keys() -> Result<(), std::io::Error> {
+/// Watch for the keys that end a capture, and say so rather than exiting.
+///
+/// Ending the process here would skip the shutdown the capture loop runs on the
+/// way out: flows still open would never reach the plugins or the CSV, and the
+/// terminal would be left in raw mode on the alternate screen.
+async fn listen_for_exit_keys(stop: watch::Sender<bool>) -> Result<(), std::io::Error> {
     loop {
         if event::poll(std::time::Duration::from_millis(100))?
             && let event::Event::Key(KeyEvent {
                 code, modifiers, ..
             }) = event::read()?
         {
-            match code {
-                KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => {
-                    debug!("Exiting due to control-c");
-                    std::process::exit(0);
-                }
-                KeyCode::Char('q') | KeyCode::Char('Q') => {
-                    debug!("Exiting due to q/Q");
-                    std::process::exit(0);
-                }
-                _ => {}
-            }
+            let requested = match code {
+                KeyCode::Char('c') if modifiers == event::KeyModifiers::CONTROL => "control-c",
+                KeyCode::Char('q') | KeyCode::Char('Q') => "q",
+                _ => continue,
+            };
+
+            debug!("stop requested with {}", requested);
+            let _ = stop.send(true);
+            return Ok(());
         }
     }
 }

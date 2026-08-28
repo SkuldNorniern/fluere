@@ -2,6 +2,7 @@ pub mod capture;
 pub mod capture_tui;
 pub mod convert;
 mod device;
+mod source;
 mod flow_engine;
 pub mod identity;
 mod write_pcap;
