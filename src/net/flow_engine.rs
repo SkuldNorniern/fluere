@@ -407,7 +407,7 @@ mod tests {
         let header = PacketHeader {
             ts: libc::timeval {
                 tv_sec: 0,
-                tv_usec: time as i64,
+                tv_usec: time as _,
             },
             caplen: frame.len() as u32,
             len: frame.len() as u32,

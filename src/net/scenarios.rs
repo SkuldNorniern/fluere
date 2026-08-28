@@ -257,8 +257,11 @@ impl Capture {
 
         let header = PacketHeader {
             ts: libc::timeval {
-                tv_sec: (time / 1_000_000) as i64,
-                tv_usec: (time % 1_000_000) as i64,
+                // Inferred casts: these fields differ in width by platform,
+                // 64 bits on Linux, 32 for `tv_usec` on Darwin, 32 for both on
+                // Windows.
+                tv_sec: (time / 1_000_000) as _,
+                tv_usec: (time % 1_000_000) as _,
             },
             caplen: frame.len() as u32,
             len: frame.len() as u32,
