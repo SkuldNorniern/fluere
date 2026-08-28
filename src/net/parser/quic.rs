@@ -135,6 +135,17 @@ impl QuicTracker {
                 return false;
             }
 
+            // A connection ID says which connection a packet belongs to, not
+            // which segment it is on. Two tenants can carry the same ID —
+            // through a replayed capture or a mirror that sees both copies of
+            // one connection — and reattributing across the boundary would
+            // merge their traffic, which is exactly what keying on the VLAN
+            // and tunnel exists to prevent. Migration within a segment is what
+            // gets followed.
+            if !same_segment(&key, &observation.key) {
+                return false;
+            }
+
             observation.key = key;
             observation.reverse_key = reverse;
             return true;
@@ -168,6 +179,11 @@ impl QuicTracker {
     fn tracked(&self) -> usize {
         self.connections.len()
     }
+}
+
+/// Whether two keys describe traffic on the same VLAN and tunnel.
+fn same_segment(remembered: &Key, observed: &Key) -> bool {
+    remembered.vlan == observed.vlan && remembered.encapsulation == observed.encapsulation
 }
 
 /// The bytes a UDP datagram carried, which for QUIC is the packet itself.
