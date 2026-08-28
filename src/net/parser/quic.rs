@@ -11,7 +11,9 @@
 //! nobody has seen before can still be attributed to the connection it belongs
 //! to.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+
+use log::trace;
 
 use paccel::engine::ParsedPacket;
 use paccel::layer::application::quic::parse_quic_short_header;
@@ -39,22 +41,34 @@ struct Destination {
     /// That key reversed, so the engine can match either direction.
     reverse: Key,
     last_seen: u64,
+    /// Whether more than one connection has claimed this ID.
+    ///
+    /// A connection ID identifies a connection to the endpoint that issued it.
+    /// It is not unique across a capture, so two connections can hold the same
+    /// one. When that happens there is no way to tell which of them a later
+    /// packet belongs to, and attributing it to either would merge two
+    /// conversations. Failing to follow a migration is the smaller mistake, so
+    /// an ambiguous ID stops being used.
+    ambiguous: bool,
 }
 
 #[derive(Debug, Default)]
 pub struct QuicTracker {
     connections: HashMap<Vec<u8>, Destination>,
-    /// Connection ID lengths seen so far. A short header does not carry the
-    /// length, so the only way to read one is to try the lengths that
-    /// handshakes have actually used.
-    lengths: HashSet<usize>,
+    /// Connection ID lengths seen so far, longest first. A short header does
+    /// not carry the length, so the only way to read one is to try the lengths
+    /// that handshakes have actually used.
+    ///
+    /// Kept sorted as it is built rather than collected and sorted per packet:
+    /// every candidate short header used to allocate and sort a fresh list.
+    lengths: Vec<usize>,
 }
 
 impl QuicTracker {
     pub fn new() -> Self {
         QuicTracker {
             connections: HashMap::new(),
-            lengths: HashSet::new(),
+            lengths: Vec::new(),
         }
     }
 
@@ -90,17 +104,34 @@ impl QuicTracker {
             return;
         }
 
-        if self.connections.len() >= MAX_TRACKED && !self.connections.contains_key(cid) {
-            self.evict(now);
+        // The same connection re-announcing its ID is normal. A different one
+        // claiming it is not, and there is no way to tell the two apart later,
+        // so the ID stops being used rather than pointing at whichever arrived
+        // last.
+        if let Some(existing) = self.connections.get_mut(cid) {
+            if existing.key != key || existing.reverse != reverse {
+                trace!("connection ID claimed by a second connection, no longer usable");
+                existing.ambiguous = true;
+            }
+            existing.last_seen = existing.last_seen.max(now);
+            return;
         }
 
-        self.lengths.insert(cid.len());
+        if self.connections.len() >= MAX_TRACKED {
+            super::expiry::make_room(&mut self.connections, now, MAX_AGE, |entry| entry.last_seen);
+        }
+
+        if let Err(at) = self.lengths.binary_search_by(|len| cid.len().cmp(len)) {
+            self.lengths.insert(at, cid.len());
+        }
+
         self.connections.insert(
             cid.to_vec(),
             Destination {
                 key,
                 reverse,
                 last_seen: now,
+                ambiguous: false,
             },
         );
     }
@@ -111,10 +142,7 @@ impl QuicTracker {
         // Try only the lengths handshakes have used, longest first: a short ID
         // can be a prefix of a longer one, and the longer match is the specific
         // connection.
-        let mut lengths: Vec<usize> = self.lengths.iter().copied().collect();
-        lengths.sort_unstable_by(|a, b| b.cmp(a));
-
-        for length in lengths {
+        for length in self.lengths.clone() {
             let Some(header) = parse_quic_short_header(payload, length) else {
                 continue;
             };
@@ -127,7 +155,14 @@ impl QuicTracker {
                 self.connections.remove(&stale);
                 return false;
             }
-            destination.last_seen = now;
+            if destination.ambiguous {
+                // Two connections hold this ID. Leave the packet on the flow
+                // its own addresses name.
+                return false;
+            }
+            // Never backwards, for the same reason the record's end time is
+            // not: out-of-order delivery would age the entry out early.
+            destination.last_seen = destination.last_seen.max(now);
 
             let (key, reverse) = (destination.key, destination.reverse);
             if key == observation.key {
@@ -154,26 +189,6 @@ impl QuicTracker {
         false
     }
 
-    /// Drop everything past its age, and if that frees nothing, the single
-    /// oldest entry, so an insert always has room.
-    fn evict(&mut self, now: u64) {
-        let before = self.connections.len();
-        self.connections
-            .retain(|_, seen| now.saturating_sub(seen.last_seen) <= MAX_AGE);
-
-        if self.connections.len() < before {
-            return;
-        }
-
-        if let Some(oldest) = self
-            .connections
-            .iter()
-            .min_by_key(|(_, seen)| seen.last_seen)
-            .map(|(cid, _)| cid.clone())
-        {
-            self.connections.remove(&oldest);
-        }
-    }
 
     #[cfg(test)]
     fn tracked(&self) -> usize {
@@ -228,6 +243,74 @@ mod tests {
         }
     }
 
+    /// A connection ID is unique to the endpoint that issued it, not to the
+    /// capture. Two connections holding the same one must not be merged: a
+    /// wrong attribution is worse than a missed migration.
+    #[test]
+    fn an_id_claimed_by_two_connections_stops_being_used() {
+        let mut tracker = QuicTracker::new();
+        let first = key();
+        let mut second = key();
+        second.source = "203.0.113.9".parse().expect("valid address");
+
+        tracker.remember(&[1, 2, 3, 4], first, first.reversed(), 1_000);
+        tracker.remember(&[1, 2, 3, 4], second, second.reversed(), 2_000);
+
+        let destination = tracker
+            .connections
+            .get(&vec![1, 2, 3, 4])
+            .expect("still tracked");
+        assert!(destination.ambiguous, "neither connection owns it now");
+    }
+
+    /// The same connection re-announcing its ID during a handshake is ordinary
+    /// and must not poison it.
+    #[test]
+    fn a_repeated_announcement_from_one_connection_is_fine() {
+        let mut tracker = QuicTracker::new();
+        let flow = key();
+
+        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 1_000);
+        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 2_000);
+
+        let destination = tracker
+            .connections
+            .get(&vec![1, 2, 3, 4])
+            .expect("still tracked");
+        assert!(!destination.ambiguous);
+        assert_eq!(destination.last_seen, 2_000);
+    }
+
+    /// Out-of-order delivery must not age an entry out early.
+    #[test]
+    fn a_late_delivered_packet_does_not_age_an_entry() {
+        let mut tracker = QuicTracker::new();
+        let flow = key();
+
+        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 9_000);
+        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 3_000);
+
+        let destination = tracker
+            .connections
+            .get(&vec![1, 2, 3, 4])
+            .expect("still tracked");
+        assert_eq!(destination.last_seen, 9_000, "the latest packet seen");
+    }
+
+    /// Lengths are tried longest first, so a short ID that is a prefix of a
+    /// longer one does not shadow the more specific match.
+    #[test]
+    fn connection_id_lengths_are_kept_longest_first() {
+        let mut tracker = QuicTracker::new();
+        let flow = key();
+
+        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 1_000);
+        tracker.remember(&[9; 8], flow, flow.reversed(), 1_000);
+        tracker.remember(&[7; 6], flow, flow.reversed(), 1_000);
+
+        assert_eq!(tracker.lengths, vec![8, 6, 4]);
+    }
+
     #[test]
     fn an_empty_connection_id_is_not_tracked() {
         let mut tracker = QuicTracker::new();
@@ -267,8 +350,6 @@ mod tests {
         tracker.remember(&[1, 2, 3, 4], key(), key().reversed(), 1_000);
         tracker.remember(&[9; 8], key(), key().reversed(), 1_000);
 
-        let mut lengths: Vec<usize> = tracker.lengths.iter().copied().collect();
-        lengths.sort_unstable();
-        assert_eq!(lengths, vec![4, 8]);
+        assert_eq!(tracker.lengths, vec![8, 4], "longest first");
     }
 }

@@ -103,7 +103,7 @@ impl FragmentTracker {
 
     fn remember(&mut self, id: DatagramId, endpoints: Endpoints, now: u64) {
         if self.datagrams.len() >= MAX_TRACKED && !self.datagrams.contains_key(&id) {
-            self.evict_oldest(now);
+            super::expiry::make_room(&mut self.datagrams, now, MAX_AGE, |entry| entry.last_seen);
         }
 
         self.datagrams.insert(
@@ -122,30 +122,12 @@ impl FragmentTracker {
             return None;
         }
 
-        remembered.last_seen = now;
+        // Never backwards: an out-of-order fragment arriving with an earlier
+        // timestamp would otherwise age the entry out early.
+        remembered.last_seen = remembered.last_seen.max(now);
         Some(remembered.endpoints)
     }
 
-    /// Drop everything past its age, and if that freed nothing, the single
-    /// oldest entry, so an insert always has room.
-    fn evict_oldest(&mut self, now: u64) {
-        let before = self.datagrams.len();
-        self.datagrams
-            .retain(|_, seen| now.saturating_sub(seen.last_seen) <= MAX_AGE);
-
-        if self.datagrams.len() < before {
-            return;
-        }
-
-        if let Some(oldest) = self
-            .datagrams
-            .iter()
-            .min_by_key(|(_, seen)| seen.last_seen)
-            .map(|(id, _)| *id)
-        {
-            self.datagrams.remove(&oldest);
-        }
-    }
 
     #[cfg(test)]
     fn tracked(&self) -> usize {
