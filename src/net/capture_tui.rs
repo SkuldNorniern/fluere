@@ -358,31 +358,33 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                 break;
             }
 
-            let observation = match source::read(cap) {
+            match source::read(cap) {
                 source::Read::Packet(packet) => {
                     trace!("received packet");
-                    observe_packet(packet, use_mac, linktype, &mut parser_state)
+                    if let Some(observation) =
+                        observe_packet(packet, use_mac, linktype, &mut parser_state)
+                    {
+                        process_packet(
+                            observation,
+                            &mut engine,
+                            &mut recent_flows,
+                            &plugin_manager,
+                            &mut records,
+                        )
+                        .await?;
+                    }
                 }
-                source::Read::Timeout => continue,
+                // A quiet interface still needs its export and its redraw.
+                // Skipping them here froze the progress gauge exactly when
+                // someone would be watching it to see whether anything was
+                // happening.
+                source::Read::Timeout => {}
                 source::Read::Eof => break,
                 source::Read::Fatal(error) => {
                     error!("Capture failed: {}", error);
                     return Err(FluereError::Capture(CaptureError::Pcap(error)));
                 }
-            };
-
-            let Some(observation) = observation else {
-                continue;
-            };
-
-            process_packet(
-                observation,
-                &mut engine,
-                &mut recent_flows,
-                &plugin_manager,
-                &mut records,
-            )
-            .await?;
+            }
 
             (file, file_path) = export_if_due(
                 &mut records,
@@ -400,7 +402,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
             .await?;
 
             // Republished at a bounded rate: the terminal redraws ten times a
-            // second, so copying the recent-flow list per packet would be work
+            // second, so copying the recent-flow list per read would be work
             // for frames nobody sees.
             if last_publish.elapsed() >= UI_PUBLISH_INTERVAL {
                 last_publish = Instant::now();
