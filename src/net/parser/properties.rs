@@ -47,6 +47,18 @@ pub(super) fn from_parsed(
             Some(ipv6.traffic_class >> 2),
             Some(ipv6.traffic_class & 0x03),
         )
+    } else if let Some(ipv4) = parsed.ipv4.as_ref() {
+        // A tunnel whose payload did not decode. The flow is keyed on this
+        // header's addresses, so this header's differentiated services are the
+        // flow's, and reporting none of them said the flow had no IP header at
+        // all when it plainly does.
+        (Some(ipv4.ttl), Some(ipv4.dscp), Some(ipv4.ecn))
+    } else if let Some(ipv6) = parsed.ipv6.as_ref() {
+        (
+            Some(ipv6.hop_limit),
+            Some(ipv6.traffic_class >> 2),
+            Some(ipv6.traffic_class & 0x03),
+        )
     } else {
         // ARP and anything the fallback recovered: no IP header of its own, so
         // no differentiated services either. Reporting zero here made a real
