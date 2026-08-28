@@ -29,9 +29,9 @@ pub struct PacketObservation {
     /// What this packet measured.
     pub facts: PacketFacts,
     /// Differentiated services code point, from this packet's IP header.
-    pub dscp: u8,
+    pub dscp: Option<u8>,
     /// Explicit congestion notification bits, from this packet's IP header.
-    pub ecn: u8,
+    pub ecn: Option<u8>,
     /// EtherType of the traffic this packet carried.
     /// The endpoint this packet physically arrived from, before any
     /// reattribution to a flow its own addresses do not name.
@@ -192,7 +192,8 @@ mod tests {
             "the SYN bit is reported"
         );
         assert_eq!(
-            observation.dscp, 10,
+            observation.dscp,
+            Some(10),
             "the DSCP field, not a shifted ToS byte"
         );
     }

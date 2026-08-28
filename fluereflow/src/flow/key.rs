@@ -160,17 +160,21 @@ impl FlowKey {
         }
     }
 
-    /// `4` or `6`.
+    /// `4` or `6`, or `None` for traffic that is not IP.
     ///
     /// Derived rather than stored: the addresses already carry it, and a stored
     /// copy could disagree with them. Reported so consumers need not inspect an
     /// address to find out.
-    pub fn ip_version(&self) -> u8 {
-        if self.source.is_ipv6() {
-            6
-        } else {
-            4
+    ///
+    /// ARP has no IP version. Its addresses are the sender and target protocol
+    /// addresses, which are IPv4 addresses inside an ARP packet, so reading the
+    /// family off them said 4 for a packet that is not IP at all.
+    pub fn ip_version(&self) -> Option<u8> {
+        if self.ethertype.is_some() {
+            return None;
         }
+
+        Some(if self.source.is_ipv6() { 6 } else { 4 })
     }
 }
 
@@ -242,10 +246,20 @@ mod tests {
     #[test]
     fn the_ip_version_follows_the_addresses() {
         let mut key = key(Endpoints::None);
-        assert_eq!(key.ip_version(), 4);
+        assert_eq!(key.ip_version(), Some(4));
 
         key.source = IpAddr::V6("2001:db8::1".parse().expect("valid address"));
-        assert_eq!(key.ip_version(), 6);
+        assert_eq!(key.ip_version(), Some(6));
+    }
+
+    /// ARP addresses are IPv4 addresses, so reading the family off them said
+    /// version 4 for a packet that is not IP at all.
+    #[test]
+    fn traffic_that_is_not_ip_has_no_ip_version() {
+        let mut key = key(Endpoints::None);
+        key.ethertype = Some(super::super::ETHERTYPE_ARP);
+
+        assert_eq!(key.ip_version(), None);
     }
 
     #[test]

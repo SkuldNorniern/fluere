@@ -2,6 +2,28 @@
 
 use std::net::IpAddr;
 
+use super::Direction;
+
+/// One endpoint a flow was seen arriving from, and which side of the flow it
+/// was.
+///
+/// The direction is what says whether the client moved or the server did. An
+/// endpoint on its own leaves that to be guessed from the addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PathChange {
+    pub direction: Direction,
+    pub endpoint: (IpAddr, u16),
+}
+
+impl std::fmt::Display for PathChange {
+    /// `fwd:203.0.113.77:60000`. One spelling for the CSV and the plugin view,
+    /// so the two cannot drift.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (address, port) = self.endpoint;
+        write!(f, "{}:{}:{}", self.direction.as_str(), address, port)
+    }
+}
+
 /// Most endpoints to remember for one flow.
 ///
 /// A connection that changes address more than a few times is rare, and the
@@ -19,13 +41,13 @@ const MAX_PATHS: usize = 4;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Paths {
     count: u8,
-    endpoints: [Option<(IpAddr, u16)>; MAX_PATHS],
+    endpoints: [Option<PathChange>; MAX_PATHS],
     /// The endpoint seen most recently, kept even once the list is full.
     ///
     /// Without it a flow that moves past the list and then stays put looks
     /// like a new move on every packet, because nothing it could be compared
     /// against was retained.
-    latest: Option<(IpAddr, u16)>,
+    latest: Option<PathChange>,
 }
 
 impl Paths {
@@ -36,15 +58,19 @@ impl Paths {
     /// rather than packets. Once full, later paths are dropped from the list:
     /// the count still says how far the flow moved, and the first few say
     /// where to.
-    pub fn observe(&mut self, endpoint: (IpAddr, u16)) {
-        if self.latest == Some(endpoint) || self.endpoints().contains(&endpoint) {
+    pub fn observe(&mut self, direction: Direction, endpoint: (IpAddr, u16)) {
+        let change = PathChange {
+            direction,
+            endpoint,
+        };
+        if self.latest == Some(change) || self.endpoints().contains(&change) {
             return;
         }
-        self.latest = Some(endpoint);
+        self.latest = Some(change);
 
         let seen = self.count as usize;
         if seen < MAX_PATHS {
-            self.endpoints[seen] = Some(endpoint);
+            self.endpoints[seen] = Some(change);
         }
         self.count = self.count.saturating_add(1);
     }
@@ -60,8 +86,8 @@ impl Paths {
         self.count > 0
     }
 
-    /// The endpoints, in the order they were first seen.
-    pub fn endpoints(&self) -> Vec<(IpAddr, u16)> {
+    /// The path changes, in the order they were first seen.
+    pub fn endpoints(&self) -> Vec<PathChange> {
         self.endpoints.iter().flatten().copied().collect()
     }
 }
@@ -76,6 +102,13 @@ mod tests {
         (IpAddr::V4(Ipv4Addr::new(192, 0, 2, last)), port)
     }
 
+    fn moved(last: u8, port: u16) -> PathChange {
+        PathChange {
+            direction: Direction::Forward,
+            endpoint: endpoint(last, port),
+        }
+    }
+
     #[test]
     fn a_flow_that_never_moved_records_nothing() {
         let paths = Paths::default();
@@ -88,18 +121,18 @@ mod tests {
     #[test]
     fn moving_records_where_it_moved_to() {
         let mut paths = Paths::default();
-        paths.observe(endpoint(77, 60_000));
+        paths.observe(Direction::Forward, endpoint(77, 60_000));
 
         assert_eq!(paths.count(), 2, "the original plus the new one");
         assert!(paths.migrated());
-        assert_eq!(paths.endpoints(), vec![endpoint(77, 60_000)]);
+        assert_eq!(paths.endpoints(), vec![moved(77, 60_000)]);
     }
 
     #[test]
     fn repeated_arrivals_from_one_endpoint_count_once() {
         let mut paths = Paths::default();
-        paths.observe(endpoint(77, 60_000));
-        paths.observe(endpoint(77, 60_000));
+        paths.observe(Direction::Forward, endpoint(77, 60_000));
+        paths.observe(Direction::Forward, endpoint(77, 60_000));
 
         assert_eq!(paths.count(), 2);
     }
@@ -109,8 +142,8 @@ mod tests {
     #[test]
     fn a_new_port_on_the_same_address_is_a_new_path() {
         let mut paths = Paths::default();
-        paths.observe(endpoint(10, 50_000));
-        paths.observe(endpoint(10, 51_000));
+        paths.observe(Direction::Forward, endpoint(10, 50_000));
+        paths.observe(Direction::Forward, endpoint(10, 51_000));
 
         assert_eq!(paths.count(), 3);
     }
@@ -122,12 +155,12 @@ mod tests {
     fn settling_on_an_endpoint_past_the_list_still_counts_once() {
         let mut paths = Paths::default();
         for port in 0..MAX_PATHS as u16 {
-            paths.observe(endpoint(10, port));
+            paths.observe(Direction::Forward, endpoint(10, port));
         }
 
         let settled = endpoint(77, 60_000);
         for _ in 0..100 {
-            paths.observe(settled);
+            paths.observe(Direction::Forward, settled);
         }
 
         assert_eq!(paths.endpoints().len(), MAX_PATHS, "the list is still full");
@@ -143,7 +176,7 @@ mod tests {
     fn the_recorded_endpoints_are_capped_but_the_count_is_not() {
         let mut paths = Paths::default();
         for port in 0..20u16 {
-            paths.observe(endpoint(10, port));
+            paths.observe(Direction::Forward, endpoint(10, port));
         }
 
         assert_eq!(paths.endpoints().len(), MAX_PATHS, "the list is bounded");

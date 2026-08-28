@@ -51,7 +51,7 @@ pub fn paths(flow: &Flow) -> String {
         .paths
         .endpoints()
         .iter()
-        .map(|(address, port)| format!("{}:{}", address, port))
+        .map(|change| change.to_string())
         .collect::<Vec<_>>()
         .join(";")
 }

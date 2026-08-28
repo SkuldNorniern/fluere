@@ -45,7 +45,7 @@ impl Endpoints {
 }
 
 /// Columns, in order. Kept next to the row builder so the two cannot drift.
-const COLUMNS: [&str; 46] = [
+const COLUMNS: [&str; 48] = [
     "source",
     "destination",
     "ip_version",
@@ -60,6 +60,8 @@ const COLUMNS: [&str; 46] = [
     "ethertype",
     "packets",
     "frame_octets",
+    "captured_octets",
+    "truncated",
     "fwd_packets",
     "rev_packets",
     "fwd_octets",
@@ -145,7 +147,8 @@ fn row(flow: &Flow) -> Vec<String> {
     vec![
         key.source.to_string(),
         key.destination.to_string(),
-        key.ip_version().to_string(),
+        key.ip_version()
+            .map_or_else(String::new, |version| version.to_string()),
         endpoints.ports.0.clone(),
         endpoints.ports.1.clone(),
         endpoints.icmp_type,
@@ -162,6 +165,11 @@ fn row(flow: &Flow) -> Vec<String> {
         crate::net::identity::ethertype(flow),
         record.packets().to_string(),
         record.frame_octets().to_string(),
+        // What the capture actually kept, against the wire length above. A
+        // short snaplen makes the two differ, and `truncated` says whether it
+        // did.
+        record.capture.captured_octets.to_string(),
+        u8::from(record.capture.truncated).to_string(),
         record.forward.packets.to_string(),
         record.reverse.packets.to_string(),
         record.forward.frame_octets.to_string(),
@@ -190,13 +198,19 @@ fn row(flow: &Flow) -> Vec<String> {
         both(flags.ece, reverse_flags.ece),
         both(flags.cwr, reverse_flags.cwr),
         both(flags.ns, reverse_flags.ns),
-        record.network.dscp.to_string(),
-        record.network.ecn.to_string(),
-        format!("{:?}", record.time.start_state).to_lowercase(),
+        record
+            .network
+            .dscp
+            .map_or_else(String::new, |dscp| dscp.to_string()),
+        record
+            .network
+            .ecn
+            .map_or_else(String::new, |ecn| ecn.to_string()),
+        record.time.start_state.as_str().to_string(),
         record
             .time
             .end_reason
-            .map_or_else(String::new, |reason| format!("{:?}", reason).to_lowercase()),
+            .map_or_else(String::new, |reason| reason.as_str().to_string()),
         record.paths.count().to_string(),
         crate::net::identity::paths(flow),
         crate::net::identity::vlan(flow),
