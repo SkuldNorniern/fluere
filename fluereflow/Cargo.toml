@@ -1,12 +1,12 @@
 [package]
 name = "fluereflow"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
-description = "Customized flow feature inspired by netflow and cicflowmeter."
+description = "The FluereFlow record: a bidirectional network flow as a passive capture can observe it."
 readme = "README.md"
 license = "Apache-2.0"
-keywords = ["netflow", "fluereflow","fluere", "network"]
+keywords = ["fluereflow", "fluere", "flow", "network", "pcap"]
 categories = ["network-programming"]
 repository = "https://github.com/SkuldNorniern/fluere"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
