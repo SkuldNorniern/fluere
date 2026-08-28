@@ -15,7 +15,7 @@ jobs:
 
     steps:
       # ...
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install libpcap
         run: sudo apt-get install -y libpcap-dev
@@ -24,7 +24,7 @@ jobs:
       - name: Install rpm generator
         run: cargo install cargo-generate-rpm
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2.2.1
+        uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test --workspace --verbose
       - name: Run Clippy
@@ -39,12 +39,12 @@ jobs:
         run: cargo generate-rpm && mv target/generate-rpm/fluere-*.rpm target/generate-rpm/fluere_latest_x86_64.rpm
 
 
-      - uses: "marvinpinto/action-automatic-releases@latest"
+      # marvinpinto/action-automatic-releases is unmaintained.
+      - uses: softprops/action-gh-release@v2
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "latest"
+          tag_name: latest
+          name: Development Build
           prerelease: true
-          title: "Development Build"
           files: |
             target/debian/fluere_*.deb
             target/generate-rpm/fluere_*.rpm
