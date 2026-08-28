@@ -1,30 +1,129 @@
----
-name: "tagged-release"
+name: tagged-release
 
 on:
   push:
     tags:
       - "v*"
 
-jobs:
-  pre-release:
-    name: "Pre Release"
-    runs-on: "ubuntu-latest"
+permissions:
+  contents: write
 
+jobs:
+  # The tag is the release, so it gets checked on every platform the README
+  # claims before anything is published. The old version tested on Ubuntu and
+  # attached no binaries at all.
+  check:
+    name: check ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      # ...
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install libpcap
-        run: sudo apt-get install -y libpcap-dev
-      - name: Build
-        run: cargo build --release --verbose
-      - name: Run tests
-        run: cargo test --workspace --verbose
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev
+
+      - name: Install Npcap SDK
+        if: runner.os == 'Windows'
+        run: |
+          curl -L -o npcap-sdk.zip https://npcap.com/dist/npcap-sdk-1.13.zip
+          unzip -q npcap-sdk.zip -d $env:GITHUB_WORKSPACE\npcap-sdk
+          echo "LIB=$env:GITHUB_WORKSPACE\npcap-sdk\Lib\x64" >> $env:GITHUB_ENV
+
+      - run: cargo test --workspace --verbose
+      - run: cargo build --release --no-default-features --verbose
+
       - name: Run Clippy
+        if: runner.os == 'Linux'
         run: cargo clippy --workspace --all-targets --release --verbose -- -D warnings
 
-      - uses: "marvinpinto/action-automatic-releases@latest"
+  linux:
+    name: linux packages
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - run: sudo apt-get update && sudo apt-get install -y libpcap-dev
+      - run: cargo install cargo-deb cargo-generate-rpm
+
+      - run: cargo build --release
+      - run: strip -s target/release/fluere
+
+      - name: Build deb and rpm
+        run: |
+          cargo deb
+          cargo generate-rpm
+
+      - name: Archive the binary
+        run: tar -czf fluere-${{ github.ref_name }}-x86_64-linux.tar.gz -C target/release fluere
+
+      - uses: actions/upload-artifact@v4
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          prerelease: false
+          name: linux
+          path: |
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+            fluere-*.tar.gz
+
+  macos:
+    name: macos archive
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release
+      - run: tar -czf fluere-${{ github.ref_name }}-arm64-macos.tar.gz -C target/release fluere
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: fluere-*.tar.gz
+
+  windows:
+    name: windows archive
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Npcap SDK
+        run: |
+          curl -L -o npcap-sdk.zip https://npcap.com/dist/npcap-sdk-1.13.zip
+          unzip -q npcap-sdk.zip -d $env:GITHUB_WORKSPACE\npcap-sdk
+          echo "LIB=$env:GITHUB_WORKSPACE\npcap-sdk\Lib\x64" >> $env:GITHUB_ENV
+
+      - run: cargo build --release
+      - name: Archive the binary
+        run: Compress-Archive -Path target\release\fluere.exe -DestinationPath fluere-${{ github.ref_name }}-x86_64-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: fluere-*.zip
+
+  release:
+    name: publish the release
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
