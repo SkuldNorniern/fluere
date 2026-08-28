@@ -12,9 +12,9 @@ use std::{
 
 use crate::{
     FluereError,
-    error::OptionExt,
+    error::{CaptureError, OptionExt},
     net::{
-        CaptureDevice, find_device,
+        CaptureDevice, find_device, source,
         flow_engine::FlowEngine,
         observe_packet,
         parser::{PacketObservation, ParserState},
@@ -84,16 +84,6 @@ fn extract_online_args(arg: Args) -> Result<OnlineArgs, FluereError> {
 struct ExportSchedule {
     interval: u64,
     last_export: Instant,
-}
-
-fn next_packet(cap: &mut pcap::Capture<pcap::Active>) -> Option<pcap::Packet<'_>> {
-    match cap.next_packet() {
-        Ok(packet) => Some(packet),
-        Err(error) => {
-            trace!("Error capturing packet: {}", error);
-            None
-        }
-    }
 }
 
 fn duration_reached(start: Instant, duration: u64) -> bool {
@@ -247,14 +237,31 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let mut parser_state = ParserState::new();
 
     loop {
-        let Some(packet) = next_packet(cap) else {
-            continue;
+        // Checked before the read, so a quiet interface still stops on time.
+        // Checking it only after a packet arrived meant `--duration` was
+        // ignored for as long as nothing was captured.
+        if duration_reached(start, duration) {
+            break;
+        }
+
+        let observation = match source::read(cap) {
+            source::Read::Packet(packet) => {
+                trace!("received packet");
+                observe_packet(packet, use_mac, linktype, &mut parser_state)
+            }
+            // Nothing arrived in this window. Loop round and re-check the
+            // duration rather than treating it as a failure.
+            source::Read::Timeout => continue,
+            source::Read::Eof => break,
+            source::Read::Fatal(error) => {
+                error!("Capture failed: {}", error);
+                return Err(FluereError::Capture(CaptureError::Pcap(error)));
+            }
         };
-        trace!("received packet");
-        let Some(observation) = observe_packet(packet, use_mac, linktype, &mut parser_state) else {
-            continue;
-        };
-        process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
+
+        if let Some(observation) = observation {
+            process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
+        }
 
         // Export flows if the interval has been reached
         (file_path, file) = export_if_due(
@@ -267,10 +274,6 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
             &mut export_tasks,
         )?;
 
-        // Check if the duration has been reached
-        if duration_reached(start, duration) {
-            break;
-        }
     }
 
     debug!("Captured in {:?}", start.elapsed());
