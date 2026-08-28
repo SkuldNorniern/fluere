@@ -35,38 +35,6 @@ FluereFlow is Fluere's own flow format. It is not NetFlow, and Fluere is not a N
     <i>Public IPs are masked to prevent privacy issues (except for DNS & Local broadcast)</i>
 </div>
 
-## How it works
-
-```text
-Live interface / pcap file
-            |
-            v
-         paccel                packet decode
-            |
-            v
-   PacketObservation           one decode per packet
-            |
-            +---------- ParserState
-            |              fragment reassembly
-            |              QUIC connection identity
-            v
-       FlowEngine              keying, aggregation, expiry
-            |
-            v
-     FluereFlow::Flow
-         /       \
-        v         v
-      CSV       Plugins
-```
-
-A flow is keyed on the addresses, ports and protocol of the first packet seen
-for it, plus the VLAN and tunnel that carried it. Separate segments reuse the
-same private ranges, so keying on addresses alone would put unrelated traffic in
-one record.
-
-See [Architecture](https://github.com/SkuldNorniern/fluere/wiki/Architecture) in
-the wiki for the longer version.
-
 ## Getting started
 
 Install `libpcap` (Linux/macOS) or `npcap` in WinPcap-compatible mode (Windows),
