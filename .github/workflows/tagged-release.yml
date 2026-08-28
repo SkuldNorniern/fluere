@@ -72,16 +72,25 @@ jobs:
           cargo generate-rpm
 
       - name: Archive the binary
+        run: tar -czf fluere-${{ github.ref_name }}-x86_64-linux.tar.gz -C target/release fluere
+
+      # Every artifact gets one, not just the archive: the release notes tell
+      # people to verify whatever they downloaded.
+      - name: Checksums
         run: |
-          tar -czf fluere-${{ github.ref_name }}-x86_64-linux.tar.gz -C target/release fluere
           sha256sum fluere-${{ github.ref_name }}-x86_64-linux.tar.gz > fluere-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256
+          for file in target/debian/*.deb target/generate-rpm/*.rpm; do
+            (cd "$(dirname "$file")" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
             target/debian/*.deb
+            target/debian/*.sha256
             target/generate-rpm/*.rpm
+            target/generate-rpm/*.sha256
             fluere-*.tar.gz
             fluere-*.sha256
 
