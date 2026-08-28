@@ -1,4 +1,4 @@
-name: rust-fmt
+name: rustfmt
 
 on:
   push:
@@ -6,27 +6,20 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
-  rust-clippy-analyze:
-    name: Run rustfmt style commit
+  fmt:
+    name: check formatting
     runs-on: ubuntu-latest
-    permissions: write-all
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
-      - name: Stable with rustfmt
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run fmt
-        run: cargo fmt
-
-      - name: commit changes
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: "style: `rustfmt`"
+      # Checks only. The old version ran `cargo fmt` and pushed the result back
+      # with write-all permissions, which is a lot of trust for a lint.
+      - run: cargo fmt --all -- --check

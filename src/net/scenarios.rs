@@ -323,11 +323,7 @@ impl Flows {
     /// The one flow matching `predicate`, key included, for assertions about
     /// what identified it rather than what it counted.
     pub fn only_flow(&self, predicate: impl Fn(&Flow) -> bool) -> &Flow {
-        let matched: Vec<&Flow> = self
-            .flows
-            .iter()
-            .filter(|flow| predicate(flow))
-            .collect();
+        let matched: Vec<&Flow> = self.flows.iter().filter(|flow| predicate(flow)).collect();
         assert_eq!(
             matched.len(),
             1,
@@ -738,18 +734,36 @@ mod tests {
         capture.push(&vlan_ethernet(
             &[100],
             0x0800,
-            &ipv4(17, 64, server, client, &udp(443, 50_000, &quic_long_header(CID))),
+            &ipv4(
+                17,
+                64,
+                server,
+                client,
+                &udp(443, 50_000, &quic_long_header(CID)),
+            ),
         ));
         capture.push(&vlan_ethernet(
             &[100],
             0x0800,
-            &ipv4(17, 64, client, server, &udp(50_000, 443, &quic_short_header(CID))),
+            &ipv4(
+                17,
+                64,
+                client,
+                server,
+                &udp(50_000, 443, &quic_short_header(CID)),
+            ),
         ));
         // The same ID turns up on another tenant's VLAN.
         capture.push(&vlan_ethernet(
             &[200],
             0x0800,
-            &ipv4(17, 64, roamed, server, &udp(60_000, 443, &quic_short_header(CID))),
+            &ipv4(
+                17,
+                64,
+                roamed,
+                server,
+                &udp(60_000, 443, &quic_short_header(CID)),
+            ),
         ));
 
         let flows = capture.finish();

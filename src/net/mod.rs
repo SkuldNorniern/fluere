@@ -2,14 +2,14 @@ pub mod capture;
 pub mod capture_tui;
 pub mod convert;
 mod device;
-mod source;
 mod flow_engine;
 pub mod identity;
-mod write_pcap;
 pub mod parser;
 #[cfg(test)]
 pub(crate) mod scenarios;
+mod source;
 pub mod types;
+mod write_pcap;
 
 pub use device::CaptureDevice;
 pub use device::find_device;
