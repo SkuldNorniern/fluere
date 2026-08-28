@@ -1,6 +1,6 @@
 [package]
 name = "fluere"
-version = "0.8.0"
+version = "0.8.1"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2024"
 description = "Cross-platform packet capture and network flow analysis, producing FluereFlow records from live traffic or pcap files"
@@ -25,7 +25,7 @@ csv = "1.3"
 
 paccel = "0.2.0"
 
-fluere_plugin = { version = "0.8.0", path = "./fluere-plugin", default-features = false, features = ["log"] }
+fluere_plugin = { version = "0.8.1", path = "./fluere-plugin", default-features = false, features = ["log"] }
 fluere-config = { version = "0.4.0", path = "./fluere-config", features = ["log"] }
 fluereflow = { version = "0.8.0", path = "./fluereflow" }
 
