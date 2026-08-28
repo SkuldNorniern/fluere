@@ -20,6 +20,12 @@ const MAX_PATHS: usize = 4;
 pub struct Paths {
     count: u8,
     endpoints: [Option<(IpAddr, u16)>; MAX_PATHS],
+    /// The endpoint seen most recently, kept even once the list is full.
+    ///
+    /// Without it a flow that moves past the list and then stays put looks
+    /// like a new move on every packet, because nothing it could be compared
+    /// against was retained.
+    latest: Option<(IpAddr, u16)>,
 }
 
 impl Paths {
@@ -27,12 +33,14 @@ impl Paths {
     /// name.
     ///
     /// Endpoints already seen are ignored, so the count is of distinct paths
-    /// rather than packets. Once full, later paths are dropped: the count still
-    /// says how far the flow moved, and the first few say where to.
+    /// rather than packets. Once full, later paths are dropped from the list:
+    /// the count still says how far the flow moved, and the first few say
+    /// where to.
     pub fn observe(&mut self, endpoint: (IpAddr, u16)) {
-        if self.endpoints().contains(&endpoint) {
+        if self.latest == Some(endpoint) || self.endpoints().contains(&endpoint) {
             return;
         }
+        self.latest = Some(endpoint);
 
         let seen = self.count as usize;
         if seen < MAX_PATHS {
@@ -105,6 +113,29 @@ mod tests {
         paths.observe(endpoint(10, 51_000));
 
         assert_eq!(paths.count(), 3);
+    }
+
+    /// A flow that moves past the recorded list and then stays put is on one
+    /// endpoint, not a new one per packet. Deduping only against the stored
+    /// list counted every later packet as another move.
+    #[test]
+    fn settling_on_an_endpoint_past_the_list_still_counts_once() {
+        let mut paths = Paths::default();
+        for port in 0..MAX_PATHS as u16 {
+            paths.observe(endpoint(10, port));
+        }
+
+        let settled = endpoint(77, 60_000);
+        for _ in 0..100 {
+            paths.observe(settled);
+        }
+
+        assert_eq!(paths.endpoints().len(), MAX_PATHS, "the list is still full");
+        assert_eq!(
+            paths.count(),
+            MAX_PATHS + 2,
+            "the four recorded, the one it settled on, and its own key"
+        );
     }
 
     /// A flow that keeps moving must not grow the record without bound.
