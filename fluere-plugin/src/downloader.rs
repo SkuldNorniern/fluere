@@ -59,8 +59,10 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
         std::fs::create_dir_all(&path)?;
     }
 
-    // "owner/plugin" -> "plugin"; a name without a slash is used as-is.
-    let repo_path = path.join(repo_name.rsplit('/').next().unwrap_or(repo_name));
+    // The whole name, owner included. Keeping only the last component meant
+    // "alice/tap" and "bob/tap" shared a directory, so whichever was fetched
+    // first is the code that ran for both.
+    let repo_path = path.join(repo_name.replace('/', "__"));
     let repository_path = Path::new(&repo_path);
 
     let repo = match Repository::open(repository_path) {
@@ -68,6 +70,30 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
         Err(_) => Repository::clone(&url, repository_path)?,
     };
     let mut remote = repo.find_remote("origin")?;
+
+    // A cached directory is only this plugin's if it came from this plugin's
+    // repository. Without the check, anything already sitting at that path is
+    // fetched from and loaded.
+    match remote.url() {
+        Some(existing) if existing == url => {}
+        Some(existing) => {
+            return Err(DownloadError::Other(format!(
+                "{} is cached at {} but its origin is {}, not {}",
+                repo_name,
+                repository_path.display(),
+                existing,
+                url
+            )));
+        }
+        None => {
+            return Err(DownloadError::Other(format!(
+                "{} is cached at {} with no origin URL to check",
+                repo_name,
+                repository_path.display()
+            )));
+        }
+    }
+
     let mut fetch_options = FetchOptions::new();
     remote.fetch(&["main"], Some(&mut fetch_options), None)?;
 

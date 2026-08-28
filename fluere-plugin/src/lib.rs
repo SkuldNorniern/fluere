@@ -1,8 +1,14 @@
 //! Loading and running Fluere's plugins.
 //!
-//! Plugins are untrusted, optional code. Nothing a plugin does - failing to
-//! load, raising an error, or missing an expected function - is allowed to stop
-//! the capture that feeds it.
+//! Plugins are trusted local extensions. They run in this process, with this
+//! process's permissions: a Lua plugin can read and write files and everything
+//! else the standard library offers, and all Lua plugins share one interpreter
+//! state. Treat installing one as running the code yourself. This is not a
+//! sandbox, and it is not built to contain hostile code.
+//!
+//! What it does contain is ordinary breakage. Nothing a plugin does - failing
+//! to load, raising an error, or missing an expected function - is allowed to
+//! stop the capture that feeds it.
 //!
 //! A plugin is written for one of the [runtimes](runtime) compiled into this
 //! build, and is claimed by the first runtime whose entry file its directory
@@ -10,6 +16,7 @@
 //! a feature; nothing here changes.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub mod downloader;
 mod error;
@@ -33,7 +40,12 @@ use tokio::sync::mpsc;
 use log::{debug, info};
 
 /// Capacity of the queue between the capture path and the plugin worker.
-const CHANNEL_CAPACITY: usize = 100;
+/// How many finished flows may be waiting for the plugins.
+///
+/// Deep enough to ride out a plugin pausing to write a file, and no deeper: a
+/// queue that keeps growing only delays the point at which a slow plugin starts
+/// costing packets.
+const CHANNEL_CAPACITY: usize = 1024;
 
 /// Report a plugin problem without bringing anything down.
 #[macro_export]
@@ -69,10 +81,12 @@ pub struct PluginWorker {
 ///
 /// Only a channel sender. The interpreters, the plugins loaded into them and the
 /// queue are all owned by the worker task and never shared, which is why this
-/// needs no reference counting or locks and is cheap to hold and to clone.
-#[derive(Debug, Clone)]
+/// needs no reference counting or locks and is cheap to hold.
+#[derive(Debug)]
 pub struct PluginManager {
     sender: mpsc::Sender<(FlowRecord, FlowIdentity)>,
+    /// Flows the plugins never saw because their queue was full.
+    dropped: AtomicU64,
 }
 
 impl PluginManager {
@@ -138,22 +152,46 @@ impl PluginManager {
         #[cfg(not(feature = "log"))]
         let _ = loaded;
 
-        Ok((PluginManager { sender }, spawn_worker(runtimes, receiver)))
+        Ok((
+            PluginManager {
+                sender,
+                dropped: AtomicU64::new(0),
+            },
+            spawn_worker(runtimes, receiver),
+        ))
     }
 
     /// Queue one finished flow for the plugins.
     ///
     /// `identity` is what separated this flow from another with the same
     /// addresses and ports; it lives on the flow key rather than the record.
-    pub async fn process_flow_data(
+    /// A full queue drops the flow rather than waiting. Capture is the thing
+    /// with a deadline: blocking here backs up into the packet loop, and a
+    /// kernel that has nowhere to put packets discards them, which loses data
+    /// for every consumer rather than one plugin's copy of it.
+    pub fn process_flow_data(
         &self,
         data: FlowRecord,
         identity: FlowIdentity,
     ) -> Result<(), PluginError> {
-        self.sender
-            .send((data, identity))
-            .await
-            .map_err(|_| PluginError::WorkerStopped)
+        match self.sender.try_send((data, identity)) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let dropped = self.dropped.fetch_add(1, Ordering::Relaxed);
+                if dropped == 0 {
+                    plugin_warn!(
+                        "Plugins are not keeping up; flows are being dropped from their queue"
+                    );
+                }
+                Ok(())
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(PluginError::WorkerStopped),
+        }
+    }
+
+    /// How many flows never reached the plugins because the queue was full.
+    pub fn dropped(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
     }
 
     /// Drain the queue, stop the worker, then run each plugin's cleanup hook.
@@ -162,6 +200,14 @@ impl PluginManager {
     /// sender closes the channel, so the worker processes everything already
     /// queued and only then cleans up and returns.
     pub async fn shutdown(self, worker: PluginWorker) {
+        let dropped = self.dropped();
+        if dropped > 0 {
+            plugin_warn!(
+                "{} flows never reached the plugins: their queue was full",
+                dropped
+            );
+        }
+
         drop(self.sender);
 
         if let Err(error) = worker.handle.await {
@@ -332,7 +378,6 @@ return plugin
         for port in 0..25u16 {
             manager
                 .process_flow_data(record(port), FlowIdentity::default())
-                .await
                 .expect("queued");
         }
 
@@ -391,7 +436,6 @@ return plugin
             .expect("plugins load");
         manager
             .process_flow_data(record(21), FlowIdentity::default())
-            .await
             .expect("queued");
         manager.shutdown(worker).await;
 
@@ -422,7 +466,6 @@ return plugin
             .expect("a plugin with no extra_arguments must not fail to load");
         manager
             .process_flow_data(record(1), FlowIdentity::default())
-            .await
             .expect("queued");
         manager.shutdown(worker).await;
     }
@@ -437,7 +480,6 @@ return plugin
             .expect("a broken plugin must not fail the whole load");
         manager
             .process_flow_data(record(1), FlowIdentity::default())
-            .await
             .expect("queued");
         manager.shutdown(worker).await;
     }
