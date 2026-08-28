@@ -57,6 +57,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+
+      # cargo-audit directly rather than rustsec/audit-check, which wants
+      # `checks: write` to post a check run and fails the job without it even
+      # when it found nothing. This fails on an actual vulnerability and
+      # reports unmaintained and unsound crates without failing on them.
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
