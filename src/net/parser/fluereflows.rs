@@ -47,8 +47,8 @@ mod tests {
     fn header(captured: u32, wire: u32, sec: i64, usec: i64) -> PacketHeader {
         PacketHeader {
             ts: libc::timeval {
-                tv_sec: sec,
-                tv_usec: usec,
+                tv_sec: sec as _,
+                tv_usec: usec as _,
             },
             caplen: captured,
             len: wire,
