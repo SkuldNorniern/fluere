@@ -72,7 +72,9 @@ jobs:
           cargo generate-rpm
 
       - name: Archive the binary
-        run: tar -czf fluere-${{ github.ref_name }}-x86_64-linux.tar.gz -C target/release fluere
+        run: |
+          tar -czf fluere-${{ github.ref_name }}-x86_64-linux.tar.gz -C target/release fluere
+          sha256sum fluere-${{ github.ref_name }}-x86_64-linux.tar.gz > fluere-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256
 
       - uses: actions/upload-artifact@v4
         with:
@@ -81,6 +83,7 @@ jobs:
             target/debian/*.deb
             target/generate-rpm/*.rpm
             fluere-*.tar.gz
+            fluere-*.sha256
 
   macos:
     name: macos archive
@@ -92,12 +95,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo build --release
-      - run: tar -czf fluere-${{ github.ref_name }}-arm64-macos.tar.gz -C target/release fluere
+      - name: Archive the binary
+        run: |
+          tar -czf fluere-${{ github.ref_name }}-arm64-macos.tar.gz -C target/release fluere
+          shasum -a 256 fluere-${{ github.ref_name }}-arm64-macos.tar.gz > fluere-${{ github.ref_name }}-arm64-macos.tar.gz.sha256
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: fluere-*.tar.gz
+          path: |
+            fluere-*.tar.gz
+            fluere-*.sha256
 
   windows:
     name: windows archive
@@ -116,23 +124,82 @@ jobs:
 
       - run: cargo build --release
       - name: Archive the binary
-        run: Compress-Archive -Path target\release\fluere.exe -DestinationPath fluere-${{ github.ref_name }}-x86_64-windows.zip
+        run: |
+          Compress-Archive -Path target\release\fluere.exe -DestinationPath fluere-${{ github.ref_name }}-x86_64-windows.zip
+          (Get-FileHash fluere-${{ github.ref_name }}-x86_64-windows.zip -Algorithm SHA256).Hash.ToLower() + "  fluere-${{ github.ref_name }}-x86_64-windows.zip" | Out-File -Encoding ascii fluere-${{ github.ref_name }}-x86_64-windows.zip.sha256
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: fluere-*.zip
+          path: |
+            fluere-*.zip
+            fluere-*.sha256
 
   release:
     name: publish the release
     needs: [linux, macos, windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      # Groups the changelog by conventional-commit type rather than dumping a
+      # flat list of every commit, which is what GitHub's own note generator
+      # does.
+      - uses: "marvinpinto/action-automatic-releases@latest"
         with:
-          files: artifacts/**/*
-          generate_release_notes: true
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          title: "Fluere ${{ github.ref_name }}"
+          files: |
+            artifacts/*.deb
+            artifacts/*.rpm
+            artifacts/*.tar.gz
+            artifacts/*.zip
+            artifacts/*.sha256
+
+      - name: Append install notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          VERSION=${TAG#v}
+          CURRENT=$(gh release view "$TAG" --json body --jq '.body')
+          NOTES=$(mktemp)
+          {
+            echo "$CURRENT"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Install"
+            echo ""
+            echo '```sh'
+            echo "cargo install fluere --version ${VERSION}"
+            echo '```'
+            echo ""
+            echo "Needs libpcap on Linux and macOS, or Npcap in WinPcap-compatible mode on Windows."
+            echo "Capturing needs privileges; converting a pcap file does not."
+            echo ""
+            echo "### Downloads"
+            echo ""
+            echo "| File | Platform |"
+            echo "|------|----------|"
+            echo "| \`fluere_${VERSION}-1_amd64.deb\` | Debian, Ubuntu |"
+            echo "| \`fluere-${VERSION}-1.x86_64.rpm\` | Fedora, RHEL |"
+            echo "| \`fluere-${TAG}-x86_64-linux.tar.gz\` | Linux x86_64 |"
+            echo "| \`fluere-${TAG}-arm64-macos.tar.gz\` | macOS arm64 |"
+            echo "| \`fluere-${TAG}-x86_64-windows.zip\` | Windows x86_64 |"
+            echo ""
+            echo "Verify a download: \`sha256sum -c <file>.sha256\`"
+            echo ""
+            echo "### Documentation"
+            echo ""
+            echo "[Usage](https://github.com/SkuldNorniern/fluere/wiki/Usage) - the commands and their options  "
+            echo "[Format](https://github.com/SkuldNorniern/fluere/wiki/Format) - what a flow record contains  "
+            echo "[Migrating from 0.7](https://github.com/SkuldNorniern/fluere/wiki/Migrating-from-0.7) - for existing scripts and plugins"
+          } > "$NOTES"
+          gh release edit "$TAG" --notes-file "$NOTES"
