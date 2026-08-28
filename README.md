@@ -64,8 +64,8 @@ for it, plus the VLAN and tunnel that carried it. Separate segments reuse the
 same private ranges, so keying on addresses alone would put unrelated traffic in
 one record.
 
-See [Architecture](https://github.com/SkuldNorniern/fluere/wiki) in the wiki for
-the longer version.
+See [Architecture](https://github.com/SkuldNorniern/fluere/wiki/Architecture) in
+the wiki for the longer version.
 
 ## Getting started
 
@@ -104,4 +104,14 @@ fluere devices
 0.7, see [Migrating from 0.7](https://github.com/SkuldNorniern/fluere/wiki/Migrating-from-0.7):
 the old command names still work.
 
-For more detailed information and guidance, refer to the [Fluere Wiki](https://github.com/SkuldNorniern/fluere/wiki).
+## Documentation
+
+- [Installation](https://github.com/SkuldNorniern/fluere/wiki/Installation) - prerequisites and packages
+- [Usage](https://github.com/SkuldNorniern/fluere/wiki/Usage) - the commands and their options
+- [Format](https://github.com/SkuldNorniern/fluere/wiki/Format) - what a flow record contains, field by field
+- [Configuration](https://github.com/SkuldNorniern/fluere/wiki/Configuration) - the config file and where it lives
+- [Architecture](https://github.com/SkuldNorniern/fluere/wiki/Architecture) - how a packet becomes a flow record
+- [Parsing](https://github.com/SkuldNorniern/fluere/wiki/Parsing) - protocol coverage and its limits
+- [Plugins](https://github.com/SkuldNorniern/fluere/wiki/Plugins-(Beta)) - writing something that consumes flows
+- [Migrating from 0.7](https://github.com/SkuldNorniern/fluere/wiki/Migrating-from-0.7) - what changed for existing scripts
+- [Troubleshooting](https://github.com/SkuldNorniern/fluere/wiki/Troubleshooting)
