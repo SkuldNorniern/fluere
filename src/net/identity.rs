@@ -26,7 +26,11 @@ pub fn encapsulation(flow: &Flow) -> &'static str {
 
 /// The tunnel's segment, key, label or session. Empty when it has none.
 pub fn tunnel_id(flow: &Flow) -> String {
-    match flow.key.encapsulation.and_then(|encapsulation| encapsulation.id) {
+    match flow
+        .key
+        .encapsulation
+        .and_then(|encapsulation| encapsulation.id)
+    {
         Some(id) => id.to_string(),
         None => String::new(),
     }
@@ -79,9 +83,7 @@ pub fn for_plugin(flow: &Flow) -> fluere_plugin::FlowIdentity {
         ip_version: flow.key.ip_version(),
         protocol: flow.protocol_name().to_string(),
         protocol_number: flow.is_ip().then_some(flow.key.protocol),
-        ethertype: (!flow.is_ip())
-            .then_some(flow.key.ethertype)
-            .flatten(),
+        ethertype: (!flow.is_ip()).then_some(flow.key.ethertype).flatten(),
         vlan: flow.key.vlan.tags().to_vec(),
         encapsulation: encapsulation.map(|e| e.kind.as_str().to_string()),
         tunnel_id: encapsulation.and_then(|e| e.id),

@@ -8,8 +8,9 @@ use crate::{
     net::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
-        observe_packet, source,
+        observe_packet,
         parser::{PacketObservation, ParserState, unix_seconds_to_timestamp},
+        source,
         types::Key,
     },
     types::Args,
@@ -23,9 +24,9 @@ use std::{
 };
 
 use crate::net::Flow;
-use fluereflow::Endpoints;
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
+use fluereflow::Endpoints;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent},
@@ -410,7 +411,6 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     last_export_unix_time,
                 });
             }
-
         }
 
         debug!("Captured in {:?}", start.elapsed());

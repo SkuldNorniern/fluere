@@ -5,8 +5,9 @@ use crate::{
     error::{CaptureError, OptionExt},
     net::{
         flow_engine::FlowEngine,
-        observe_packet, source,
+        observe_packet,
         parser::{PacketObservation, ParserState},
+        source,
     },
     types::Args,
     utils::fluere_exporter,

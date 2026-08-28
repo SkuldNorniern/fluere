@@ -189,7 +189,6 @@ impl QuicTracker {
         false
     }
 
-
     #[cfg(test)]
     fn tracked(&self) -> usize {
         self.connections.len()

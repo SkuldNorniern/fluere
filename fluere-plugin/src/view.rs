@@ -139,7 +139,11 @@ impl FlowView {
                 ),
                 (
                     "dst_port",
-                    optional(identity.ports.map(|(_, destination)| u64::from(destination))),
+                    optional(
+                        identity
+                            .ports
+                            .map(|(_, destination)| u64::from(destination)),
+                    ),
                 ),
                 (
                     "icmp_type",
@@ -195,7 +199,12 @@ impl FlowView {
                 ),
                 (
                     "end_reason",
-                    text(record.time.end_reason.map(|reason| reason.as_str().to_string())),
+                    text(
+                        record
+                            .time
+                            .end_reason
+                            .map(|reason| reason.as_str().to_string()),
+                    ),
                 ),
                 ("truncated", Bool(record.capture.truncated)),
                 // Where the flow was seen. A QUIC connection that changes

@@ -14,10 +14,11 @@ use crate::{
     FluereError,
     error::{CaptureError, OptionExt},
     net::{
-        CaptureDevice, find_device, source,
+        CaptureDevice, find_device,
         flow_engine::FlowEngine,
         observe_packet,
         parser::{PacketObservation, ParserState},
+        source,
     },
     types::Args,
     utils::{cur_time_file, fluere_exporter},
@@ -271,7 +272,6 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
             &mut export_schedule,
             &mut export_tasks,
         )?;
-
     }
 
     debug!("Captured in {:?}", start.elapsed());
