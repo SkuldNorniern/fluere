@@ -243,23 +243,25 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
             break;
         }
 
-        let observation = match source::read(cap) {
+        match source::read(cap) {
             source::Read::Packet(packet) => {
                 trace!("received packet");
-                observe_packet(packet, use_mac, linktype, &mut parser_state)
+                if let Some(observation) =
+                    observe_packet(packet, use_mac, linktype, &mut parser_state)
+                {
+                    process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
+                }
             }
-            // Nothing arrived in this window. Loop round and re-check the
-            // duration rather than treating it as a failure.
-            source::Read::Timeout => continue,
+            // Nothing arrived in this window. Not a failure, and not a reason
+            // to skip the work below: an export is due on a schedule, not on
+            // the next packet, and a quiet interface is exactly when a capture
+            // looks stuck.
+            source::Read::Timeout => {}
             source::Read::Eof => break,
             source::Read::Fatal(error) => {
                 error!("Capture failed: {}", error);
                 return Err(FluereError::Capture(CaptureError::Pcap(error)));
             }
-        };
-
-        if let Some(observation) = observation {
-            process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
         }
 
         // Export flows if the interval has been reached
