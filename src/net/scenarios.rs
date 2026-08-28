@@ -764,6 +764,28 @@ mod tests {
         );
     }
 
+    /// Merged captures and multi-queue interfaces deliver packets out of
+    /// order. `last` is the latest packet the flow saw, not whichever arrived
+    /// most recently, or a late-delivered early packet drags it backwards and
+    /// takes the idle deadline with it.
+    #[test]
+    fn an_out_of_order_packet_does_not_move_the_flow_backwards() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .push_at(&v4(6, 64, A, B, &tcp(40_001, 443, SYN)), 1_000)
+            .push_at(&v4(6, 64, B, A, &tcp(443, 40_001, SYN_ACK)), 9_000)
+            .push_at(&v4(6, 64, A, B, &tcp(40_001, 443, ACK)), 3_000);
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.len(), 1, "still one conversation");
+        let flow = flows.only(|f| f.key.protocol == 6);
+        assert_eq!(flow.time.start.nanos(), 1_000_000);
+        assert_eq!(flow.time.end.nanos(), 9_000_000, "the latest packet seen");
+        assert_eq!(flow.time.duration(), 8_000_000);
+    }
+
     /// A flow that stays where it started reports a single path, so `migrated`
     /// means what it says.
     #[test]
