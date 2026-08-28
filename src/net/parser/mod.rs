@@ -13,8 +13,8 @@ pub use fragments::FragmentTracker;
 pub use keys::parse_keys;
 pub use observation::{PacketObservation, ParserState, observe};
 pub use quic::QuicTracker;
-pub use time::unix_seconds_to_timestamp;
 pub use time::parse_microseconds;
+pub use time::unix_seconds_to_timestamp;
 pub use tos::dscp_to_tos;
 
 use crate::error::ParseError;

@@ -128,7 +128,6 @@ impl FragmentTracker {
         Some(remembered.endpoints)
     }
 
-
     #[cfg(test)]
     fn tracked(&self) -> usize {
         self.datagrams.len()
