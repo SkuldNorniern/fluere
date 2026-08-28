@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
 
-use fluereflow::Endpoints;
+use fluereflow::{Encapsulation, Endpoints, VlanTags};
 
 use super::observation::PacketObservation;
 
@@ -29,12 +29,19 @@ const MAX_AGE: u64 = 30_000_000_000;
 /// Identifies one IP datagram, across all of its fragments.
 ///
 /// IPv4 identification is 16 bits and IPv6's is 32; the wider one holds both.
+///
+/// The VLAN and tunnel are part of it for the same reason they are part of a
+/// flow key: separate segments reuse the same private addresses, and nothing
+/// stops two tenants picking the same identification. Without them one tenant's
+/// later fragments could inherit the other's ports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct DatagramId {
     source: IpAddr,
     destination: IpAddr,
     identification: u32,
     protocol: u8,
+    vlan: VlanTags,
+    encapsulation: Option<Encapsulation>,
 }
 
 /// The endpoints a datagram's first fragment reported, and when they were last
@@ -77,6 +84,8 @@ impl FragmentTracker {
             destination: observation.key.destination,
             identification: fragment.identification,
             protocol: fragment.protocol,
+            vlan: observation.key.vlan,
+            encapsulation: observation.key.encapsulation,
         };
         let now = observation.time().nanos();
 
@@ -212,6 +221,8 @@ mod tests {
 
     fn id(identification: u32) -> DatagramId {
         DatagramId {
+            vlan: VlanTags::default(),
+            encapsulation: None,
             source: A,
             destination: B,
             identification,

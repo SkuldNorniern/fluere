@@ -590,6 +590,51 @@ mod tests {
         );
     }
 
+    /// Two tenants on separate VLANs reuse the same private addresses, and
+    /// nothing stops them reusing an IP identification too. The fragment table
+    /// keyed on addresses alone, so one tenant's later fragments could inherit
+    /// the other's ports.
+    #[test]
+    fn fragmented_datagrams_on_separate_segments_do_not_cross() {
+        let mut capture = Capture::new(600_000);
+
+        for (vlan, port) in [(100u16, 50_010u16), (200, 50_020)] {
+            let first = ipv4_with(
+                17,
+                64,
+                [10, 0, 0, 1],
+                [10, 0, 0, 2],
+                Some((99, 0, true)),
+                &udp(port, 9_999, &[b'F'; 400]),
+            );
+            capture.push(&vlan_ethernet(&[vlan], 0x0800, &first));
+        }
+
+        for vlan in [100u16, 200] {
+            let rest = ipv4_with(
+                17,
+                64,
+                [10, 0, 0, 1],
+                [10, 0, 0, 2],
+                Some((99, 51, false)),
+                &[b'F'; 200],
+            );
+            capture.push(&vlan_ethernet(&[vlan], 0x0800, &rest));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.len(), 2, "one flow per tenant");
+        for port in [50_010u16, 50_020] {
+            assert_eq!(
+                flows.only(|f| f.key.ports().0 == port).packets(),
+                2,
+                "each tenant kept its own fragments"
+            );
+        }
+    }
+
     /// IPv6 carries fragmentation in an extension header rather than the IP
     /// header, so it needs its own handling. The outcome must match IPv4's: one
     /// datagram is one flow.
