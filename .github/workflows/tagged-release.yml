@@ -155,12 +155,15 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           prerelease: false
           title: "Fluere ${{ github.ref_name }}"
+          # Recursive: upload-artifact keeps the common directory prefix of
+          # each path pattern, so the deb and rpm arrive under their own
+          # subdirectories rather than flat.
           files: |
-            artifacts/*.deb
-            artifacts/*.rpm
-            artifacts/*.tar.gz
-            artifacts/*.zip
-            artifacts/*.sha256
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/**/*.sha256
 
       - name: Append install notes
         env:
