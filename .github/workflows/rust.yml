@@ -45,8 +45,17 @@ jobs:
       - name: Build without a plugin runtime
         run: cargo build --release --no-default-features --verbose
 
+      # Windows links against the Npcap SDK's import library, but running
+      # anything needs the Npcap runtime DLL, which is not on the runner and
+      # whose redistribution terms make installing it in CI awkward. Compile
+      # the tests there and run them where a capture library is present.
       - name: Run tests
+        if: runner.os != 'Windows'
         run: cargo test --workspace --verbose
+
+      - name: Build tests
+        if: runner.os == 'Windows'
+        run: cargo test --workspace --no-run --verbose
 
       - name: Run Clippy
         if: runner.os == 'Linux'

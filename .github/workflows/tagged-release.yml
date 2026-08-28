@@ -35,7 +35,16 @@ jobs:
           unzip -q npcap-sdk.zip -d $env:GITHUB_WORKSPACE\npcap-sdk
           echo "LIB=$env:GITHUB_WORKSPACE\npcap-sdk\Lib\x64" >> $env:GITHUB_ENV
 
-      - run: cargo test --workspace --verbose
+      # See the note in rust.yml: Windows has no capture runtime to load, so
+      # the tests are compiled there rather than run.
+      - name: Run tests
+        if: runner.os != 'Windows'
+        run: cargo test --workspace --verbose
+
+      - name: Build tests
+        if: runner.os == 'Windows'
+        run: cargo test --workspace --no-run --verbose
+
       - run: cargo build --release --no-default-features --verbose
 
       - name: Run Clippy
