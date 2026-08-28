@@ -111,7 +111,11 @@ impl FlowRecord {
         };
         stats.observe(facts.frame_octets, facts.tcp_flags.unwrap_or_default());
 
-        self.time.end = facts.time;
+        // The latest packet seen, not the most recently delivered one. Merged
+        // captures and multi-queue interfaces deliver out of order, and letting
+        // an early packet arriving late move `end` backwards would shorten the
+        // duration and pull the idle deadline in with it.
+        self.time.end = self.time.end.max(facts.time);
         if let Some(ttl) = facts.ttl {
             stats::observe(&mut self.network.ttl, ttl);
         }
@@ -253,6 +257,19 @@ mod tests {
         assert_eq!(record.reverse.frame_octets, 0);
         assert_eq!(record.reverse.packet_length, None);
         assert!(!record.is_bidirectional());
+    }
+
+    /// Out-of-order delivery is normal on merged captures and multi-queue
+    /// interfaces. `end` is the latest packet seen, not the one delivered last.
+    #[test]
+    fn a_late_delivered_early_packet_does_not_shorten_the_flow() {
+        let mut record = open();
+        record.observe(Direction::Forward, packet(1_000, 54));
+        record.observe(Direction::Reverse, packet(9_500, 54));
+        record.observe(Direction::Forward, packet(3_000, 54));
+
+        assert_eq!(record.time.end, at(9_500));
+        assert_eq!(record.time.duration(), 8_500_000);
     }
 
     #[test]
