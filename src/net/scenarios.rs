@@ -560,6 +560,36 @@ mod tests {
         );
     }
 
+    /// A large ping fragments like anything else, and ICMP has no ports. The
+    /// later fragments used to inherit a remembered `(0, 0)` port pair, which
+    /// is a different endpoint kind from the first fragment's "no endpoints",
+    /// so one datagram became two flows.
+    #[test]
+    fn the_fragments_of_a_portless_datagram_stay_together() {
+        let mut capture = Capture::new(600_000);
+        let mut echo = icmp(8);
+        echo.extend_from_slice(&[b'P'; 400]);
+
+        let first = ipv4_with(1, 64, A, B, Some((77, 0, true)), &echo);
+        let rest = ipv4_with(1, 64, A, B, Some((77, 51, false)), &[b'P'; 200]);
+
+        capture
+            .push(&ethernet(0x0800, &first))
+            .push(&ethernet(0x0800, &rest));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.len(), 1, "one datagram is one flow");
+        let flow = flows.only_flow(|f| f.key.protocol == 1);
+        assert_eq!(flow.record.packets(), 2);
+        assert_eq!(
+            flow.key.endpoints,
+            fluereflow::Endpoints::None,
+            "ICMP has no ports to inherit"
+        );
+    }
+
     /// IPv6 carries fragmentation in an extension header rather than the IP
     /// header, so it needs its own handling. The outcome must match IPv4's: one
     /// datagram is one flow.
