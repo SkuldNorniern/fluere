@@ -67,6 +67,11 @@ pub fn find_device(identifier: &str) -> Result<Device, CaptureError> {
 /// accounting still uses the wire length reported by the capture header, but a
 /// short snaplen truncates the payload paccel needs to reach inner tunnel
 /// headers, so the full-frame default is the right one for flow analysis.
+/// How long a read waits for a packet before reporting a timeout, in
+/// milliseconds. This is the granularity at which a capture notices it should
+/// stop, not a limit on how long it runs.
+const POLL_TIMEOUT_MS: i32 = 250;
+
 fn initialize_capture(device: Device, snaplen: u64) -> Result<Capture<Active>, CaptureError> {
     info!(
         "Opening capture session for device {} with snaplen {}",
@@ -79,7 +84,10 @@ fn initialize_capture(device: Device, snaplen: u64) -> Result<Capture<Active>, C
     Capture::from_device(device)?
         .promisc(true)
         .snaplen(snaplen)
-        .timeout(60000)
+        // Short enough that a quiet interface still notices `--duration` and a
+        // key press promptly. A minute-long timeout meant neither took effect
+        // until the next packet happened to arrive.
+        .timeout(POLL_TIMEOUT_MS)
         .immediate_mode(true)
         .open()
         .map_err(CaptureError::from)

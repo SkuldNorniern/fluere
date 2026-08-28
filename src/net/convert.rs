@@ -2,10 +2,10 @@ use std::{fs, path::Path, time::Instant};
 
 use crate::{
     FluereError,
-    error::OptionExt,
+    error::{CaptureError, OptionExt},
     net::{
         flow_engine::FlowEngine,
-        observe_packet,
+        observe_packet, source,
         parser::{PacketObservation, ParserState},
     },
     types::Args,
@@ -16,7 +16,7 @@ use crate::net::Flow;
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
 use indicatif::ProgressBar;
-use log::{info, trace};
+use log::{error, info, trace};
 use pcap::Capture;
 
 async fn process_packet(
@@ -104,12 +104,27 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let bar = ProgressBar::new_spinner();
     let mut parser_state = ParserState::new();
 
-    while let Ok(packet) = cap.next_packet() {
-        trace!("Parsing packet");
-        let Some(observation) = observe_packet(packet, use_mac, linktype, &mut parser_state) else {
-            continue;
+    loop {
+        // A read failure is not end of file. Treating it as one meant a damaged
+        // capture produced partial output and still reported success, which is
+        // the worst of both.
+        let observation = match source::read(&mut cap) {
+            source::Read::Packet(packet) => {
+                trace!("Parsing packet");
+                observe_packet(packet, use_mac, linktype, &mut parser_state)
+            }
+            source::Read::Eof => break,
+            // A file has no timeouts, but reading one costs nothing either.
+            source::Read::Timeout => continue,
+            source::Read::Fatal(error) => {
+                error!("Reading {} failed: {}", file_name, error);
+                return Err(FluereError::Capture(CaptureError::Pcap(error)));
+            }
         };
-        process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
+
+        if let Some(observation) = observation {
+            process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
+        }
     }
     bar.finish();
     info!("Converted in {:?}", start.elapsed());
