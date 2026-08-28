@@ -15,10 +15,11 @@ use super::raw::RawProtocolHeader;
 #[derive(Debug, Clone, Copy)]
 pub(super) struct PacketProperties {
     pub facts: PacketFacts,
-    /// Differentiated services code point, six bits.
-    pub dscp: u8,
-    /// Explicit congestion notification, two bits.
-    pub ecn: u8,
+    /// Differentiated services code point, six bits. `None` without an IP
+    /// header to read it from.
+    pub dscp: Option<u8>,
+    /// Explicit congestion notification, two bits. `None` on the same terms.
+    pub ecn: Option<u8>,
 }
 
 /// Read one packet's properties from an already parsed frame.
@@ -36,20 +37,21 @@ pub(super) fn from_parsed(
     let inner = innermost(parsed);
 
     let (ttl, dscp, ecn) = if let Some(ipv4) = inner.ipv4.as_ref() {
-        (Some(ipv4.ttl), ipv4.dscp, ipv4.ecn)
+        (Some(ipv4.ttl), Some(ipv4.dscp), Some(ipv4.ecn))
     } else if let Some(ipv6) = inner.ipv6.as_ref() {
         // The traffic class carries the same two fields as IPv4's ToS byte, and
         // the hop limit is the TTL by another name - the previous model
         // reported neither for IPv6.
         (
             Some(ipv6.hop_limit),
-            ipv6.traffic_class >> 2,
-            ipv6.traffic_class & 0x03,
+            Some(ipv6.traffic_class >> 2),
+            Some(ipv6.traffic_class & 0x03),
         )
     } else {
-        // ARP and anything the fallback recovered: no IP header of its own,
-        // though the raw parser may still have found a TTL.
-        (raw_ttl(parsed, packet_data), 0, 0)
+        // ARP and anything the fallback recovered: no IP header of its own, so
+        // no differentiated services either. Reporting zero here made a real
+        // code point of 0 look the same as having none.
+        (raw_ttl(parsed, packet_data), None, None)
     };
 
     PacketProperties {

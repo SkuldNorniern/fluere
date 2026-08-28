@@ -152,7 +152,7 @@ impl FlowEngine {
         // Only somewhere the key does not already name: ordinary traffic in
         // either direction arrives from one of the flow's own two endpoints.
         if !names_endpoint(&flow_key, observation.arrived_from) {
-            state.record.paths.observe(observation.arrived_from);
+            state.record.paths.observe(direction, observation.arrived_from);
         }
 
         // A half-close only ends this direction. The flow stays open until the

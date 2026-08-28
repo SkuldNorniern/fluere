@@ -68,6 +68,19 @@ pub enum StartState {
     NotApplicable,
 }
 
+impl StartState {
+    /// The name consumers see. Written out rather than derived from the
+    /// variant name, so renaming a variant does not silently change the CSV
+    /// and plugin output.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StartState::SynObserved => "synobserved",
+            StartState::MidStream => "midstream",
+            StartState::NotApplicable => "notapplicable",
+        }
+    }
+}
+
 /// Why a flow stopped being tracked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndReason {
@@ -85,6 +98,19 @@ pub enum EndReason {
     ActiveTimeout,
     /// Capture stopped while the flow was open.
     CaptureEnd,
+}
+
+impl EndReason {
+    /// The name consumers see, on the same terms as [`StartState::as_str`].
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EndReason::Fin => "fin",
+            EndReason::Rst => "rst",
+            EndReason::IdleTimeout => "idletimeout",
+            EndReason::ActiveTimeout => "activetimeout",
+            EndReason::CaptureEnd => "captureend",
+        }
+    }
 }
 
 /// When a flow started and stopped, and what those events were.
