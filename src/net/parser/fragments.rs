@@ -39,10 +39,14 @@ struct DatagramId {
 
 /// The endpoints a datagram's first fragment reported, and when they were last
 /// useful.
+///
+/// The whole `Endpoints`, not a port pair: a fragmented ICMP echo or ESP
+/// datagram has no ports, and remembering that as `(0, 0)` gave the later
+/// fragments a different endpoint kind from the first, splitting one datagram
+/// across two flows.
 #[derive(Debug, Clone, Copy)]
 struct Remembered {
-    src_port: u16,
-    dst_port: u16,
+    endpoints: Endpoints,
     last_seen: u64,
 }
 
@@ -79,17 +83,16 @@ impl FragmentTracker {
         if fragment.offset == 0 {
             // The first fragment carries the transport header. Remember where
             // it was going for the fragments that follow.
-            let (source, destination) = observation.key.ports();
-            self.remember(id, source, destination, now);
+            self.remember(id, observation.key.endpoints, now);
             return;
         }
 
         if let Some(endpoints) = self.recall(&id, now) {
-            apply(observation, endpoints.0, endpoints.1);
+            apply(observation, endpoints);
         }
     }
 
-    fn remember(&mut self, id: DatagramId, src_port: u16, dst_port: u16, now: u64) {
+    fn remember(&mut self, id: DatagramId, endpoints: Endpoints, now: u64) {
         if self.datagrams.len() >= MAX_TRACKED && !self.datagrams.contains_key(&id) {
             self.evict_oldest(now);
         }
@@ -97,22 +100,21 @@ impl FragmentTracker {
         self.datagrams.insert(
             id,
             Remembered {
-                src_port,
-                dst_port,
+                endpoints,
                 last_seen: now,
             },
         );
     }
 
-    fn recall(&mut self, id: &DatagramId, now: u64) -> Option<(u16, u16)> {
-        let endpoints = self.datagrams.get_mut(id)?;
-        if now.saturating_sub(endpoints.last_seen) > MAX_AGE {
+    fn recall(&mut self, id: &DatagramId, now: u64) -> Option<Endpoints> {
+        let remembered = self.datagrams.get_mut(id)?;
+        if now.saturating_sub(remembered.last_seen) > MAX_AGE {
             self.datagrams.remove(id);
             return None;
         }
 
-        endpoints.last_seen = now;
-        Some((endpoints.src_port, endpoints.dst_port))
+        remembered.last_seen = now;
+        Some(remembered.endpoints)
     }
 
     /// Drop everything past its age, and if that freed nothing, the single
@@ -194,12 +196,9 @@ impl Fragment {
 
 /// Rewrite every endpoint on the observation at once, so the key, its reverse
 /// and the record cannot end up disagreeing.
-fn apply(observation: &mut PacketObservation, source: u16, destination: u16) {
-    observation.key.endpoints = Endpoints::Ports {
-        source,
-        destination,
-    };
-    observation.reverse_key.endpoints = observation.key.endpoints.reversed();
+fn apply(observation: &mut PacketObservation, endpoints: Endpoints) {
+    observation.key.endpoints = endpoints;
+    observation.reverse_key.endpoints = endpoints.reversed();
 }
 
 #[cfg(test)]
@@ -220,18 +219,25 @@ mod tests {
         }
     }
 
+    fn ports(source: u16, destination: u16) -> Endpoints {
+        Endpoints::Ports {
+            source,
+            destination,
+        }
+    }
+
     #[test]
     fn a_later_fragment_recalls_the_first_fragments_endpoints() {
         let mut tracker = FragmentTracker::new();
-        tracker.remember(id(42), 50_003, 9_999, 1_000);
+        tracker.remember(id(42), ports(50_003, 9_999), 1_000);
 
-        assert_eq!(tracker.recall(&id(42), 2_000), Some((50_003, 9_999)));
+        assert_eq!(tracker.recall(&id(42), 2_000), Some(ports(50_003, 9_999)));
     }
 
     #[test]
     fn an_unseen_datagram_is_left_alone() {
         let mut tracker = FragmentTracker::new();
-        tracker.remember(id(42), 50_003, 9_999, 1_000);
+        tracker.remember(id(42), ports(50_003, 9_999), 1_000);
 
         assert_eq!(tracker.recall(&id(43), 2_000), None, "different datagram");
     }
@@ -239,7 +245,7 @@ mod tests {
     #[test]
     fn endpoints_stop_being_recalled_once_they_are_stale() {
         let mut tracker = FragmentTracker::new();
-        tracker.remember(id(42), 50_003, 9_999, 1_000);
+        tracker.remember(id(42), ports(50_003, 9_999), 1_000);
 
         assert_eq!(tracker.recall(&id(42), 1_000 + MAX_AGE + 1), None);
         assert_eq!(tracker.tracked(), 0, "the stale entry is dropped");
@@ -250,7 +256,7 @@ mod tests {
         let mut tracker = FragmentTracker::new();
 
         for i in 0..(MAX_TRACKED as u32 * 2) {
-            tracker.remember(id(i), 1, 2, u64::from(i));
+            tracker.remember(id(i), ports(1, 2), u64::from(i));
         }
 
         assert!(
@@ -259,6 +265,17 @@ mod tests {
             tracker.tracked(),
             MAX_TRACKED
         );
+    }
+
+    /// A fragmented ICMP echo or ESP datagram has no ports. Remembering that
+    /// as `(0, 0)` gave later fragments a different endpoint kind from the
+    /// first, so one datagram became two flows.
+    #[test]
+    fn a_datagram_without_ports_is_remembered_as_having_none() {
+        let mut tracker = FragmentTracker::new();
+        tracker.remember(id(42), Endpoints::None, 1_000);
+
+        assert_eq!(tracker.recall(&id(42), 2_000), Some(Endpoints::None));
     }
 
     #[test]
