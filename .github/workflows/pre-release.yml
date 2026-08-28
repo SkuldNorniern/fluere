@@ -39,12 +39,16 @@ jobs:
         run: cargo generate-rpm && mv target/generate-rpm/fluere-*.rpm target/generate-rpm/fluere_latest_x86_64.rpm
 
 
-      # marvinpinto/action-automatic-releases is unmaintained.
-      - uses: softprops/action-gh-release@v2
+      - name: Metadata
+        id: meta
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - uses: "marvinpinto/action-automatic-releases@latest"
         with:
-          tag_name: latest
-          name: Development Build
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
           prerelease: true
+          title: "Development Build (${{ steps.meta.outputs.date }})"
           files: |
             target/debian/fluere_*.deb
             target/generate-rpm/fluere_*.rpm
