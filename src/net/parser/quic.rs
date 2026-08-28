@@ -136,12 +136,12 @@ impl QuicTracker {
             }
 
             // A connection ID says which connection a packet belongs to, not
-            // which segment it is on. Two tenants can carry the same ID —
+            // which segment it is on. Two tenants can carry the same ID,
             // through a replayed capture or a mirror that sees both copies of
-            // one connection — and reattributing across the boundary would
-            // merge their traffic, which is exactly what keying on the VLAN
-            // and tunnel exists to prevent. Migration within a segment is what
-            // gets followed.
+            // one connection, and reattributing across the boundary would
+            // merge their traffic, which is what keying on the VLAN and tunnel
+            // exists to prevent. Migration within a segment is what gets
+            // followed.
             if !same_segment(&key, &observation.key) {
                 return false;
             }
