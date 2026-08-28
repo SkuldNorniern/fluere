@@ -116,9 +116,13 @@ pub struct NetworkStats {
     /// IPv6, which read as a genuine measurement.
     pub ttl: Option<Range<u8>>,
     /// Differentiated services code point, from the first packet.
-    pub dscp: u8,
-    /// Explicit congestion notification bits, from the first packet.
-    pub ecn: u8,
+    ///
+    /// `None` for traffic with no IP header to read it from. Zero is a real
+    /// code point, so reporting absence as zero hid the difference.
+    pub dscp: Option<u8>,
+    /// Explicit congestion notification bits, from the first packet. `None` on
+    /// the same terms as `dscp`.
+    pub ecn: Option<u8>,
 }
 
 /// Transport details that are not endpoints.

@@ -62,7 +62,7 @@ pub struct FlowIdentity {
     /// decoded.
     pub gre_protocol: Option<u16>,
     /// `4` or `6`.
-    pub ip_version: u8,
+    pub ip_version: Option<u8>,
     /// Readable protocol name: `tcp`, `udp`, `arp`, and so on.
     pub protocol: String,
     /// IANA protocol number, absent for traffic with none, such as ARP.
@@ -108,7 +108,7 @@ impl FlowView {
                 .paths
                 .endpoints()
                 .iter()
-                .map(|(address, port)| format!("{}:{}", address, port))
+                .map(|change| change.to_string())
                 .collect::<Vec<_>>()
                 .join(";")
         });
@@ -132,7 +132,7 @@ impl FlowView {
                     "destination",
                     text(identity.destination.map(|ip| ip.to_string())),
                 ),
-                ("ip_version", Unsigned(u64::from(identity.ip_version))),
+                ("ip_version", optional(identity.ip_version.map(u64::from))),
                 (
                     "src_port",
                     optional(identity.ports.map(|(source, _)| u64::from(source))),
@@ -187,20 +187,15 @@ impl FlowView {
                 ("ece_cnt", both(flags.ece, reverse_flags.ece)),
                 ("cwr_cnt", both(flags.cwr, reverse_flags.cwr)),
                 ("ns_cnt", both(flags.ns, reverse_flags.ns)),
-                ("dscp", Unsigned(u64::from(record.network.dscp))),
-                ("ecn", Unsigned(u64::from(record.network.ecn))),
+                ("dscp", optional(record.network.dscp.map(u64::from))),
+                ("ecn", optional(record.network.ecn.map(u64::from))),
                 (
                     "start_state",
-                    Text(format!("{:?}", record.time.start_state).to_lowercase()),
+                    Text(record.time.start_state.as_str().to_string()),
                 ),
                 (
                     "end_reason",
-                    text(
-                        record
-                            .time
-                            .end_reason
-                            .map(|reason| format!("{:?}", reason).to_lowercase()),
-                    ),
+                    text(record.time.end_reason.map(|reason| reason.as_str().to_string())),
                 ),
                 ("truncated", Bool(record.capture.truncated)),
                 // Where the flow was seen. A QUIC connection that changes
@@ -232,8 +227,8 @@ mod tests {
             TimeResolution::Microseconds,
             StartState::SynObserved,
         );
-        record.network.dscp = 10;
-        record.network.ecn = 1;
+        record.network.dscp = Some(10);
+        record.network.ecn = Some(1);
 
         let syn = TcpFlags {
             syn: true,

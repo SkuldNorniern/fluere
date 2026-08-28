@@ -48,6 +48,16 @@ pub enum Direction {
     Reverse,
 }
 
+impl Direction {
+    /// The name consumers see.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Direction::Forward => "fwd",
+            Direction::Reverse => "rev",
+        }
+    }
+}
+
 /// One packet's contribution to a flow.
 #[derive(Debug, Clone, Copy)]
 pub struct PacketFacts {
