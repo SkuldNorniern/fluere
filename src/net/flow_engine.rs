@@ -9,6 +9,20 @@ use log::trace;
 /// the delay is never a large fraction of the timeout itself.
 const MAX_BUCKET: u64 = 1_000_000_000;
 
+/// How late a packet may arrive and still be counted on its own flow, in
+/// nanoseconds.
+///
+/// The engine's clock is the latest packet time it has seen, and expiry runs
+/// against that time less this allowance. Merged captures and multi-queue
+/// interfaces deliver out of order by milliseconds, which this covers.
+///
+/// The allowance is never more than half the idle timeout, because holding
+/// expiry back further than the timeout would mean the timeout no longer says
+/// when a flow ends. Skew larger than that can still expire a flow whose next
+/// packet has not been delivered yet, and that packet then opens a second flow.
+/// Sort a capture by timestamp if it is that badly ordered.
+const MAX_LATENESS: u64 = 1_000_000_000;
+
 use crate::net::parser::PacketObservation;
 use crate::net::types::Key;
 use fluereflow::{Direction, EndReason, Flow, FlowRecord, StartState, TimeResolution};
@@ -99,6 +113,12 @@ pub struct FlowEngine {
     timeout: Option<u64>,
     /// Width of one bucket in `due`, in microseconds.
     bucket: u64,
+    /// The latest packet time seen, which is the engine's clock. Taking the
+    /// current packet's time instead would let the clock run backwards.
+    watermark: u64,
+    /// How late a packet may be delivered and still be counted on its own
+    /// flow, in nanoseconds. Expiry is held back by this much.
+    lateness: u64,
 }
 
 impl FlowEngine {
@@ -116,11 +136,20 @@ impl FlowEngine {
             // Never coarser than the timeout, so the rounding delay stays a
             // small fraction of it however short the timeout is.
             bucket: timeout.unwrap_or(MAX_BUCKET).clamp(1, MAX_BUCKET),
+            watermark: 0,
+            // A second of skew covers merged captures and multi-queue
+            // delivery. Never more than half the timeout, so a short timeout
+            // still expires flows roughly when it says it will.
+            lateness: timeout.map_or(0, |timeout| MAX_LATENESS.min(timeout / 2)),
         }
     }
 
     /// Fold one observed packet into its flow, reporting the flow if it ended.
-    fn offer_with_reason(&mut self, observation: PacketObservation) -> Option<(Flow, EndReason)> {
+    fn offer_with_reason(
+        &mut self,
+        observation: PacketObservation,
+        opened: &mut bool,
+    ) -> Option<(Flow, EndReason)> {
         let key = observation.key;
         let reverse = observation.reverse_key;
         let flags = observation.tcp_flags.unwrap_or_default();
@@ -135,6 +164,7 @@ impl FlowEngine {
                     self.active
                         .insert(key, FlowState::new(open_record(&observation), deadline));
                     self.enqueue(key, deadline);
+                    *opened = true;
                     false
                 }
             },
@@ -196,11 +226,12 @@ impl FlowEngine {
         // a single flow spanning the silence.
         let expired = self.sweep_expired(observation.time().nanos());
 
-        let was_active = self.active.contains_key(&observation.key)
-            || self.active.contains_key(&observation.reverse_key);
-
-        let finished = self.offer_with_reason(observation);
-        let opened_flow = !was_active && self.active.contains_key(&observation.key);
+        // Recorded where the flow is inserted rather than inferred afterwards
+        // from the table. A flow that opens and closes on one packet, a lone
+        // RST, is gone again by the time the table is looked at, and used to be
+        // reported as never having opened.
+        let mut opened_flow = false;
+        let finished = self.offer_with_reason(observation, &mut opened_flow);
 
         let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
         completed.extend(expired);
@@ -219,6 +250,15 @@ impl FlowEngine {
         let Some(timeout) = self.timeout else {
             return Vec::new();
         };
+
+        // Out-of-order delivery is normal on merged captures and multi-queue
+        // interfaces, and a packet's own timestamp is a poor clock: one packet
+        // from far ahead would expire flows whose next packet has simply not
+        // been handed over yet, and that flow's later packets would then open a
+        // second flow. Expiry runs against the latest time seen, held back by
+        // an allowance for how late a packet may be.
+        self.watermark = self.watermark.max(current_time);
+        let current_time = self.watermark.saturating_sub(self.lateness);
 
         let current_bucket = current_time / self.bucket;
         let due_buckets: Vec<u64> = self
@@ -479,7 +519,8 @@ mod tests {
         accept_at(&mut engine, &tcp_frame(true, SYN), 2_000);
         accept_at(&mut engine, &tcp_frame(true, FIN), 3_000);
 
-        let outcome = accept_at(&mut engine, &tcp_frame(false, FIN), 12_000);
+        // Past the UDP flow's deadline and past the lateness allowance.
+        let outcome = accept_at(&mut engine, &tcp_frame(false, FIN), 17_000);
         assert_eq!(outcome.completed.len(), 2);
         assert_eq!(engine.active_count(), 0);
     }
@@ -510,7 +551,51 @@ mod tests {
         assert_eq!(engine.active_count(), 1);
         assert_eq!(engine.queued_count(), 1, "re-queued exactly once");
 
-        assert_eq!(engine.sweep_expired(19_000_000).len(), 1);
+        assert_eq!(engine.sweep_expired(24_000_000).len(), 1);
+        assert_eq!(engine.active_count(), 0);
+    }
+
+    /// A packet from further ahead must not expire a flow whose own next
+    /// packet is merely late. Expiring it would split one conversation in two,
+    /// because the delayed packet then opens a second flow.
+    #[test]
+    fn a_flow_is_not_expired_by_another_flow_running_ahead() {
+        // 20 ms timeout, so up to 10 ms of skew is tolerated.
+        let mut engine = FlowEngine::new(20);
+        accept_at(&mut engine, &udp_frame(), 1_000);
+        // A different flow, delivered from further along the capture.
+        accept_at(&mut engine, &tcp_frame(true, SYN), 30_000);
+        // The first flow's own next packet, delivered late.
+        let outcome = accept_at(&mut engine, &udp_frame(), 2_000);
+
+        assert!(
+            outcome.completed.is_empty(),
+            "nothing finished: the UDP flow is still the same conversation"
+        );
+        assert!(!outcome.opened_flow, "and it did not open a second one");
+    }
+
+    /// Skew past the allowance still expires a flow early. This is the
+    /// documented limit rather than an accident: holding expiry back further
+    /// than the timeout would mean the timeout no longer says when a flow ends.
+    #[test]
+    fn skew_beyond_the_allowance_still_expires_a_flow() {
+        let mut engine = FlowEngine::new(20);
+        accept_at(&mut engine, &udp_frame(), 1_000);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 500_000);
+        let outcome = accept_at(&mut engine, &udp_frame(), 2_000);
+
+        assert!(outcome.opened_flow, "the late packet opened a second flow");
+    }
+
+    /// A flow that opens and closes on the same packet still opened.
+    #[test]
+    fn a_flow_that_opens_and_closes_at_once_is_reported_as_opened() {
+        let mut engine = FlowEngine::new(600_000);
+        let outcome = accept_at(&mut engine, &tcp_frame(true, RST), 1_000);
+
+        assert!(outcome.opened_flow, "the flow was created");
+        assert_eq!(outcome.completed.len(), 1, "and finished immediately");
         assert_eq!(engine.active_count(), 0);
     }
 
