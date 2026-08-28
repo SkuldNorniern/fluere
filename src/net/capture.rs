@@ -100,7 +100,6 @@ async fn process_packet(
         trace!("flow finished: {:?}", flow);
         plugin_manager
             .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-            .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
     }
@@ -162,7 +161,6 @@ async fn drain_engine(
     for flow in engine.drain() {
         plugin_manager
             .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-            .await
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
         records.push(flow);
     }
