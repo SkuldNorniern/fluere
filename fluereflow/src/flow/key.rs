@@ -74,6 +74,21 @@ impl Endpoints {
     }
 }
 
+/// One endpoint reduced to a number, for the shard hash.
+fn endpoint_hash(address: &IpAddr, port: u16) -> u64 {
+    let mut value = match address {
+        IpAddr::V4(v4) => u64::from(u32::from_be_bytes(v4.octets())),
+        IpAddr::V6(v6) => {
+            let octets = v6.octets();
+            let high = u64::from_be_bytes(octets[..8].try_into().unwrap_or([0; 8]));
+            let low = u64::from_be_bytes(octets[8..].try_into().unwrap_or([0; 8]));
+            high ^ low.rotate_left(17)
+        }
+    };
+    value = value.wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    value ^ u64::from(port).rotate_left(48)
+}
+
 /// Everything that distinguishes one flow from another.
 ///
 /// Addresses and protocol are the obvious part. The rest matters because
@@ -122,6 +137,53 @@ impl FlowKey {
             vlan: self.vlan,
             encapsulation: self.encapsulation,
         }
+    }
+
+    /// Which of `shards` workers this flow belongs to.
+    ///
+    /// The same answer for a key and its reverse, so both directions of one
+    /// conversation land on the same worker. That is the whole requirement:
+    /// two workers accumulating halves of a flow would produce two records
+    /// with half the counters each, and no later merge could tell they were
+    /// the same conversation.
+    ///
+    /// Nothing threaded reads this yet. It is here so the guarantee is written
+    /// down and tested before anything depends on it.
+    ///
+    /// Only direction-symmetric parts go in. The two endpoints are combined
+    /// unordered; the segment fields do not swap and are used as they are. MAC
+    /// addresses are left out: they swap with direction, and a shard needs to
+    /// be stable and well spread rather than unique.
+    pub fn shard(&self, shards: usize) -> usize {
+        if shards <= 1 {
+            return 0;
+        }
+
+        let (source_port, destination_port) = self.ports();
+        let a = endpoint_hash(&self.source, source_port);
+        let b = endpoint_hash(&self.destination, destination_port);
+
+        // Unordered: the pair hashes the same whichever way round it arrives.
+        let mut value = a ^ b;
+        value = value.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        value ^= u64::from(self.protocol);
+        value ^= u64::from(self.ethertype.unwrap_or(0)) << 8;
+        value ^= self
+            .vlan
+            .tags()
+            .iter()
+            .fold(0u64, |acc, tag| acc.rotate_left(16) ^ u64::from(*tag));
+        if let Some(encapsulation) = self.encapsulation {
+            value ^= u64::from(encapsulation.id.unwrap_or(0)).rotate_left(32);
+            value ^= encapsulation.kind as u64;
+        }
+
+        // Final mix, so the low bits are usable for a power-of-two shard count.
+        value ^= value >> 33;
+        value = value.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+        value ^= value >> 29;
+
+        (value % shards as u64) as usize
     }
 
     /// Forget the link-layer addresses, so traffic between the same endpoints
@@ -182,6 +244,7 @@ impl FlowKey {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use super::super::EncapKind;
     use super::*;
 
     fn key(endpoints: Endpoints) -> FlowKey {
@@ -241,6 +304,91 @@ mod tests {
 
         assert_eq!(reply.endpoints, Endpoints::None);
         assert_eq!(reply.reversed(), request);
+    }
+
+    /// The guarantee threading will rest on: both directions of one
+    /// conversation must reach the same worker, or its counters are split
+    /// across two records that nothing can merge afterwards.
+    #[test]
+    fn a_flow_and_its_reverse_shard_together() {
+        let endpoints = [
+            Endpoints::Ports {
+                source: 40_001,
+                destination: 443,
+            },
+            Endpoints::SecurityAssociation(0xdead_beef),
+            Endpoints::GreProtocol(0x0800),
+            Endpoints::None,
+        ];
+
+        for endpoint in endpoints {
+            let forward = key(endpoint);
+            for shards in [2usize, 3, 4, 8, 16, 64] {
+                assert_eq!(
+                    forward.shard(shards),
+                    forward.reversed().shard(shards),
+                    "{:?} across {} shards",
+                    endpoint,
+                    shards
+                );
+            }
+        }
+    }
+
+    /// The segment fields do not swap with direction, so they must not be
+    /// combined as though they did.
+    #[test]
+    fn a_tunnelled_flow_and_its_reverse_shard_together() {
+        let mut forward = key(Endpoints::Ports {
+            source: 41_001,
+            destination: 9_000,
+        });
+        forward.vlan = VlanTags::from_stack(&[100, 200]);
+        forward.encapsulation = Some(Encapsulation {
+            kind: EncapKind::Vxlan,
+            outer: None,
+            id: Some(4242),
+        });
+
+        for shards in [2usize, 7, 16] {
+            assert_eq!(forward.shard(shards), forward.reversed().shard(shards));
+        }
+    }
+
+    /// One worker is the whole capture, so there is nothing to decide.
+    #[test]
+    fn a_single_shard_takes_everything() {
+        let forward = key(Endpoints::None);
+        assert_eq!(forward.shard(1), 0);
+        assert_eq!(forward.shard(0), 0);
+    }
+
+    /// A shard that sends most flows to one worker is worse than no sharding,
+    /// so check the spread over something resembling real traffic.
+    #[test]
+    fn flows_spread_across_the_shards() {
+        const SHARDS: usize = 8;
+        let mut counts = [0usize; SHARDS];
+
+        for i in 0..4_000u32 {
+            let mut flow = key(Endpoints::Ports {
+                source: 1024 + (i % 60_000) as u16,
+                destination: 443,
+            });
+            flow.source = IpAddr::V4(Ipv4Addr::from(0x0A00_0000 + i));
+            counts[flow.shard(SHARDS)] += 1;
+        }
+
+        let ideal = 4_000 / SHARDS;
+        for (shard, count) in counts.iter().enumerate() {
+            assert!(
+                *count > ideal / 2 && *count < ideal * 2,
+                "shard {} took {} of 4000, expected near {}",
+                shard,
+                count,
+                ideal
+            );
+        }
     }
 
     #[test]
