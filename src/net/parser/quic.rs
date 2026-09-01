@@ -33,6 +33,9 @@ const MAX_AGE: u64 = 300_000_000_000;
 /// A UDP header is a fixed eight bytes, after which the QUIC packet begins.
 const UDP_HEADER_LEN: usize = 8;
 
+/// The longest connection ID RFC 9000 allows.
+const MAX_CID_LEN: usize = 20;
+
 /// Where a connection ID's traffic belongs.
 #[derive(Debug, Clone, Copy)]
 struct Destination {
@@ -54,20 +57,20 @@ struct Destination {
 #[derive(Debug, Default)]
 pub struct QuicTracker {
     connections: HashMap<Vec<u8>, Destination>,
-    /// Connection ID lengths seen so far, longest first. A short header does
-    /// not carry the length, so the only way to read one is to try the lengths
-    /// that handshakes have actually used.
+    /// Which connection ID lengths handshakes have used, as a bit per length.
     ///
-    /// Kept sorted as it is built rather than collected and sorted per packet:
-    /// every candidate short header used to allocate and sort a fresh list.
-    lengths: Vec<usize>,
+    /// A short header does not carry the length, so the only way to read one is
+    /// to try the lengths actually seen. RFC 9000 caps a connection ID at 20
+    /// bytes, so every possible length fits in a mask, which needs no
+    /// allocation and is already ordered.
+    lengths: u32,
 }
 
 impl QuicTracker {
     pub fn new() -> Self {
         QuicTracker {
             connections: HashMap::new(),
-            lengths: Vec::new(),
+            lengths: 0,
         }
     }
 
@@ -120,8 +123,8 @@ impl QuicTracker {
             super::expiry::make_room(&mut self.connections, now, MAX_AGE, |entry| entry.last_seen);
         }
 
-        if let Err(at) = self.lengths.binary_search_by(|len| cid.len().cmp(len)) {
-            self.lengths.insert(at, cid.len());
+        if cid.len() <= MAX_CID_LEN {
+            self.lengths |= 1 << cid.len();
         }
 
         self.connections.insert(
@@ -139,8 +142,13 @@ impl QuicTracker {
     fn attribute(&mut self, observation: &mut PacketObservation, payload: &[u8], now: u64) -> bool {
         // Try only the lengths handshakes have used, longest first: a short ID
         // can be a prefix of a longer one, and the longer match is the specific
-        // connection.
-        for length in self.lengths.clone() {
+        // connection. Read off the mask rather than a list, so nothing is
+        // allocated for a packet that turns out not to match anything.
+        let mut remaining = self.lengths;
+        while remaining != 0 {
+            let length = (u32::BITS - 1 - remaining.leading_zeros()) as usize;
+            remaining &= !(1 << length);
+
             let Some(header) = parse_quic_short_header(payload, length) else {
                 continue;
             };
@@ -304,7 +312,8 @@ mod tests {
         tracker.remember(&[9; 8], flow, 1_000);
         tracker.remember(&[7; 6], flow, 1_000);
 
-        assert_eq!(tracker.lengths, vec![8, 6, 4]);
+        // Bits 4, 6 and 8, read longest first when a packet is attributed.
+        assert_eq!(tracker.lengths, (1 << 4) | (1 << 6) | (1 << 8));
     }
 
     #[test]
@@ -336,11 +345,11 @@ mod tests {
     #[test]
     fn only_observed_id_lengths_are_tried() {
         let mut tracker = QuicTracker::new();
-        assert!(tracker.lengths.is_empty());
+        assert_eq!(tracker.lengths, 0);
 
         tracker.remember(&[1, 2, 3, 4], key(), 1_000);
         tracker.remember(&[9; 8], key(), 1_000);
 
-        assert_eq!(tracker.lengths, vec![8, 4], "longest first");
+        assert_eq!(tracker.lengths, (1 << 4) | (1 << 8));
     }
 }
