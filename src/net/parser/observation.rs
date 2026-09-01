@@ -24,15 +24,12 @@ use super::quic::QuicTracker;
 pub struct PacketObservation {
     /// Flow key in the direction this packet travelled.
     pub key: Key,
-    /// The same flow key with source and destination swapped.
-    pub reverse_key: Key,
     /// What this packet measured.
     pub facts: PacketFacts,
     /// Differentiated services code point, from this packet's IP header.
     pub dscp: Option<u8>,
     /// Explicit congestion notification bits, from this packet's IP header.
     pub ecn: Option<u8>,
-    /// EtherType of the traffic this packet carried.
     /// The endpoint this packet physically arrived from, before any
     /// reattribution to a flow its own addresses do not name.
     pub arrived_from: (std::net::IpAddr, u16),
@@ -41,6 +38,16 @@ pub struct PacketObservation {
 }
 
 impl PacketObservation {
+    /// The same flow key with source and destination swapped.
+    ///
+    /// Derived rather than stored beside the key: the two would have to be
+    /// rewritten together every time fragment or QUIC handling rewrites the
+    /// endpoints, and one of them being missed is a bug that would look like a
+    /// flow splitting in half.
+    pub fn reverse_key(&self) -> Key {
+        self.key.reversed()
+    }
+
     /// When this packet was captured.
     pub fn time(&self) -> Timestamp {
         self.facts.time
@@ -69,10 +76,9 @@ pub fn observe(
 
     let parsed = super::parse_frame(packet.data, linktype)?;
 
-    let (mut key, mut reverse_key) = keys_from_parsed(&parsed, packet.data)?;
+    let (mut key, _) = keys_from_parsed(&parsed, packet.data)?;
     if !use_mac {
         key.forget_link_addresses();
-        reverse_key.forget_link_addresses();
     }
 
     let properties = properties::from_parsed(
@@ -85,7 +91,6 @@ pub fn observe(
 
     let mut observation = PacketObservation {
         key,
-        reverse_key,
         facts: properties.facts,
         dscp: properties.dscp,
         ecn: properties.ecn,
@@ -180,7 +185,7 @@ mod tests {
         let (key, reverse_key) =
             parse_keys(pcap::Packet::new(&header, &frame), 1).expect("keys parse");
         assert_eq!(observation.key, key);
-        assert_eq!(observation.reverse_key, reverse_key);
+        assert_eq!(observation.reverse_key(), reverse_key);
 
         assert_eq!(observation.frame_octets(), frame.len() as u32);
         assert_eq!(observation.facts.captured_octets, frame.len() as u32);
@@ -221,7 +226,7 @@ mod tests {
         assert_ne!(with_mac.key, without.key);
         assert_eq!(without.key.source_mac.0, [0; 6]);
         assert_eq!(without.key.destination_mac.0, [0; 6]);
-        assert_eq!(without.reverse_key.source_mac.0, [0; 6]);
+        assert_eq!(without.reverse_key().source_mac.0, [0; 6]);
     }
 
     fn ipv4_icmp(src: [u8; 4], dst: [u8; 4], icmp_type: u8) -> Vec<u8> {
@@ -278,13 +283,14 @@ mod tests {
         assert_eq!(request.key.ports().0, 0, "no endpoint to report");
         assert_eq!(request.key.ports().1, 0);
         assert_eq!(
-            request.reverse_key.source, reply.key.source,
+            request.reverse_key().source,
+            reply.key.source,
             "the reply must match the request's reverse key"
         );
-        assert_eq!(request.reverse_key.destination, reply.key.destination);
-        assert_eq!(request.reverse_key.ports().0, reply.key.ports().0);
-        assert_eq!(request.reverse_key.ports().1, reply.key.ports().1);
-        assert_eq!(request.reverse_key.protocol, reply.key.protocol);
+        assert_eq!(request.reverse_key().destination, reply.key.destination);
+        assert_eq!(request.reverse_key().ports().0, reply.key.ports().0);
+        assert_eq!(request.reverse_key().ports().1, reply.key.ports().1);
+        assert_eq!(request.reverse_key().protocol, reply.key.protocol);
     }
 
     /// Both families group the same way.
@@ -295,10 +301,10 @@ mod tests {
 
         assert_eq!(request.key.protocol, 58);
         assert_eq!((request.key.ports().0, request.key.ports().1), (0, 0));
-        assert_eq!(request.reverse_key.source, reply.key.source);
-        assert_eq!(request.reverse_key.destination, reply.key.destination);
-        assert_eq!(request.reverse_key.ports().0, reply.key.ports().0);
-        assert_eq!(request.reverse_key.ports().1, reply.key.ports().1);
+        assert_eq!(request.reverse_key().source, reply.key.source);
+        assert_eq!(request.reverse_key().destination, reply.key.destination);
+        assert_eq!(request.reverse_key().ports().0, reply.key.ports().0);
+        assert_eq!(request.reverse_key().ports().1, reply.key.ports().1);
     }
 
     /// SCTP carries ports like TCP and UDP do, but paccel reports them on
