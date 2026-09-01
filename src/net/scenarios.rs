@@ -523,7 +523,7 @@ mod tests {
 
         for protocol in [1, 58] {
             let flow = flows.only(|f| f.key.protocol == protocol);
-            assert_eq!(flow.packets(), 2, "protocol {} exchange", protocol);
+            assert_eq!(flow.packets(), 2, "protocol {protocol} exchange");
             assert_eq!((flow.forward.packets, flow.reverse.packets), (1, 1));
         }
     }

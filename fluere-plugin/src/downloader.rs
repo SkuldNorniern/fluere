@@ -25,9 +25,9 @@ pub enum DownloadError {
 impl fmt::Display for DownloadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DownloadError::Io(err) => write!(f, "IO error: {}", err),
-            DownloadError::Git(err) => write!(f, "Git error: {}", err),
-            DownloadError::Other(err) => write!(f, "{}", err),
+            DownloadError::Io(err) => write!(f, "IO error: {err}"),
+            DownloadError::Git(err) => write!(f, "Git error: {err}"),
+            DownloadError::Other(err) => write!(f, "{err}"),
         }
     }
 }
@@ -51,7 +51,7 @@ impl From<String> for DownloadError {
 }
 
 pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError> {
-    let url = format!("https://github.com/{}", repo_name);
+    let url = format!("https://github.com/{repo_name}");
     let warn_style = Style::builder().foreground(Color::Yellow).build();
     let highlight_style = Style::builder().foreground(Color::Green).bold().build();
     let path = home_cache_path()?;
@@ -105,7 +105,7 @@ pub fn download_plugin_from_github(repo_name: &str) -> Result<(), DownloadError>
     let local_commit = repo
         .head()?
         .target()
-        .ok_or_else(|| DownloadError::Other(format!("{} has no checked-out commit", repo_name)))?;
+        .ok_or_else(|| DownloadError::Other(format!("{repo_name} has no checked-out commit")))?;
 
     if fetch_commit != local_commit {
         println!(

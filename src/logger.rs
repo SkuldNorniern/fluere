@@ -117,8 +117,8 @@ impl Log for Logger {
         );
 
         match to_std {
-            Some(Logstdout::Stdout) => println!("{}", message),
-            Some(Logstdout::StdErr) => eprintln!("{}", message),
+            Some(Logstdout::Stdout) => println!("{message}"),
+            Some(Logstdout::StdErr) => eprintln!("{message}"),
             None => {}
         }
 
@@ -126,7 +126,7 @@ impl Log for Logger {
             && let Some(mut file_ref) = self.file.as_ref()
         {
             // A logger cannot report its own failure to log; drop the error.
-            let _ = writeln!(file_ref, "{}", message);
+            let _ = writeln!(file_ref, "{message}");
         }
     }
 

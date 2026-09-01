@@ -102,7 +102,7 @@ impl FlowView {
         });
         let endpoints = identity
             .tunnel_endpoints
-            .map(|(source, destination)| format!("{}->{}", source, destination));
+            .map(|(source, destination)| format!("{source}->{destination}"));
         let paths = record.paths.migrated().then(|| {
             record
                 .paths
@@ -273,7 +273,7 @@ mod tests {
             .iter()
             .find(|(key, _)| *key == name)
             .map(|(_, value)| value.clone())
-            .unwrap_or_else(|| panic!("missing field {}", name))
+            .unwrap_or_else(|| panic!("missing field {name}"))
     }
 
     #[test]

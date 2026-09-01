@@ -72,7 +72,7 @@ fn parse_plugin(name: &str, value: &Value) -> Result<Plugin, ConfigError> {
     let enabled = match fields.get("enabled") {
         Some(value) => value
             .as_bool()
-            .ok_or_else(|| shape(&format!("{}.enabled", name), "a bool", value))?,
+            .ok_or_else(|| shape(&format!("{name}.enabled"), "a bool", value))?,
         None => false,
     };
 
@@ -81,7 +81,7 @@ fn parse_plugin(name: &str, value: &Value) -> Result<Plugin, ConfigError> {
         Some(value) => Some(
             value
                 .as_str()
-                .ok_or_else(|| shape(&format!("{}.path", name), "a string", value))?
+                .ok_or_else(|| shape(&format!("{name}.path"), "a string", value))?
                 .to_string(),
         ),
     };
@@ -101,13 +101,13 @@ fn parse_plugin(name: &str, value: &Value) -> Result<Plugin, ConfigError> {
 fn parse_arguments(name: &str, value: &Value) -> Result<HashMap<String, String>, ConfigError> {
     let entries = value
         .as_map()
-        .ok_or_else(|| shape(&format!("{}.extra_arguments", name), "a map", value))?;
+        .ok_or_else(|| shape(&format!("{name}.extra_arguments"), "a map", value))?;
 
     let mut arguments = HashMap::with_capacity(entries.len());
     for (key, argument) in entries {
         let argument = argument.as_str().ok_or_else(|| {
             shape(
-                &format!("{}.extra_arguments.{}", name, key),
+                &format!("{name}.extra_arguments.{key}"),
                 "a string",
                 argument,
             )
@@ -251,13 +251,13 @@ plugins = {
                 assert!(message.contains("broken.enabled"), "{}", message);
                 assert!(message.contains("bool"), "{}", message);
             }
-            other => panic!("expected a shape error, got {:?}", other),
+            other => panic!("expected a shape error, got {other:?}"),
         }
     }
 
     #[test]
     fn a_syntax_error_is_reported_as_a_tavra_error() {
         let error = from_str("plugins = {{{").expect_err("not valid tavra");
-        assert!(matches!(error, ConfigError::Tavra(_)), "{:?}", error);
+        assert!(matches!(error, ConfigError::Tavra(_)), "{error:?}");
     }
 }

@@ -98,7 +98,7 @@ fn process_packet(
     records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in engine.accept(observation).completed {
-        trace!("flow finished: {:?}", flow);
+        trace!("flow finished: {flow:?}");
         plugin_manager
             .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
@@ -120,13 +120,13 @@ fn rotate_export(
     debug!("Calculating timeout done");
 
     let file_path_clone = file_path.to_owned();
-    info!("Export {} Started", file_path_clone);
+    info!("Export {file_path_clone} Started");
     export_tasks.push(task::spawn(async move {
         let exporter = fluere_exporter(records_to_export, file).await;
         if let Err(err) = exporter {
-            error!("Export error: {}", err);
+            error!("Export error: {err}");
         }
-        info!("Export {} Finished", file_path_clone);
+        info!("Export {file_path_clone} Finished");
     }));
 
     info!("running without blocking");
@@ -179,7 +179,7 @@ fn spawn_final_export(records: &mut Vec<Flow>, file: fs::File) -> JoinHandle<()>
     task::spawn(async {
         let exporter = fluere_exporter(records_to_export, file).await;
         if let Err(err) = exporter {
-            error!("Export error: {}", err);
+            error!("Export error: {err}");
         }
     })
 }
@@ -259,7 +259,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
             source::Read::Timeout => {}
             source::Read::Eof => break,
             source::Read::Fatal(error) => {
-                error!("Capture failed: {}", error);
+                error!("Capture failed: {error}");
                 return Err(FluereError::Capture(CaptureError::Pcap(error)));
             }
         }

@@ -13,9 +13,9 @@ impl fmt::Display for ParseError {
         match self {
             Self::InvalidPacket => write!(f, "Invalid packet"),
             Self::EmptyPacket => write!(f, "Empty packet"),
-            Self::UnknownProtocol(protocol) => write!(f, "Unknown protocol: {}", protocol),
+            Self::UnknownProtocol(protocol) => write!(f, "Unknown protocol: {protocol}"),
             Self::UnknownEtherType(ether_type) => {
-                write!(f, "Unknown ether type: {}", ether_type)
+                write!(f, "Unknown ether type: {ether_type}")
             }
         }
     }
@@ -32,10 +32,10 @@ pub enum CaptureError {
 impl fmt::Display for CaptureError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::DeviceNotFound(device) => write!(f, "Device not found: {}", device),
-            Self::InvalidDeviceIndex(index) => write!(f, "Invalid device index: {}", index),
-            Self::Interface(error) => write!(f, "Interface error: {}", error),
-            Self::Pcap(error) => write!(f, "PCAP error: {}", error),
+            Self::DeviceNotFound(device) => write!(f, "Device not found: {device}"),
+            Self::InvalidDeviceIndex(index) => write!(f, "Invalid device index: {index}"),
+            Self::Interface(error) => write!(f, "Interface error: {error}"),
+            Self::Pcap(error) => write!(f, "PCAP error: {error}"),
         }
     }
 }
@@ -52,13 +52,13 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Missing(name) => write!(f, "Required parameter missing: {}", name),
+            Self::Missing(name) => write!(f, "Required parameter missing: {name}"),
             Self::InvalidValue { field, value } => {
-                write!(f, "Invalid value '{}' for field '{}'", value, field)
+                write!(f, "Invalid value '{value}' for field '{field}'")
             }
             Self::FileNotFound(path) => write!(f, "File not found: {}", path.display()),
-            Self::Argument(error) => write!(f, "Argument error: {}", error),
-            Self::Config(error) => write!(f, "Configuration error: {}", error),
+            Self::Argument(error) => write!(f, "Argument error: {error}"),
+            Self::Config(error) => write!(f, "Configuration error: {error}"),
         }
     }
 }
@@ -76,12 +76,12 @@ pub enum FluereError {
 impl fmt::Display for FluereError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(error) => write!(f, "IO error: {}", error),
+            Self::Io(error) => write!(f, "IO error: {error}"),
             Self::Parse(error) => error.fmt(f),
             Self::Capture(error) => error.fmt(f),
             Self::Config(error) => error.fmt(f),
-            Self::Export(error) => write!(f, "Export error: {}", error),
-            Self::Plugin(error) => write!(f, "Plugin error: {}", error),
+            Self::Export(error) => write!(f, "Export error: {error}"),
+            Self::Plugin(error) => write!(f, "Plugin error: {error}"),
         }
     }
 }

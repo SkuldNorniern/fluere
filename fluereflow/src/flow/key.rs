@@ -327,9 +327,7 @@ mod tests {
                 assert_eq!(
                     forward.shard(shards),
                     forward.reversed().shard(shards),
-                    "{:?} across {} shards",
-                    endpoint,
-                    shards
+                    "{endpoint:?} across {shards} shards"
                 );
             }
         }
@@ -383,10 +381,7 @@ mod tests {
         for (shard, count) in counts.iter().enumerate() {
             assert!(
                 *count > ideal / 2 && *count < ideal * 2,
-                "shard {} took {} of 4000, expected near {}",
-                shard,
-                count,
-                ideal
+                "shard {shard} took {count} of 4000, expected near {ideal}"
             );
         }
     }

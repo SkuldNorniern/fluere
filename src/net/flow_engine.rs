@@ -249,7 +249,7 @@ impl FlowEngine {
         let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
         completed.extend(expired);
         if let Some((flow, reason)) = finished {
-            trace!("flow ended: {:?}", reason);
+            trace!("flow ended: {reason:?}");
             completed.push(flow);
         }
 

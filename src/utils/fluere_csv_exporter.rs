@@ -28,10 +28,10 @@ impl Endpoints {
             endpoints.ports = (source.to_string(), destination.to_string());
         }
         if let Some(spi) = flow.key.endpoints.security_association() {
-            endpoints.spi = format!("0x{:08x}", spi);
+            endpoints.spi = format!("0x{spi:08x}");
         }
         if let Some(protocol) = flow.key.endpoints.gre_protocol() {
-            endpoints.gre_protocol = format!("0x{:04x}", protocol);
+            endpoints.gre_protocol = format!("0x{protocol:04x}");
         }
         // ICMP type and code are a measurement, not an endpoint: they identify
         // the direction, and an echo exchange is one flow.
@@ -101,13 +101,13 @@ pub async fn fluere_exporter(records: Vec<Flow>, file: File) -> Result<(), csv::
 
     debug!("Writing {} records", records.len());
     wtr.write_record(COLUMNS).map_err(|e| {
-        error!("Failed to write CSV header: {}", e);
+        error!("Failed to write CSV header: {e}");
         e
     })?;
 
     for flow in records.iter() {
         wtr.write_record(row(flow)).map_err(|e| {
-            error!("Failed to write CSV record: {}", e);
+            error!("Failed to write CSV record: {e}");
             e
         })?;
     }
@@ -116,7 +116,7 @@ pub async fn fluere_exporter(records: Vec<Flow>, file: File) -> Result<(), csv::
     // failure on the last buffered rows, which is exactly when the caller most
     // needs to hear about it.
     wtr.flush().map_err(|error| {
-        error!("Failed to flush CSV output: {}", error);
+        error!("Failed to flush CSV output: {error}");
         csv::Error::from(error)
     })?;
 

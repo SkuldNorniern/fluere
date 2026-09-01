@@ -149,7 +149,7 @@ impl PluginManager {
         let (sender, receiver) = mpsc::channel::<(FlowRecord, FlowIdentity)>(CHANNEL_CAPACITY);
 
         #[cfg(feature = "log")]
-        debug!("{} plugin(s) loaded", loaded);
+        debug!("{loaded} plugin(s) loaded");
         #[cfg(not(feature = "log"))]
         let _ = loaded;
 
@@ -387,14 +387,14 @@ return plugin
         let written = std::fs::read_to_string(&output).expect("plugin output");
         let lines: Vec<&str> = written.lines().collect();
 
-        assert_eq!(lines.len(), 26, "25 records plus one cleanup: {:?}", lines);
+        assert_eq!(lines.len(), 26, "25 records plus one cleanup: {lines:?}");
         assert_eq!(
             lines.last(),
             Some(&"cleanup"),
             "cleanup must run after every queued record"
         );
         for (port, line) in lines[..25].iter().enumerate() {
-            assert_eq!(*line, format!("record {}", port));
+            assert_eq!(*line, format!("record {port}"));
         }
     }
 
@@ -442,7 +442,7 @@ return plugin
 
         let written = std::fs::read_to_string(&output).expect("plugin output");
         assert!(
-            written.contains(&format!("schema={}", SCHEMA_VERSION)),
+            written.contains(&format!("schema={SCHEMA_VERSION}")),
             "{}",
             written
         );

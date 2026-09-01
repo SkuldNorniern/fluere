@@ -23,9 +23,9 @@ pub enum PluginError {
 impl fmt::Display for PluginError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Runtime(error) => write!(f, "Plugin runtime error: {}", error),
-            Self::Io(error) => write!(f, "IO error: {}", error),
-            Self::Download(error) => write!(f, "Plugin download error: {}", error),
+            Self::Runtime(error) => write!(f, "Plugin runtime error: {error}"),
+            Self::Io(error) => write!(f, "IO error: {error}"),
+            Self::Download(error) => write!(f, "Plugin download error: {error}"),
             Self::WorkerStopped => write!(f, "Plugin worker is no longer running"),
         }
     }
