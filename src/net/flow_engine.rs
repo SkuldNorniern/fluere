@@ -161,7 +161,7 @@ impl FlowEngine {
         opened: &mut bool,
     ) -> Option<(Flow, EndReason)> {
         let key = observation.key;
-        let reverse = observation.reverse_key;
+        let reverse = observation.reverse_key();
         let flags = observation.tcp_flags.unwrap_or_default();
         let at = observation.time().nanos();
 

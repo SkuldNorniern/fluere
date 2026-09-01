@@ -188,7 +188,6 @@ impl Fragment {
 /// and the record cannot end up disagreeing.
 fn apply(observation: &mut PacketObservation, endpoints: Endpoints) {
     observation.key.endpoints = endpoints;
-    observation.reverse_key.endpoints = endpoints.reversed();
 }
 
 #[cfg(test)]

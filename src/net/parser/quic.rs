@@ -36,10 +36,9 @@ const UDP_HEADER_LEN: usize = 8;
 /// Where a connection ID's traffic belongs.
 #[derive(Debug, Clone, Copy)]
 struct Destination {
-    /// The key a packet bearing this ID should be counted under.
+    /// The key a packet bearing this ID should be counted under. Its reverse
+    /// is derived where needed rather than stored beside it.
     key: Key,
-    /// That key reversed, so the engine can match either direction.
-    reverse: Key,
     last_seen: u64,
     /// Whether more than one connection has claimed this ID.
     ///
@@ -88,7 +87,7 @@ impl QuicTracker {
             // The sender announces its own ID here; the peer will put it in the
             // destination field of every later packet, which travel the other
             // way. Those belong to this flow seen in reverse.
-            self.remember(&quic.scid, observation.reverse_key, observation.key, now);
+            self.remember(&quic.scid, observation.reverse_key(), now);
             return false;
         }
 
@@ -99,7 +98,7 @@ impl QuicTracker {
         self.attribute(observation, payload, now)
     }
 
-    fn remember(&mut self, cid: &[u8], key: Key, reverse: Key, now: u64) {
+    fn remember(&mut self, cid: &[u8], key: Key, now: u64) {
         if cid.is_empty() {
             return;
         }
@@ -109,7 +108,7 @@ impl QuicTracker {
         // so the ID stops being used rather than pointing at whichever arrived
         // last.
         if let Some(existing) = self.connections.get_mut(cid) {
-            if existing.key != key || existing.reverse != reverse {
+            if existing.key != key {
                 trace!("connection ID claimed by a second connection, no longer usable");
                 existing.ambiguous = true;
             }
@@ -129,7 +128,6 @@ impl QuicTracker {
             cid.to_vec(),
             Destination {
                 key,
-                reverse,
                 last_seen: now,
                 ambiguous: false,
             },
@@ -164,7 +162,7 @@ impl QuicTracker {
             // not: out-of-order delivery would age the entry out early.
             destination.last_seen = destination.last_seen.max(now);
 
-            let (key, reverse) = (destination.key, destination.reverse);
+            let key = destination.key;
             if key == observation.key {
                 // Same addresses as before: nothing migrated.
                 return false;
@@ -182,7 +180,6 @@ impl QuicTracker {
             }
 
             observation.key = key;
-            observation.reverse_key = reverse;
             return true;
         }
 
@@ -252,8 +249,8 @@ mod tests {
         let mut second = key();
         second.source = "203.0.113.9".parse().expect("valid address");
 
-        tracker.remember(&[1, 2, 3, 4], first, first.reversed(), 1_000);
-        tracker.remember(&[1, 2, 3, 4], second, second.reversed(), 2_000);
+        tracker.remember(&[1, 2, 3, 4], first, 1_000);
+        tracker.remember(&[1, 2, 3, 4], second, 2_000);
 
         let destination = tracker
             .connections
@@ -269,8 +266,8 @@ mod tests {
         let mut tracker = QuicTracker::new();
         let flow = key();
 
-        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 1_000);
-        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 2_000);
+        tracker.remember(&[1, 2, 3, 4], flow, 1_000);
+        tracker.remember(&[1, 2, 3, 4], flow, 2_000);
 
         let destination = tracker
             .connections
@@ -286,8 +283,8 @@ mod tests {
         let mut tracker = QuicTracker::new();
         let flow = key();
 
-        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 9_000);
-        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 3_000);
+        tracker.remember(&[1, 2, 3, 4], flow, 9_000);
+        tracker.remember(&[1, 2, 3, 4], flow, 3_000);
 
         let destination = tracker
             .connections
@@ -303,9 +300,9 @@ mod tests {
         let mut tracker = QuicTracker::new();
         let flow = key();
 
-        tracker.remember(&[1, 2, 3, 4], flow, flow.reversed(), 1_000);
-        tracker.remember(&[9; 8], flow, flow.reversed(), 1_000);
-        tracker.remember(&[7; 6], flow, flow.reversed(), 1_000);
+        tracker.remember(&[1, 2, 3, 4], flow, 1_000);
+        tracker.remember(&[9; 8], flow, 1_000);
+        tracker.remember(&[7; 6], flow, 1_000);
 
         assert_eq!(tracker.lengths, vec![8, 6, 4]);
     }
@@ -313,7 +310,7 @@ mod tests {
     #[test]
     fn an_empty_connection_id_is_not_tracked() {
         let mut tracker = QuicTracker::new();
-        tracker.remember(&[], key(), key().reversed(), 1_000);
+        tracker.remember(&[], key(), 1_000);
 
         assert_eq!(tracker.tracked(), 0, "an empty ID identifies nothing");
     }
@@ -323,12 +320,7 @@ mod tests {
         let mut tracker = QuicTracker::new();
 
         for connection in 0..(MAX_TRACKED as u32 * 2) {
-            tracker.remember(
-                &connection.to_be_bytes(),
-                key(),
-                key().reversed(),
-                u64::from(connection),
-            );
+            tracker.remember(&connection.to_be_bytes(), key(), u64::from(connection));
         }
 
         assert!(
@@ -346,8 +338,8 @@ mod tests {
         let mut tracker = QuicTracker::new();
         assert!(tracker.lengths.is_empty());
 
-        tracker.remember(&[1, 2, 3, 4], key(), key().reversed(), 1_000);
-        tracker.remember(&[9; 8], key(), key().reversed(), 1_000);
+        tracker.remember(&[1, 2, 3, 4], key(), 1_000);
+        tracker.remember(&[9; 8], key(), 1_000);
 
         assert_eq!(tracker.lengths, vec![8, 4], "longest first");
     }
