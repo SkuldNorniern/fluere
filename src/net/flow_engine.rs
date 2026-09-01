@@ -1,4 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::HashMap;
+
+use ahash::AHashMap;
 
 use log::trace;
 
@@ -101,7 +105,13 @@ fn open_record(observation: &PacketObservation) -> FlowRecord {
 }
 
 pub struct FlowEngine {
-    active: HashMap<Key, FlowState>,
+    /// Flows currently open.
+    ///
+    /// Hashed with aHash rather than the standard library's SipHash. A `Key`
+    /// is 112 bytes and every packet hashes one, so this is squarely on the hot
+    /// path. aHash keeps the seeded, collision-resistant behaviour that matters
+    /// when the keys are addresses and ports an attacker chooses.
+    active: AHashMap<Key, FlowState>,
     /// Flows due to be checked, bucketed by second. A flow is queued once when
     /// it opens and then only ever re-queued by a sweep, so packets do no
     /// expiration bookkeeping at all and this holds at most one live entry per
@@ -130,7 +140,7 @@ impl FlowEngine {
         let timeout = (flow_timeout > 0).then_some(flow_timeout * 1_000_000);
 
         Self {
-            active: HashMap::new(),
+            active: AHashMap::new(),
             due: BTreeMap::new(),
             timeout,
             // Never coarser than the timeout, so the rounding delay stays a
