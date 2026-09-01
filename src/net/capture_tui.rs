@@ -202,7 +202,7 @@ fn add_recent_flow(recent_flows: &mut Vec<FlowSummary>, key: Key) {
     }
 }
 
-async fn emit_completed_flows(
+fn emit_completed_flows(
     completed: Vec<Flow>,
     plugin_manager: &PluginManager,
     records: &mut Vec<Flow>,
@@ -217,7 +217,7 @@ async fn emit_completed_flows(
     Ok(())
 }
 
-async fn process_packet(
+fn process_packet(
     observation: PacketObservation,
     engine: &mut FlowEngine,
     recent_flows: &mut Vec<FlowSummary>,
@@ -229,10 +229,10 @@ async fn process_packet(
     if outcome.opened_flow {
         add_recent_flow(recent_flows, observation.key);
     }
-    emit_completed_flows(outcome.completed, plugin_manager, records).await
+    emit_completed_flows(outcome.completed, plugin_manager, records)
 }
 
-async fn export_if_due(
+fn export_if_due(
     records: &mut Vec<Flow>,
     file: fs::File,
     file_path: Cow<'static, str>,
@@ -370,8 +370,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                             &mut recent_flows,
                             &plugin_manager,
                             &mut records,
-                        )
-                        .await?;
+                        )?;
                     }
                 }
                 // A quiet interface still needs its export and its redraw.
@@ -398,8 +397,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                     last_export_unix_time: &mut last_export_unix_time,
                 },
                 &mut export_tasks,
-            )
-            .await?;
+            )?;
 
             // Republished at a bounded rate: the terminal redraws ten times a
             // second, so copying the recent-flow list per read would be work
@@ -675,6 +673,12 @@ fn draw_ui(
 /// Ending the process here would skip the shutdown the capture loop runs on the
 /// way out: flows still open would never reach the plugins or the CSV, and the
 /// terminal would be left in raw mode on the alternate screen.
+///
+/// Stays `async` despite never awaiting: it is spawned as a task so the capture
+/// loop can abort it on the way out, and an abort is what stops it. Moving it
+/// to `spawn_blocking` would make the abort a no-op and leave a thread polling
+/// the terminal while the runtime tried to shut down.
+#[allow(clippy::unused_async)]
 async fn listen_for_exit_keys(stop: watch::Sender<bool>) -> Result<(), std::io::Error> {
     loop {
         if event::poll(std::time::Duration::from_millis(100))?
