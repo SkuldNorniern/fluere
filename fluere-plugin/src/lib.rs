@@ -94,6 +94,7 @@ impl PluginManager {
     ///
     /// A plugin that cannot be found, downloaded, read, or initialised is
     /// reported and skipped; the remaining plugins still load.
+    #[allow(clippy::unused_async)]
     pub async fn start(config: &Config) -> Result<(Self, PluginWorker), PluginError> {
         #[cfg(feature = "log")]
         debug!("Loading plugins");

@@ -91,7 +91,7 @@ fn duration_reached(start: Instant, duration: u64) -> bool {
     start.elapsed() >= Duration::from_millis(duration) && duration != 0
 }
 
-async fn process_packet(
+fn process_packet(
     observation: PacketObservation,
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
@@ -154,7 +154,7 @@ fn export_if_due(
     Ok((file_path, file))
 }
 
-async fn drain_engine(
+fn drain_engine(
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
     records: &mut Vec<Flow>,
@@ -249,7 +249,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
                 if let Some(observation) =
                     observe_packet(packet, use_mac, linktype, &mut parser_state)
                 {
-                    process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
+                    process_packet(observation, &mut engine, &plugin_manager, &mut records)?;
                 }
             }
             // Nothing arrived in this window. Not a failure, and not a reason
@@ -277,7 +277,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     }
 
     debug!("Captured in {:?}", start.elapsed());
-    drain_engine(&mut engine, &plugin_manager, &mut records).await?;
+    drain_engine(&mut engine, &plugin_manager, &mut records)?;
     await_capture_tasks(tasks).await;
 
     export_tasks.push(spawn_final_export(&mut records, file));

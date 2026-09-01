@@ -20,7 +20,7 @@ use indicatif::ProgressBar;
 use log::{error, info, trace};
 use pcap::Capture;
 
-async fn process_packet(
+fn process_packet(
     observation: PacketObservation,
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
@@ -40,7 +40,7 @@ async fn process_packet(
 /// Hand the flows still open at the end of the capture to the plugins too, so
 /// a plugin sees every flow the conversion produced and not just the ones that
 /// happened to close inside the file.
-async fn drain_engine(
+fn drain_engine(
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
     records: &mut Vec<Flow>,
@@ -122,7 +122,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
         };
 
         if let Some(observation) = observation {
-            process_packet(observation, &mut engine, &plugin_manager, &mut records).await?;
+            process_packet(observation, &mut engine, &plugin_manager, &mut records)?;
         }
     }
     bar.finish();
@@ -130,7 +130,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let ac_flow_cnt = engine.active_count();
     let ended_flow_cnt = records.len();
 
-    drain_engine(&mut engine, &plugin_manager, &mut records).await?;
+    drain_engine(&mut engine, &plugin_manager, &mut records)?;
 
     // Consumes the manager: dropping its sender lets the worker drain the
     // queue and stop before plugin cleanup runs.
