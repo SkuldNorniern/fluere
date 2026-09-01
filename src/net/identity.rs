@@ -39,7 +39,7 @@ pub fn tunnel_id(flow: &Flow) -> String {
 /// The tunnel's own endpoints. Empty for encapsulations that sit below IP.
 pub fn tunnel_endpoints(flow: &Flow) -> String {
     match flow.key.encapsulation.and_then(|e| e.outer) {
-        Some((source, destination)) => format!("{}->{}", source, destination),
+        Some((source, destination)) => format!("{source}->{destination}"),
         None => String::new(),
     }
 }
@@ -64,7 +64,7 @@ pub fn paths(flow: &Flow) -> String {
 /// family already says it.
 pub fn ethertype(flow: &Flow) -> String {
     match flow.key.ethertype {
-        Some(ethertype) if !flow.is_ip() => format!("0x{:04x}", ethertype),
+        Some(ethertype) if !flow.is_ip() => format!("0x{ethertype:04x}"),
         _ => String::new(),
     }
 }

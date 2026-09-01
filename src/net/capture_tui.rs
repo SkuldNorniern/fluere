@@ -172,10 +172,10 @@ fn endpoint_columns(key: &Key) -> (Cow<'static, str>, Cow<'static, str>) {
             Cow::from(destination.to_string()),
         ),
         Endpoints::SecurityAssociation(spi) => {
-            (Cow::from(format!("spi 0x{:08x}", spi)), Cow::from("-"))
+            (Cow::from(format!("spi 0x{spi:08x}")), Cow::from("-"))
         }
         Endpoints::GreProtocol(protocol) => {
-            (Cow::from(format!("0x{:04x}", protocol)), Cow::from("-"))
+            (Cow::from(format!("0x{protocol:04x}")), Cow::from("-"))
         }
         Endpoints::None => (Cow::from("-"), Cow::from("-")),
     }
@@ -248,9 +248,9 @@ fn export_if_due(
         let file_path_clone = file_path.clone();
         export_tasks.push(task::spawn(async move {
             if let Err(error) = fluere_exporter(records_to_export, file).await {
-                error!("Export error: {}", error);
+                error!("Export error: {error}");
             }
-            debug!("Export {} Finished", file_path_clone);
+            debug!("Export {file_path_clone} Finished");
         }));
 
         let file_path = cur_time_file(csv_file, file_dir, ".csv");
@@ -276,7 +276,7 @@ async fn await_render_task(
 async fn await_export_tasks(export_tasks: Vec<task::JoinHandle<()>>) {
     for export_task in export_tasks {
         if let Err(error) = export_task.await {
-            error!("Export task failed: {}", error);
+            error!("Export task failed: {error}");
         }
     }
 }
@@ -380,7 +380,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
                 source::Read::Timeout => {}
                 source::Read::Eof => break,
                 source::Read::Fatal(error) => {
-                    error!("Capture failed: {}", error);
+                    error!("Capture failed: {error}");
                     return Err(FluereError::Capture(CaptureError::Pcap(error)));
                 }
             }
@@ -424,7 +424,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
         let records_to_export = take(&mut records);
         export_tasks.push(task::spawn(async move {
             if let Err(error) = fluere_exporter(records_to_export, file).await {
-                error!("Export error: {}", error);
+                error!("Export error: {error}");
             }
         }));
 
@@ -544,7 +544,7 @@ fn refresh_ui(terminal: &mut LiveTerminal, snapshot: &UiSnapshot, interval: u64)
             snapshot.last_export_unix_time,
         );
     }) {
-        error!("Failed to draw terminal UI: {}", error);
+        error!("Failed to draw terminal UI: {error}");
     }
 }
 
@@ -552,7 +552,7 @@ fn unix_time_seconds() -> u64 {
     match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         Ok(duration) => duration.as_secs(),
         Err(error) => {
-            error!("System time is before UNIX epoch: {}", error);
+            error!("System time is before UNIX epoch: {error}");
             0
         }
     }
@@ -591,7 +591,7 @@ fn draw_ui(
 
     // Summary box
     let summary_text = [
-        format!("Active Flow Count: {}", active_flow_count),
+        format!("Active Flow Count: {active_flow_count}"),
         format!(
             "Recent Exported Time: {}",
             unix_seconds_to_timestamp(recent_exported_time).as_str()
@@ -692,7 +692,7 @@ async fn listen_for_exit_keys(stop: watch::Sender<bool>) -> Result<(), std::io::
                 _ => continue,
             };
 
-            debug!("stop requested with {}", requested);
+            debug!("stop requested with {requested}");
             let _ = stop.send(true);
             return Ok(());
         }

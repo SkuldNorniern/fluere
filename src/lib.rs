@@ -64,5 +64,5 @@ pub fn setup_logging(verbose: u8) -> Result<(), FluereError> {
 
     log::set_boxed_logger(Box::new(logger))
         .map(|()| log::set_max_level(filter))
-        .map_err(|e| ConfigError::Config(format!("Failed to setup logger: {}", e)).into())
+        .map_err(|e| ConfigError::Config(format!("Failed to setup logger: {e}")).into())
 }

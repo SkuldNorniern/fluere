@@ -53,8 +53,7 @@ pub(super) fn keys_from_parsed(
     let vlan = vlan_of(parsed);
 
     trace!(
-        "Parsed keys: source={:?} destination={:?} endpoints={:?} protocol={:?}",
-        source, destination, endpoints, protocol
+        "Parsed keys: source={source:?} destination={destination:?} endpoints={endpoints:?} protocol={protocol:?}"
     );
     Ok(build_key_pair(
         source,

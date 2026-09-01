@@ -24,11 +24,11 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(error) => write!(f, "IO error: {}", error),
+            Self::Io(error) => write!(f, "IO error: {error}"),
             Self::NoConfigDirectory => write!(f, "Could not determine the config directory"),
-            Self::Toml(error) => write!(f, "Invalid TOML config: {}", error),
-            Self::Tavra(error) => write!(f, "Invalid Tavra config: {}", error),
-            Self::Shape(error) => write!(f, "Unexpected config structure: {}", error),
+            Self::Toml(error) => write!(f, "Invalid TOML config: {error}"),
+            Self::Tavra(error) => write!(f, "Invalid Tavra config: {error}"),
+            Self::Shape(error) => write!(f, "Unexpected config structure: {error}"),
             Self::UnknownFormat(path) => write!(
                 f,
                 "Unsupported config format for {}: expected .tav or .toml",

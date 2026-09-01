@@ -122,8 +122,7 @@ pub fn dispatch(matches: &ArgMatches) -> Result<Option<Invocation>, ConfigError>
         "convert" | "offline" => (Mode::Offline, parse::convert(args)?),
         other => {
             return Err(ConfigError::Argument(format!(
-                "Unsupported command: {}",
-                other
+                "Unsupported command: {other}"
             )));
         }
     };

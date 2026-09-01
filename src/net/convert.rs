@@ -27,7 +27,7 @@ fn process_packet(
     records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in engine.accept(observation).completed {
-        trace!("Flow finished: {:?}", flow);
+        trace!("Flow finished: {flow:?}");
         plugin_manager
             .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
@@ -87,7 +87,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
                 .unwrap_or("output")
         )
     });
-    let output_file_path = format!("{}/{}.csv", file_dir, file_noext);
+    let output_file_path = format!("{file_dir}/{file_noext}.csv");
     let file = fs::File::create(&output_file_path)?;
 
     let mut records: Vec<Flow> = Vec::new();
@@ -98,7 +98,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
         .await
         .map_err(|error| FluereError::Plugin(error.to_string()))?;
 
-    info!("Converting file: {}", file_name);
+    info!("Converting file: {file_name}");
 
     let bar = ProgressBar::new_spinner();
     let mut parser_state = ParserState::new();
@@ -116,7 +116,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
             // A file has no timeouts, but reading one costs nothing either.
             source::Read::Timeout => continue,
             source::Read::Fatal(error) => {
-                error!("Reading {} failed: {}", file_name, error);
+                error!("Reading {file_name} failed: {error}");
                 return Err(FluereError::Capture(CaptureError::Pcap(error)));
             }
         };
@@ -139,9 +139,9 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     // Awaited immediately, so there is nothing to gain from a spawned task -
     // and a failed export has to reach the caller rather than be discarded.
     fluere_exporter(records, file).await?;
-    info!("Exported {}", output_file_path);
+    info!("Exported {output_file_path}");
 
-    info!("Active flows: {:?}", ac_flow_cnt);
-    info!("Ended flows: {:?}", ended_flow_cnt);
+    info!("Active flows: {ac_flow_cnt:?}");
+    info!("Ended flows: {ended_flow_cnt:?}");
     Ok(())
 }

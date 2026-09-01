@@ -17,8 +17,8 @@ impl CaptureDevice {
         let capture = initialize_capture(device.clone(), snaplen)?;
         let name: Cow<'static, str> = Cow::Owned(device.name);
         let desc: Cow<'static, str> = Cow::Owned(device.desc.unwrap_or_default());
-        debug!("Using device: {}", name);
-        debug!("Device description: {}", desc);
+        debug!("Using device: {name}");
+        debug!("Device description: {desc}");
         debug!("Addresses: {:?}", device.addresses);
         Ok(CaptureDevice {
             name,
@@ -36,7 +36,7 @@ impl Drop for CaptureDevice {
 }
 pub fn find_device(identifier: &str) -> Result<Device, CaptureError> {
     let start = Instant::now();
-    debug!("Looking for device: {}", identifier);
+    debug!("Looking for device: {identifier}");
 
     let devices = Device::list()?;
 

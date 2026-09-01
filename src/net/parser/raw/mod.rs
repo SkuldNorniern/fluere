@@ -160,10 +160,7 @@ impl RawProtocolHeader {
     /// Recover a tuple from a payload with no link-layer header, using
     /// `protocol_hint` only when no IP header can be found.
     pub fn from_raw_packet(payload: &[u8], protocol_hint: u8) -> Option<Self> {
-        trace!(
-            "Attempting raw packet parsing with protocol hint: {}",
-            protocol_hint
-        );
+        trace!("Attempting raw packet parsing with protocol hint: {protocol_hint}");
 
         Self::try_ip(payload)
             .or_else(|| Self::sniff_outer_ipv4(payload))
@@ -172,10 +169,7 @@ impl RawProtocolHeader {
 
     /// Recover a tuple from an Ethernet payload of the given EtherType.
     pub fn from_ethertype(payload: &[u8], ethertype: u16) -> Option<Self> {
-        trace!(
-            "Attempting to parse raw protocol from EtherType: 0x{:04x}",
-            ethertype
-        );
+        trace!("Attempting to parse raw protocol from EtherType: 0x{ethertype:04x}");
 
         match ethertype {
             // ARP has no IP header, so it needs its Ethernet framing back.

@@ -31,7 +31,7 @@ pub(crate) fn observe_packet(
     match parser::observe(packet, use_mac, linktype, state) {
         Ok(observation) => Some(observation),
         Err(error) => {
-            debug!("Skipping unparsable packet: {}", error);
+            debug!("Skipping unparsable packet: {error}");
             None
         }
     }
