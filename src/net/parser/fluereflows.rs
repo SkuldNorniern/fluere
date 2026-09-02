@@ -33,10 +33,14 @@ pub(super) fn wire_length(packet: &pcap::Packet) -> usize {
 /// libpcap reports microseconds, which the model widens to nanoseconds while
 /// recording that microseconds is all the source could resolve.
 pub(super) fn packet_time(packet: &pcap::Packet) -> fluereflow::Timestamp {
-    fluereflow::Timestamp::from_micros(parse_microseconds(
-        packet.header.ts.tv_sec as u64,
-        packet.header.ts.tv_usec as u64,
-    ))
+    // A stamp before the epoch is not a time this model can express, and the
+    // width of `tv_sec` differs by platform. `try_from` covers both: a negative
+    // second reads as the epoch rather than as the enormous positive number a
+    // cast would produce.
+    let seconds = u64::try_from(packet.header.ts.tv_sec).unwrap_or(0);
+    let microseconds = u64::try_from(packet.header.ts.tv_usec).unwrap_or(0);
+
+    fluereflow::Timestamp::from_micros(parse_microseconds(seconds, microseconds))
 }
 
 #[cfg(test)]
@@ -80,5 +84,17 @@ mod tests {
 
         assert_eq!(time.micros(), 7_000_008);
         assert_eq!(time.nanos(), 7_000_008_000);
+    }
+
+    /// A capture whose clock ran before the epoch. Casting the negative second
+    /// straight to `u64` made it an enormous positive one, which then overflowed
+    /// the multiply; the flow would carry a time no packet had.
+    #[test]
+    fn a_stamp_before_the_epoch_reads_as_the_epoch() {
+        let data = [0u8; 4];
+        let header = header(4, 4, -1, 0);
+        let time = packet_time(&Packet::new(&header, &data));
+
+        assert_eq!(time.nanos(), 0);
     }
 }
