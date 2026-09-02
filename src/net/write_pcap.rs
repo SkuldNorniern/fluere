@@ -2,7 +2,7 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 use crate::error::{CaptureError, FluereError, OptionExt};
-use crate::net::{CaptureDevice, find_device, source};
+use crate::net::{CaptureDevice, find_device, source, stop::StopSignal};
 use crate::types::Args;
 use crate::utils::cur_time_file;
 
@@ -28,9 +28,15 @@ pub async fn write_pcap(args: Args) -> Result<(), FluereError> {
     let mut file: pcap::Savefile = cap.savefile(file_path.as_ref())?;
 
     let start = Instant::now();
+    let interrupt = StopSignal::listen();
 
     loop {
-        // Checked before the read, so a quiet interface still stops on time.
+        // Both checked before the read, so a quiet interface still stops on
+        // time and still answers an interrupt.
+        if interrupt.requested() {
+            debug!("Stopping capture");
+            break;
+        }
         if start.elapsed() >= Duration::from_millis(duration) && duration != 0 {
             break;
         }
