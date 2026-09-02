@@ -44,6 +44,13 @@ fn endpoints_of(parsed: &ParsedPacket, protocol: u8, ports: (u16, u16)) -> Endpo
             .ah
             .as_ref()
             .map_or(Endpoints::None, |ah| Endpoints::SecurityAssociation(ah.spi)),
+        // A transport protocol whose header did not survive the capture. The
+        // ports are unknown, which is not the same as port 0.
+        //
+        // The innermost packet, not the outer one: a tunnel carrying TCP has
+        // no transport of its own, and reading that as missing ports would
+        // strip the ports off every tunnelled flow.
+        6 | 17 if fluereflows::innermost(parsed).transport.is_none() => Endpoints::None,
         // SCTP has real ports; they just do not arrive through
         // `TransportSegment`, which only covers TCP and UDP.
         132 => parsed
@@ -81,6 +88,20 @@ fn parse_frame(data: &[u8], linktype: u16) -> Result<ParsedPacket, ParseError> {
         ..Default::default()
     };
 
-    BuiltinPacketParser::parse_with_config_and_linktype(data, config, Some(linktype))
-        .map_err(|_| ParseError::InvalidPacket)
+    match BuiltinPacketParser::parse_with_config_and_linktype(data, config, Some(linktype)) {
+        Ok(parsed) => Ok(parsed),
+        // A capture taken with a small snaplen keeps the addresses and drops
+        // the ports, and headers-only captures are a deliberate practice
+        // rather than corruption. Asking only for the network layer returns
+        // what survived, so the packet is still counted against the flow its
+        // addresses name instead of vanishing from the totals.
+        Err(_) => {
+            let config = ParseConfig {
+                stop_after: StopLayer::Network,
+                ..config
+            };
+            BuiltinPacketParser::parse_with_config_and_linktype(data, config, Some(linktype))
+                .map_err(|_| ParseError::InvalidPacket)
+        }
+    }
 }
