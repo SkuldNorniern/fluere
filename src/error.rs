@@ -81,6 +81,14 @@ impl fmt::Display for ConfigError {
 #[derive(Debug)]
 pub enum FluereError {
     Io(io::Error),
+    /// Could not create a file the run was asked to write.
+    ///
+    /// Separate from `Io` so the message names the path. "No such file or
+    /// directory" on its own leaves the reader to guess which one.
+    Output {
+        path: String,
+        source: io::Error,
+    },
     Parse(ParseError),
     Capture(CaptureError),
     Config(ConfigError),
@@ -92,6 +100,9 @@ impl fmt::Display for FluereError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(error) => write!(f, "IO error: {error}"),
+            Self::Output { path, source } => {
+                write!(f, "Cannot write {path}: {source}")
+            }
             Self::Parse(error) => error.fmt(f),
             Self::Capture(error) => error.fmt(f),
             Self::Config(error) => error.fmt(f),

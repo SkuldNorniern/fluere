@@ -17,14 +17,37 @@ pub fn interface() -> Arg {
 /// Output CSV name. `capture` defaults it; `convert` leaves it unset so it can
 /// fall back to a name derived from the input file.
 pub fn csv(with_default: bool) -> Arg {
-    let arg = Arg::new("csv").short('c').long("csv");
+    let arg = Arg::new("csv")
+        .short('c')
+        .long("csv")
+        .value_parser(plain_file_name);
 
     if with_default {
-        arg.help("Title of the exported csv file")
+        arg.help("Name of the exported csv file, written under ./output")
             .default_value("output")
     } else {
-        arg.help("Title of the exported csv file (default: <pcap name>_converted)")
+        arg.help("Name of the exported csv file, written under ./output (default: <pcap name>_converted)")
     }
+}
+
+/// Accept a file name, not a path.
+///
+/// The name is joined onto the output directory, so a path given here used to
+/// produce something like `./output//tmp/somewhere/name.csv` and fail with an
+/// error about a directory the reader never asked for.
+fn plain_file_name(value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        return Err("cannot be empty".to_owned());
+    }
+
+    if value.contains(['/', '\\']) {
+        return Err(format!(
+            "expected a file name, not a path: {value}\n\
+             Exports are written under ./output, so give the name alone."
+        ));
+    }
+
+    Ok(value.to_owned())
 }
 
 pub fn file() -> Arg {

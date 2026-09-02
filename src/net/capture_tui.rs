@@ -254,7 +254,7 @@ fn export_if_due(
         }));
 
         let file_path = cur_time_file(csv_file, file_dir, ".csv");
-        let file = fs::File::create(file_path.as_ref())?;
+        let file = crate::utils::output::create(file_path.as_ref())?;
         *schedule.last_export = Instant::now();
         *schedule.last_export_unix_time = unix_time_seconds();
         return Ok((file, file_path));
@@ -311,7 +311,7 @@ pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
     let mut last_export_unix_time = unix_time_seconds();
     let mut last_export = Instant::now();
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
-    let mut file = fs::File::create(file_path.as_ref())?;
+    let mut file = crate::utils::output::create(file_path.as_ref())?;
 
     let mut records: Vec<Flow> = Vec::new();
     let mut recent_flows: Vec<FlowSummary> = Vec::new();
