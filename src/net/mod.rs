@@ -8,6 +8,7 @@ pub mod parser;
 #[cfg(test)]
 pub(crate) mod scenarios;
 mod source;
+mod stop;
 pub mod types;
 mod write_pcap;
 

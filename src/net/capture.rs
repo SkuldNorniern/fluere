@@ -19,6 +19,7 @@ use crate::{
         observe_packet,
         parser::{PacketObservation, ParserState},
         source,
+        stop::StopSignal,
     },
     types::Args,
     utils::{cur_time_file, fluere_exporter},
@@ -234,11 +235,17 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let mut export_tasks = vec![];
 
     let mut parser_state = ParserState::new();
+    let interrupt = StopSignal::listen();
 
     loop {
-        // Checked before the read, so a quiet interface still stops on time.
-        // Checking it only after a packet arrived meant `--duration` was
-        // ignored for as long as nothing was captured.
+        // Both checked before the read, so a quiet interface still stops on
+        // time and still answers an interrupt. Checking the duration only
+        // after a packet arrived meant `--duration` was ignored for as long as
+        // nothing was captured.
+        if interrupt.requested() {
+            info!("Stopping capture");
+            break;
+        }
         if duration_reached(start, duration) {
             break;
         }
