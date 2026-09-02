@@ -178,7 +178,12 @@ impl RawProtocolHeader {
                 let parsed = BuiltinPacketParser::parse(&frame).ok()?;
                 Self::from_parsed(&parsed)
             }
-            _ => Self::from_raw_packet(payload, ethertype as u8),
+            // No protocol hint: `from_raw_packet` wants an IP protocol number,
+            // and an EtherType is a different number space entirely. Passing
+            // the EtherType's low byte made an unreadable IPv6 frame report
+            // protocol 221. A frame with no readable IP header has no IP
+            // protocol number, and zero is how the rest of the model says so.
+            _ => Self::from_raw_packet(payload, 0),
         }
     }
 }
@@ -321,6 +326,17 @@ mod tests {
     #[test]
     fn rejects_an_empty_payload() {
         assert!(RawProtocolHeader::from_raw_packet(&[], 6).is_none());
+    }
+
+    /// An EtherType is not an IP protocol number. Truncating one into the
+    /// other made an IPv6 frame with no readable header report protocol 221,
+    /// which is not a protocol anything assigns.
+    #[test]
+    fn an_ethertype_is_not_recorded_as_a_protocol_number() {
+        let payload = [0xAB, 0xCD, 0xEF, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let header = RawProtocolHeader::from_ethertype(&payload, 0x86DD).unwrap();
+
+        assert_eq!(header.protocol, 0, "an unreadable frame has no protocol");
     }
 
     #[test]
