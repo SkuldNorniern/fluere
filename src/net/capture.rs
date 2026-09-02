@@ -169,12 +169,6 @@ fn drain_engine(
     Ok(())
 }
 
-async fn await_capture_tasks(tasks: Vec<JoinHandle<Result<(), FluereError>>>) {
-    for task in tasks {
-        let _ = task.await;
-    }
-}
-
 fn spawn_final_export(records: &mut Vec<Flow>, file: fs::File) -> JoinHandle<()> {
     let records_to_export = take(records);
     task::spawn(async {
@@ -185,15 +179,22 @@ fn spawn_final_export(records: &mut Vec<Flow>, file: fs::File) -> JoinHandle<()>
     })
 }
 
+/// Wait for every export to finish, reporting one that did not.
+///
+/// A panicking task used to be discarded here, so a run whose export died
+/// still exited successfully with nothing written.
 async fn await_export_tasks(export_tasks: Vec<JoinHandle<()>>) {
     for task in export_tasks {
-        let _ = task.await;
+        if let Err(error) = task.await {
+            error!("An export did not finish: {error}");
+        }
     }
 }
 
-// This function captures packets from a network interface and converts them into NetFlow data.
-// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
-// The function runs indefinitely, capturing packets and exporting the captured data to a CSV file.
+/// Capture from an interface and export FluereFlow records.
+///
+/// Runs until the requested duration elapses or the operator interrupts it,
+/// then drains the engine so flows still open are exported rather than lost.
 pub async fn run(arg: Args) -> Result<(), FluereError> {
     let OnlineArgs {
         csv_file,
@@ -231,7 +232,6 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
 
     let mut records: Vec<Flow> = Vec::new();
     let mut engine = FlowEngine::new(flow_timeout);
-    let tasks: Vec<JoinHandle<Result<(), FluereError>>> = vec![];
     let mut export_tasks = vec![];
 
     let mut parser_state = ParserState::new();
@@ -285,7 +285,6 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
 
     debug!("Captured in {:?}", start.elapsed());
     drain_engine(&mut engine, &plugin_manager, &mut records)?;
-    await_capture_tasks(tasks).await;
 
     export_tasks.push(spawn_final_export(&mut records, file));
     // Consumes the manager: dropping its sender is what lets the worker drain

@@ -95,13 +95,14 @@ fn extract_live_args(arg: Args) -> Result<LiveArgs, FluereError> {
     })
 }
 
-// This function is the entry point for the live packet capture functionality.
-// It takes the command line arguments as input and calls the online_packet_capture function.
-// It returns a Result indicating whether the operation was successful.
+/// Capture from an interface with the terminal interface running.
+///
+/// Wraps the capture so the interface is logged as starting and stopping
+/// around it, whichever way the capture ends.
 pub async fn run(arg: Args) -> Result<(), FluereError> {
     debug!("Starting Terminal User Interface");
 
-    online_packet_capture(arg).await?;
+    capture_with_ui(arg).await?;
     debug!("Terminal User Interface Stopped");
     Ok(())
 }
@@ -281,10 +282,13 @@ async fn await_export_tasks(export_tasks: Vec<task::JoinHandle<()>>) {
     }
 }
 
-// This function captures packets from a network interface and converts them into NetFlow data.
-// It takes the command line arguments as input, which specify the network interface to capture from and other parameters.
-// The function runs indefinitely, capturing packets and updating the terminal user interface with the captured data.
-pub async fn online_packet_capture(arg: Args) -> Result<(), FluereError> {
+/// Capture from an interface, exporting FluereFlow records and drawing the
+/// terminal interface as flows arrive.
+///
+/// Runs until the requested duration elapses or the operator presses q or
+/// control-c, then drains the engine so flows still open are exported rather
+/// than lost.
+async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
     let LiveArgs {
         csv_file,
         use_mac,
