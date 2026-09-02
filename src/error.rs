@@ -26,6 +26,13 @@ pub enum CaptureError {
     DeviceNotFound(String),
     InvalidDeviceIndex(usize),
     Interface(String),
+    /// Opening the interface was refused for want of privileges.
+    ///
+    /// Separate from `Pcap` because libpcap only says "Operation not
+    /// permitted", which is true and tells nobody what to do about it.
+    PermissionDenied {
+        device: String,
+    },
     Pcap(pcap::Error),
 }
 
@@ -35,6 +42,14 @@ impl fmt::Display for CaptureError {
             Self::DeviceNotFound(device) => write!(f, "Device not found: {device}"),
             Self::InvalidDeviceIndex(index) => write!(f, "Invalid device index: {index}"),
             Self::Interface(error) => write!(f, "Interface error: {error}"),
+            Self::PermissionDenied { device } => write!(
+                f,
+                "Cannot capture on {device}: permission denied.\n\
+                 Capturing needs privileges. Either run under sudo, or grant \
+                 them once with:\n    \
+                 sudo setcap cap_net_raw,cap_net_admin=eip <path to fluere>\n\
+                 Reading a pcap file with `fluere convert` needs no privileges."
+            ),
             Self::Pcap(error) => write!(f, "PCAP error: {error}"),
         }
     }

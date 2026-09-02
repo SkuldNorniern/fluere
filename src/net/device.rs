@@ -72,11 +72,21 @@ pub fn find_device(identifier: &str) -> Result<Device, CaptureError> {
 /// stop, not a limit on how long it runs.
 const POLL_TIMEOUT_MS: i32 = 250;
 
+/// Whether libpcap refused the open for want of privileges.
+///
+/// It reports this as a plain message rather than a distinct error, so the text
+/// is all there is to go on.
+fn is_permission_denied(error: &pcap::Error) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("operation not permitted") || text.contains("permission denied")
+}
+
 fn initialize_capture(device: Device, snaplen: u64) -> Result<Capture<Active>, CaptureError> {
     info!(
         "Opening capture session for device {} with snaplen {}",
         device.name, snaplen
     );
+    let name = device.name.clone();
     // libpcap takes a signed length; anything past i32::MAX is nonsense, and 0
     // would capture no bytes at all, so clamp into the range it accepts.
     let snaplen = snaplen.clamp(1, i32::MAX as u64) as i32;
@@ -90,5 +100,11 @@ fn initialize_capture(device: Device, snaplen: u64) -> Result<Capture<Active>, C
         .timeout(POLL_TIMEOUT_MS)
         .immediate_mode(true)
         .open()
-        .map_err(CaptureError::from)
+        .map_err(|error| {
+            if is_permission_denied(&error) {
+                CaptureError::PermissionDenied { device: name }
+            } else {
+                CaptureError::from(error)
+            }
+        })
 }
