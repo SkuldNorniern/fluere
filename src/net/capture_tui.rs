@@ -491,7 +491,9 @@ fn draw_ui(
                 .title("Next Export Progress"),
         )
         .gauge_style(Style::default().fg(Color::White))
-        .percent((progress * 100.0) as u16);
+        // `ratio` takes the 0-to-1 fraction directly. Going through `percent`
+        // meant casting a float to an integer and losing the fraction.
+        .ratio(progress);
     f.render_widget(progress_bar, chunks[0]);
 
     // Summary box

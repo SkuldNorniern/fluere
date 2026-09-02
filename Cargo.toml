@@ -62,6 +62,10 @@ unsafe_code = "forbid"
 unwrap_used = "deny"
 expect_used = "deny"
 cognitive_complexity = "deny"
+# A sign lost in a cast is how a capture timestamp before the epoch became an
+# enormous positive one.
+cast_sign_loss = "deny"
+cast_lossless = "deny"
 
 [package.metadata.rpm]
 package = "fluere"
