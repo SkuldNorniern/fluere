@@ -3,12 +3,7 @@
 //! This is what `fluere capture` runs without `--tui`; the terminal-interface
 //! variant lives in [`super::capture_tui`].
 
-use std::{
-    borrow::Cow,
-    fs,
-    mem::take,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, fs, mem::take, time::Instant};
 
 use crate::{
     FluereError,
@@ -35,11 +30,6 @@ use fluere_plugin::PluginManager;
 
 use log::{debug, error, info, trace};
 use tokio::{task, task::JoinHandle};
-
-struct ExportSchedule {
-    interval: u64,
-    last_export: Instant,
-}
 
 fn process_packet(
     observation: PacketObservation,
@@ -89,14 +79,12 @@ fn export_if_due(
     file_path: Cow<'static, str>,
     csv_file: &str,
     file_dir: &str,
-    schedule: &mut ExportSchedule,
+    schedule: &mut crate::net::live::ExportSchedule,
     export_tasks: &mut Vec<JoinHandle<()>>,
 ) -> Result<(Cow<'static, str>, fs::File), FluereError> {
-    if schedule.last_export.elapsed() >= Duration::from_millis(schedule.interval)
-        && schedule.interval != 0
-    {
+    if schedule.is_due() {
         let export = rotate_export(records, file, &file_path, csv_file, file_dir, export_tasks)?;
-        schedule.last_export = Instant::now();
+        schedule.mark_exported();
         return Ok(export);
     }
     Ok((file_path, file))
@@ -152,10 +140,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
-    let mut export_schedule = ExportSchedule {
-        interval,
-        last_export: Instant::now(),
-    };
+    let mut export_schedule = crate::net::live::ExportSchedule::new(interval);
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
     // FIX:TASK: there is a possibility of a permission error
     // | need to check, if it is a permission error and handle it
