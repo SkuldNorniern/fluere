@@ -238,7 +238,7 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
     let linktype = u16::try_from(cap.get_datalink().0).unwrap_or(1);
 
     let file_dir = "./output";
-    fs::create_dir_all(file_dir)?;
+    crate::utils::output::create_dir(file_dir)?;
 
     let start = Instant::now();
     let mut export_schedule = crate::net::live::ExportSchedule::new(interval);

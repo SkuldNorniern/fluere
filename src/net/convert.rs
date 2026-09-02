@@ -1,4 +1,4 @@
-use std::{fs, path::Path, time::Instant};
+use std::{path::Path, time::Instant};
 
 use crate::{
     FluereError,
@@ -69,7 +69,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let linktype = u16::try_from(cap.get_datalink().0).unwrap_or(1);
 
     let file_dir = "./output";
-    fs::create_dir_all(file_dir)?;
+    crate::utils::output::create_dir(file_dir)?;
 
     let start = Instant::now();
     // `-c` names the output; without it, derive the name from the capture file.
