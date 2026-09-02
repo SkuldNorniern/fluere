@@ -57,9 +57,23 @@ jobs:
         if: runner.os == 'Windows'
         run: cargo test --workspace --no-run --verbose
 
+      # The no-runtime build was compiled but never exercised, so tests that
+      # needed a Lua runtime to pass could break there unnoticed.
+      - name: Run tests without a plugin runtime
+        if: runner.os != 'Windows'
+        run: cargo test --workspace --no-default-features --verbose
+
+      - name: Build tests without a plugin runtime
+        if: runner.os == 'Windows'
+        run: cargo test --workspace --no-default-features --no-run --verbose
+
       - name: Run Clippy
         if: runner.os == 'Linux'
         run: cargo clippy --workspace --all-targets --release --verbose -- -D warnings
+
+      - name: Run Clippy without a plugin runtime
+        if: runner.os == 'Linux'
+        run: cargo clippy --workspace --all-targets --release --no-default-features --verbose -- -D warnings
 
   audit:
     name: security audit
