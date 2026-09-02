@@ -23,6 +23,5 @@ name = "fluere_config"
 [features]
 log = ["dep:log"]
 
-[lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
+[lints]
+workspace = true
