@@ -76,7 +76,7 @@ pub fn timeout() -> Arg {
 
 pub fn interval() -> Arg {
     Arg::new("interval")
-        .help("Export interval, in milliseconds")
+        .help("Export interval, in milliseconds (0: one file, written when the capture ends)")
         .default_value("1800000")
         .short('I')
         .long("interval")
