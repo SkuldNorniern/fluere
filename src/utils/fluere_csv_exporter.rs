@@ -1,48 +1,6 @@
 use crate::net::Flow;
 use log::{debug, error};
-use std::fs::File;
-
-/// The endpoint columns, filled in only where the protocol actually has them.
-///
-/// Protocols without ports used to borrow the port fields: ICMP put its type
-/// and code there, IPsec split its SPI across them, GRE reported its inner
-/// protocol type. Each now has a column of its own, so a value never means one
-/// thing in one row and something else in the next.
-#[derive(Default)]
-struct Endpoints {
-    ports: (String, String),
-    icmp_type: String,
-    icmp_code: String,
-    spi: String,
-    gre_protocol: String,
-}
-
-impl Endpoints {
-    fn of(flow: &Flow) -> Self {
-        let mut endpoints = Endpoints::default();
-
-        // Each kind is read from the key's own typed endpoint rather than
-        // guessed from the protocol number, so this cannot drift from how the
-        // flow was actually keyed.
-        if let Some((source, destination)) = flow.key.endpoints.ports() {
-            endpoints.ports = (source.to_string(), destination.to_string());
-        }
-        if let Some(spi) = flow.key.endpoints.security_association() {
-            endpoints.spi = format!("0x{spi:08x}");
-        }
-        if let Some(protocol) = flow.key.endpoints.gre_protocol() {
-            endpoints.gre_protocol = format!("0x{protocol:04x}");
-        }
-        // ICMP type and code are a measurement, not an endpoint: they identify
-        // the direction, and an echo exchange is one flow.
-        if let Some((icmp_type, code)) = flow.record.transport.icmp {
-            endpoints.icmp_type = icmp_type.to_string();
-            endpoints.icmp_code = code.to_string();
-        }
-
-        endpoints
-    }
-}
+use std::{fmt::Display, fmt::Write as _, fs::File};
 
 /// Columns, in order. Kept next to the row builder so the two cannot drift.
 const COLUMNS: [&str; 48] = [
@@ -107,6 +65,7 @@ const COLUMNS: [&str; 48] = [
 /// reported, so a partial CSV is never mistaken for a whole one.
 pub struct CsvExporter {
     writer: csv::Writer<File>,
+    row: RowBuffer,
     written: u64,
 }
 
@@ -120,14 +79,22 @@ impl CsvExporter {
             error
         })?;
 
-        Ok(CsvExporter { writer, written: 0 })
+        Ok(CsvExporter {
+            writer,
+            row: RowBuffer::new(),
+            written: 0,
+        })
     }
 
     pub fn write(&mut self, flow: &Flow) -> Result<(), csv::Error> {
-        self.writer.write_record(row(flow)).map_err(|error| {
-            error!("Failed to write CSV record: {error}");
-            error
-        })?;
+        self.row.rewind();
+        row(flow, &mut self.row);
+        self.writer
+            .write_record(self.row.fields())
+            .map_err(|error| {
+                error!("Failed to write CSV record: {error}");
+                error
+            })?;
         self.written += 1;
 
         Ok(())
@@ -166,98 +133,168 @@ pub async fn fluere_exporter(records: Vec<Flow>, file: File) -> Result<(), csv::
     Ok(())
 }
 
-/// One flow as text.
+/// The columns of one row, reused across every row written.
+///
+/// A row used to be a fresh `Vec` of 48 `String`s, so exporting a million flows
+/// allocated forty-odd million times for text that was written and dropped
+/// immediately. The buffer keeps each column's capacity between rows instead.
+struct RowBuffer {
+    fields: Vec<String>,
+    next: usize,
+}
+
+impl RowBuffer {
+    fn new() -> Self {
+        RowBuffer {
+            fields: vec![String::new(); COLUMNS.len()],
+            next: 0,
+        }
+    }
+
+    /// Start a new row. The columns keep their capacity and are cleared as
+    /// they are filled, so a column left unwritten cannot carry the previous
+    /// row's value: `fields` is only read back once every column is filled.
+    fn rewind(&mut self) {
+        self.next = 0;
+    }
+
+    /// The next column, emptied and ready to be written into.
+    fn column(&mut self) -> &mut String {
+        let index = self.next;
+        self.next += 1;
+        let field = &mut self.fields[index];
+        field.clear();
+        field
+    }
+
+    fn put(&mut self, value: impl Display) {
+        let field = self.column();
+        // Writing into a String cannot fail.
+        let _ = write!(field, "{value}");
+    }
+
+    /// An absent value, which the CSV spells as an empty column. Absence is
+    /// distinct from zero throughout the record and stays distinct here.
+    fn absent(&mut self) {
+        self.column();
+    }
+
+    fn put_or_absent(&mut self, value: Option<impl Display>) {
+        match value {
+            Some(value) => self.put(value),
+            None => self.absent(),
+        }
+    }
+
+    fn fields(&self) -> &[String] {
+        debug_assert_eq!(self.next, COLUMNS.len(), "a column was left unwritten");
+        &self.fields
+    }
+}
+
+/// One flow as text, in `COLUMNS` order.
 ///
 /// Totals come from the record's accessors rather than a stored field, so a row
 /// cannot report a total that disagrees with its own directions.
-fn row(flow: &Flow) -> Vec<String> {
+fn row(flow: &Flow, out: &mut RowBuffer) {
     let record = &flow.record;
     let key = &flow.key;
-    let endpoints = Endpoints::of(flow);
     let flags = &record.forward.tcp_flags;
     let reverse_flags = &record.reverse.tcp_flags;
 
+    out.put(key.source);
+    out.put(key.destination);
+    out.put_or_absent(key.ip_version());
+
+    // Each endpoint kind is read from the key's own typed endpoint rather than
+    // guessed from the protocol number, so this cannot drift from how the flow
+    // was actually keyed. Protocols without ports have columns of their own, so
+    // a value never means one thing in one row and something else in the next.
+    match key.endpoints.ports() {
+        Some((source, destination)) => {
+            out.put(source);
+            out.put(destination);
+        }
+        None => {
+            out.absent();
+            out.absent();
+        }
+    }
+    // ICMP type and code are a measurement, not an endpoint: they identify the
+    // direction, and an echo exchange is one flow.
+    match record.transport.icmp {
+        Some((icmp_type, code)) => {
+            out.put(icmp_type);
+            out.put(code);
+        }
+        None => {
+            out.absent();
+            out.absent();
+        }
+    }
+    match key.endpoints.security_association() {
+        Some(spi) => {
+            let _ = write!(out.column(), "0x{spi:08x}");
+        }
+        None => out.absent(),
+    }
+    match key.endpoints.gre_protocol() {
+        Some(protocol) => {
+            let _ = write!(out.column(), "0x{protocol:04x}");
+        }
+        None => out.absent(),
+    }
+
+    out.put(flow.protocol_name());
+    // Empty for traffic with no IP protocol number of its own.
+    out.put_or_absent(flow.is_ip().then_some(key.protocol));
+    out.put(crate::net::identity::ethertype(flow));
+
+    out.put(record.packets());
+    out.put(record.frame_octets());
+    // What the capture actually kept, against the wire length above. A short
+    // snaplen makes the two differ, and `truncated` says whether it did.
+    out.put(record.capture.captured_octets);
+    out.put(u8::from(record.capture.truncated));
+
+    out.put(record.forward.packets);
+    out.put(record.reverse.packets);
+    out.put(record.forward.frame_octets);
+    out.put(record.reverse.frame_octets);
+
+    out.put(record.time.start.nanos());
+    out.put(record.time.end.nanos());
+    out.put(record.time.duration());
+
+    out.put_or_absent(record.forward.packet_length.map(|range| range.min));
+    out.put_or_absent(record.forward.packet_length.map(|range| range.max));
+    out.put_or_absent(record.reverse.packet_length.map(|range| range.min));
+    out.put_or_absent(record.reverse.packet_length.map(|range| range.max));
+    out.put_or_absent(record.network.ttl.map(|range| range.min));
+    out.put_or_absent(record.network.ttl.map(|range| range.max));
+
     // Flag counters are per direction now; the columns keep reporting the
     // conversation's total so existing consumers still add up.
-    let both = |forward: u64, reverse: u64| (forward + reverse).to_string();
-    let range = |range: Option<fluereflow::Range<u32>>, take_max: bool| {
-        range.map_or_else(String::new, |r| {
-            if take_max { r.max } else { r.min }.to_string()
-        })
-    };
+    out.put(flags.fin + reverse_flags.fin);
+    out.put(flags.syn + reverse_flags.syn);
+    out.put(flags.rst + reverse_flags.rst);
+    out.put(flags.psh + reverse_flags.psh);
+    out.put(flags.ack + reverse_flags.ack);
+    out.put(flags.urg + reverse_flags.urg);
+    out.put(flags.ece + reverse_flags.ece);
+    out.put(flags.cwr + reverse_flags.cwr);
+    out.put(flags.ns + reverse_flags.ns);
 
-    vec![
-        key.source.to_string(),
-        key.destination.to_string(),
-        key.ip_version()
-            .map_or_else(String::new, |version| version.to_string()),
-        endpoints.ports.0.clone(),
-        endpoints.ports.1.clone(),
-        endpoints.icmp_type,
-        endpoints.icmp_code,
-        endpoints.spi,
-        endpoints.gre_protocol,
-        flow.protocol_name().to_string(),
-        // Empty for traffic with no IP protocol number of its own.
-        if flow.is_ip() {
-            key.protocol.to_string()
-        } else {
-            String::new()
-        },
-        crate::net::identity::ethertype(flow),
-        record.packets().to_string(),
-        record.frame_octets().to_string(),
-        // What the capture actually kept, against the wire length above. A
-        // short snaplen makes the two differ, and `truncated` says whether it
-        // did.
-        record.capture.captured_octets.to_string(),
-        u8::from(record.capture.truncated).to_string(),
-        record.forward.packets.to_string(),
-        record.reverse.packets.to_string(),
-        record.forward.frame_octets.to_string(),
-        record.reverse.frame_octets.to_string(),
-        record.time.start.nanos().to_string(),
-        record.time.end.nanos().to_string(),
-        record.time.duration().to_string(),
-        range(record.forward.packet_length, false),
-        range(record.forward.packet_length, true),
-        range(record.reverse.packet_length, false),
-        range(record.reverse.packet_length, true),
-        record
-            .network
-            .ttl
-            .map_or_else(String::new, |r| r.min.to_string()),
-        record
-            .network
-            .ttl
-            .map_or_else(String::new, |r| r.max.to_string()),
-        both(flags.fin, reverse_flags.fin),
-        both(flags.syn, reverse_flags.syn),
-        both(flags.rst, reverse_flags.rst),
-        both(flags.psh, reverse_flags.psh),
-        both(flags.ack, reverse_flags.ack),
-        both(flags.urg, reverse_flags.urg),
-        both(flags.ece, reverse_flags.ece),
-        both(flags.cwr, reverse_flags.cwr),
-        both(flags.ns, reverse_flags.ns),
-        record
-            .network
-            .dscp
-            .map_or_else(String::new, |dscp| dscp.to_string()),
-        record
-            .network
-            .ecn
-            .map_or_else(String::new, |ecn| ecn.to_string()),
-        record.time.start_state.as_str().to_string(),
-        record
-            .time
-            .end_reason
-            .map_or_else(String::new, |reason| reason.as_str().to_string()),
-        record.paths.count().to_string(),
-        crate::net::identity::paths(flow),
-        crate::net::identity::vlan(flow),
-        crate::net::identity::encapsulation(flow).to_string(),
-        crate::net::identity::tunnel_id(flow),
-        crate::net::identity::tunnel_endpoints(flow),
-    ]
+    out.put_or_absent(record.network.dscp);
+    out.put_or_absent(record.network.ecn);
+
+    out.put(record.time.start_state.as_str());
+    out.put_or_absent(record.time.end_reason.map(fluereflow::EndReason::as_str));
+
+    out.put(record.paths.count());
+    out.put(crate::net::identity::paths(flow));
+    out.put(crate::net::identity::vlan(flow));
+    out.put(crate::net::identity::encapsulation(flow));
+    out.put(crate::net::identity::tunnel_id(flow));
+    out.put(crate::net::identity::tunnel_endpoints(flow));
 }
