@@ -4,7 +4,7 @@
 //! built rather than only written out.
 use crate::{
     FluereError,
-    error::{CaptureError, OptionExt},
+    error::CaptureError,
     net::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
@@ -47,53 +47,6 @@ use tokio::{
 };
 
 const MAX_RECENT_FLOWS: usize = 50;
-
-struct LiveArgs {
-    csv_file: String,
-    use_mac: bool,
-    snaplen: u64,
-    interface_name: String,
-    duration: u64,
-    interval: u64,
-    flow_timeout: u64,
-}
-
-fn extract_live_args(arg: Args) -> Result<LiveArgs, FluereError> {
-    let csv_file = arg
-        .files
-        .csv
-        .required("this should be defaulted to `output` on construction")?;
-    let use_mac = arg
-        .parameters
-        .use_mac
-        .required("this should be defaulted to `false` on construction")?;
-    let interface_name = arg.interface.required("interface should be provided")?;
-    let duration = arg
-        .parameters
-        .duration
-        .required("this should be defaulted to `0(infinite)` on construction")?;
-    let interval = arg
-        .parameters
-        .interval
-        .required("this should be defaulted to `30 minutes` on construction")?;
-    let flow_timeout = arg
-        .parameters
-        .timeout
-        .required("this should be defaulted to `10 minutes` on construction")?;
-    let snaplen = arg
-        .parameters
-        .snaplen
-        .required("this should be defaulted to `65535` on construction")?;
-    Ok(LiveArgs {
-        csv_file,
-        use_mac,
-        snaplen,
-        interface_name,
-        duration,
-        interval,
-        flow_timeout,
-    })
-}
 
 /// Capture from an interface with the terminal interface running.
 ///
@@ -154,10 +107,6 @@ impl Default for UiSnapshot {
 /// The terminal redraws every 100ms, so publishing faster than this would only
 /// copy the recent-flow list for frames nobody sees.
 const UI_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
-
-fn duration_reached(start: Instant, duration: u64) -> bool {
-    start.elapsed() >= Duration::from_millis(duration) && duration != 0
-}
 
 /// The two endpoint columns, as text.
 ///
@@ -272,14 +221,6 @@ async fn await_render_task(
     }
 }
 
-async fn await_export_tasks(export_tasks: Vec<task::JoinHandle<()>>) {
-    for export_task in export_tasks {
-        if let Err(error) = export_task.await {
-            error!("Export task failed: {error}");
-        }
-    }
-}
-
 /// Capture from an interface, exporting FluereFlow records and drawing the
 /// terminal interface as flows arrive.
 ///
@@ -287,7 +228,7 @@ async fn await_export_tasks(export_tasks: Vec<task::JoinHandle<()>>) {
 /// control-c, then drains the engine so flows still open are exported rather
 /// than lost.
 async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
-    let LiveArgs {
+    let crate::net::live::Settings {
         csv_file,
         use_mac,
         snaplen,
@@ -295,7 +236,7 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
         duration,
         interval,
         flow_timeout,
-    } = extract_live_args(arg)?;
+    } = crate::net::live::Settings::from_args(arg)?;
     let config = Config::new();
     let (plugin_manager, plugin_worker) = PluginManager::start(&config)
         .await
@@ -356,7 +297,7 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
                 debug!("stopping at the operator's request");
                 break;
             }
-            if duration_reached(start, duration) {
+            if crate::net::live::duration_reached(start, duration) {
                 break;
             }
 
@@ -439,7 +380,7 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
     // Consumes the manager: dropping its sender is what lets the worker drain
     // the queue and stop before plugin cleanup runs.
     plugin_manager.shutdown(plugin_worker).await;
-    await_export_tasks(export_tasks).await;
+    crate::net::live::await_export_tasks(export_tasks).await;
 
     capture_result?;
     render_result?;
