@@ -80,6 +80,50 @@ fn names_endpoint(key: &Key, endpoint: (std::net::IpAddr, u16)) -> bool {
     endpoint == (key.source, source_port) || endpoint == (key.destination, destination_port)
 }
 
+/// Fold one packet into the flow it belongs to, reporting why the flow ended
+/// if this packet ended it.
+///
+/// Taken out of the lookup so that the borrow from a single probe covers the
+/// whole update.
+fn fold(
+    state: &mut FlowState,
+    flow_key: &Key,
+    direction: Direction,
+    observation: &PacketObservation,
+    flags: fluereflow::TcpFlags,
+) -> Option<EndReason> {
+    state.record.observe(direction, observation.facts);
+    // Only somewhere the key does not already name: ordinary traffic in either
+    // direction arrives from one of the flow's own two endpoints.
+    if !names_endpoint(flow_key, observation.arrived_from) {
+        state
+            .record
+            .paths
+            .observe(direction, observation.arrived_from);
+    }
+
+    // A half-close only ends this direction. The flow stays open until the
+    // other side closes too, so data still flowing the other way keeps
+    // belonging to the same connection.
+    if flags.fin {
+        match direction {
+            Direction::Forward => state.forward_fin = true,
+            Direction::Reverse => state.reverse_fin = true,
+        }
+    }
+
+    // Nothing else to update: the record's own end time is the authoritative
+    // deadline, and the sweep reads it directly, so a packet costs no expiry
+    // bookkeeping.
+    if flags.rst {
+        Some(EndReason::Rst)
+    } else if state.both_halves_closed() {
+        Some(EndReason::Fin)
+    } else {
+        None
+    }
+}
+
 /// Open a flow for the first packet seen on it.
 ///
 /// A TCP flow whose first packet has no SYN began before the capture did; other
@@ -165,61 +209,38 @@ impl FlowEngine {
         let flags = observation.tcp_flags.unwrap_or_default();
         let at = observation.time().nanos();
 
-        let is_reverse = match self.active.get(&key) {
-            Some(_) => false,
-            None => match self.active.get(&reverse) {
-                Some(_) => true,
-                None => {
-                    let deadline = self.deadline_from(at);
-                    self.active
-                        .insert(key, FlowState::new(open_record(&observation), deadline));
-                    self.enqueue(key, deadline);
-                    *opened = true;
-                    false
-                }
-            },
-        };
-
-        let flow_key = if is_reverse { reverse } else { key };
-        let state = self.active.get_mut(&flow_key)?;
-
-        let direction = if is_reverse {
-            Direction::Reverse
+        // One lookup for the case that repeats on every packet: traffic on a
+        // flow already keyed the way this packet is. The key is 112 bytes and
+        // hashing it is squarely on the hot path, so looking it up and then
+        // looking it up again to take a mutable borrow cost twice what it had
+        // to. A packet travelling the other way costs two lookups, and opening
+        // a flow costs three; neither repeats per packet the way the first
+        // does.
+        let (flow_key, reason) = if let Some(state) = self.active.get_mut(&key) {
+            (
+                key,
+                fold(state, &key, Direction::Forward, &observation, flags),
+            )
+        } else if let Some(state) = self.active.get_mut(&reverse) {
+            (
+                reverse,
+                fold(state, &reverse, Direction::Reverse, &observation, flags),
+            )
         } else {
-            Direction::Forward
-        };
-        state.record.observe(direction, observation.facts);
-        // Only somewhere the key does not already name: ordinary traffic in
-        // either direction arrives from one of the flow's own two endpoints.
-        if !names_endpoint(&flow_key, observation.arrived_from) {
-            state
-                .record
-                .paths
-                .observe(direction, observation.arrived_from);
-        }
-
-        // A half-close only ends this direction. The flow stays open until the
-        // other side closes too, so data still flowing the other way keeps
-        // belonging to the same connection.
-        if flags.fin {
-            if is_reverse {
-                state.reverse_fin = true;
-            } else {
-                state.forward_fin = true;
-            }
-        }
-
-        let reason = if flags.rst {
-            Some(EndReason::Rst)
-        } else if state.both_halves_closed() {
-            Some(EndReason::Fin)
-        } else {
-            None
+            let deadline = self.deadline_from(at);
+            // `or_insert_with` rather than `insert` followed by a lookup: the
+            // key is known to be absent, and this gets the borrow back from the
+            // same probe that placed it.
+            let state = self
+                .active
+                .entry(key)
+                .or_insert_with(|| FlowState::new(open_record(&observation), deadline));
+            let reason = fold(state, &key, Direction::Forward, &observation, flags);
+            self.enqueue(key, deadline);
+            *opened = true;
+            (key, reason)
         };
 
-        // Nothing else to update: the record's own end time is the authoritative
-        // deadline, and the sweep reads it directly, so a packet costs no
-        // expiry bookkeeping.
         let reason = reason?;
         self.active.remove(&flow_key).map(|mut state| {
             state.record.close(reason);
