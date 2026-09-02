@@ -10,10 +10,9 @@ use crate::{
         source,
     },
     types::Args,
-    utils::fluere_exporter,
+    utils::CsvExporter,
 };
 
-use crate::net::Flow;
 use fluere_config::Config;
 use fluere_plugin::PluginManager;
 use indicatif::ProgressBar;
@@ -24,14 +23,14 @@ fn process_packet(
     observation: PacketObservation,
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
-    records: &mut Vec<Flow>,
+    exporter: &mut CsvExporter,
 ) -> Result<(), FluereError> {
     for flow in engine.accept(observation).completed {
         trace!("Flow finished: {flow:?}");
         plugin_manager
             .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
-        records.push(flow);
+        exporter.write(&flow)?;
     }
 
     Ok(())
@@ -43,13 +42,13 @@ fn process_packet(
 fn drain_engine(
     engine: &mut FlowEngine,
     plugin_manager: &PluginManager,
-    records: &mut Vec<Flow>,
+    exporter: &mut CsvExporter,
 ) -> Result<(), FluereError> {
     for flow in engine.drain() {
         plugin_manager
             .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
             .map_err(|error| FluereError::Plugin(error.to_string()))?;
-        records.push(flow);
+        exporter.write(&flow)?;
     }
 
     Ok(())
@@ -90,7 +89,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let output_file_path = format!("{file_dir}/{file_noext}.csv");
     let file = crate::utils::output::create(&output_file_path)?;
 
-    let mut records: Vec<Flow> = Vec::new();
+    let mut exporter = CsvExporter::create(file)?;
     let mut engine = FlowEngine::new(flow_timeout);
 
     let config = Config::new();
@@ -122,24 +121,22 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
         };
 
         if let Some(observation) = observation {
-            process_packet(observation, &mut engine, &plugin_manager, &mut records)?;
+            process_packet(observation, &mut engine, &plugin_manager, &mut exporter)?;
         }
     }
     bar.finish();
     info!("Converted in {:?}", start.elapsed());
     let ac_flow_cnt = engine.active_count();
-    let ended_flow_cnt = records.len();
+    let ended_flow_cnt = exporter.written();
 
-    drain_engine(&mut engine, &plugin_manager, &mut records)?;
+    drain_engine(&mut engine, &plugin_manager, &mut exporter)?;
 
     // Consumes the manager: dropping its sender lets the worker drain the
     // queue and stop before plugin cleanup runs.
     plugin_manager.shutdown(plugin_worker).await;
 
-    // Awaited immediately, so there is nothing to gain from a spawned task -
-    // and a failed export has to reach the caller rather than be discarded.
-    fluere_exporter(records, file).await?;
-    info!("Exported {output_file_path}");
+    let written = exporter.finish()?;
+    info!("Exported {written} flows to {output_file_path}");
 
     info!("Active flows: {ac_flow_cnt:?}");
     info!("Ended flows: {ended_flow_cnt:?}");

@@ -96,31 +96,73 @@ const COLUMNS: [&str; 48] = [
     "tunnel_endpoints",
 ];
 
-pub async fn fluere_exporter(records: Vec<Flow>, file: File) -> Result<(), csv::Error> {
-    let mut wtr = csv::Writer::from_writer(file);
+/// Writes flows to a CSV as they finish.
+///
+/// A conversion used to hold every flow it had ever seen in a vector and write
+/// the lot at the end, so peak memory grew with the whole capture rather than
+/// with the flows open at one moment. Rows now leave as they are produced.
+///
+/// The cost is that a run failing part way through leaves the rows it had
+/// already written, where before it left an empty file. The failure is still
+/// reported, so a partial CSV is never mistaken for a whole one.
+pub struct CsvExporter {
+    writer: csv::Writer<File>,
+    written: u64,
+}
 
-    debug!("Writing {} records", records.len());
-    wtr.write_record(COLUMNS).map_err(|e| {
-        error!("Failed to write CSV header: {e}");
-        e
-    })?;
-
-    for flow in records.iter() {
-        wtr.write_record(row(flow)).map_err(|e| {
-            error!("Failed to write CSV record: {e}");
-            e
+impl CsvExporter {
+    /// Opens the CSV and writes its header, so a run that produces no flows
+    /// still leaves a readable file.
+    pub fn create(file: File) -> Result<Self, csv::Error> {
+        let mut writer = csv::Writer::from_writer(file);
+        writer.write_record(COLUMNS).map_err(|error| {
+            error!("Failed to write CSV header: {error}");
+            error
         })?;
+
+        Ok(CsvExporter { writer, written: 0 })
     }
 
-    // Flush explicitly: relying on the writer's destructor would swallow a
-    // failure on the last buffered rows, which is exactly when the caller most
-    // needs to hear about it.
-    wtr.flush().map_err(|error| {
-        error!("Failed to flush CSV output: {error}");
-        csv::Error::from(error)
-    })?;
+    pub fn write(&mut self, flow: &Flow) -> Result<(), csv::Error> {
+        self.writer.write_record(row(flow)).map_err(|error| {
+            error!("Failed to write CSV record: {error}");
+            error
+        })?;
+        self.written += 1;
 
-    debug!("Wrote {} records", records.len());
+        Ok(())
+    }
+
+    /// How many rows have been written so far.
+    pub fn written(&self) -> u64 {
+        self.written
+    }
+
+    /// Flush explicitly: relying on the writer's destructor would swallow a
+    /// failure on the last buffered rows, which is exactly when the caller most
+    /// needs to hear about it.
+    pub fn finish(mut self) -> Result<u64, csv::Error> {
+        self.writer.flush().map_err(|error| {
+            error!("Failed to flush CSV output: {error}");
+            csv::Error::from(error)
+        })?;
+
+        debug!("Wrote {} records", self.written);
+        Ok(self.written)
+    }
+}
+
+/// Writes a batch of flows to their own file, for the interval-rotated exports
+/// the capture path produces. The batch is already bounded by the rotation, so
+/// it is held whole.
+pub async fn fluere_exporter(records: Vec<Flow>, file: File) -> Result<(), csv::Error> {
+    debug!("Writing {} records", records.len());
+    let mut exporter = CsvExporter::create(file)?;
+    for flow in records.iter() {
+        exporter.write(flow)?;
+    }
+    exporter.finish()?;
+
     Ok(())
 }
 
