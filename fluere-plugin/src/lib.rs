@@ -300,6 +300,7 @@ mod tests {
 
     /// A plugin that appends one line per record and one on cleanup, so the
     /// resulting file shows the exact order the two happened in.
+    #[cfg(feature = "lua")]
     const RECORDING_PLUGIN: &str = r#"
 local plugin = {}
 local path
@@ -381,6 +382,8 @@ return plugin
         Config { plugins }
     }
 
+    // Asserts what a Lua plugin wrote, so it needs a runtime compiled in.
+    #[cfg(feature = "lua")]
     #[tokio::test]
     async fn every_queued_record_is_processed_before_cleanup() {
         let dir = TempDir::new("ordering");
@@ -417,6 +420,7 @@ return plugin
     }
 
     /// Asserts inside Lua that each field arrived with its natural type.
+    #[cfg(feature = "lua")]
     const TYPE_PROBE_PLUGIN: &str = r#"
 local plugin = {}
 local path
@@ -441,6 +445,8 @@ end
 return plugin
 "#;
 
+    // Asserts what a Lua plugin wrote, so it needs a runtime compiled in.
+    #[cfg(feature = "lua")]
     #[tokio::test]
     async fn plugins_see_typed_fields_and_a_schema_version() {
         let dir = TempDir::new("types");
