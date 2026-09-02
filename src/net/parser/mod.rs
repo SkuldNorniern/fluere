@@ -95,6 +95,9 @@ fn parse_frame(data: &[u8], linktype: u16) -> Result<ParsedPacket, ParseError> {
         // rather than corruption. Asking only for the network layer returns
         // what survived, so the packet is still counted against the flow its
         // addresses name instead of vanishing from the totals.
+        //
+        // paccel 0.2.0 fails the whole frame here even in permissive mode.
+        // Fixed upstream; this retry can go once a release carries the fix.
         Err(_) => {
             let config = ParseConfig {
                 stop_after: StopLayer::Network,
