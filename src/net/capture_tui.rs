@@ -210,9 +210,7 @@ fn emit_completed_flows(
 ) -> Result<(), FluereError> {
     for flow in completed {
         trace!("flow completed");
-        plugin_manager
-            .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        crate::net::identity::offer_to_plugins(plugin_manager, &flow)?;
         records.push(flow);
     }
     Ok(())
@@ -419,9 +417,7 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
 
         debug!("Captured in {:?}", start.elapsed());
         for flow in engine.drain() {
-            plugin_manager
-                .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-                .map_err(|error| FluereError::Plugin(error.to_string()))?;
+            crate::net::identity::offer_to_plugins(&plugin_manager, &flow)?;
             records.push(flow);
         }
 

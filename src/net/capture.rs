@@ -100,9 +100,7 @@ fn process_packet(
 ) -> Result<(), FluereError> {
     for flow in engine.accept(observation).completed {
         trace!("flow finished: {flow:?}");
-        plugin_manager
-            .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        crate::net::identity::offer_to_plugins(plugin_manager, &flow)?;
         records.push(flow);
     }
 
@@ -161,9 +159,7 @@ fn drain_engine(
     records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
     for flow in engine.drain() {
-        plugin_manager
-            .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        crate::net::identity::offer_to_plugins(plugin_manager, &flow)?;
         records.push(flow);
     }
     Ok(())

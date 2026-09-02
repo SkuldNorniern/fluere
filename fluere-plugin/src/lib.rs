@@ -87,6 +87,8 @@ pub struct PluginManager {
     sender: mpsc::Sender<(FlowRecord, FlowIdentity)>,
     /// Flows the plugins never saw because their queue was full.
     dropped: AtomicU64,
+    /// Whether any plugin loaded. Nothing consumes the queue when none did.
+    active: bool,
 }
 
 impl PluginManager {
@@ -150,13 +152,12 @@ impl PluginManager {
 
         #[cfg(feature = "log")]
         debug!("{loaded} plugin(s) loaded");
-        #[cfg(not(feature = "log"))]
-        let _ = loaded;
 
         Ok((
             PluginManager {
                 sender,
                 dropped: AtomicU64::new(0),
+                active: loaded > 0,
             },
             spawn_worker(runtimes, receiver),
         ))
@@ -175,6 +176,10 @@ impl PluginManager {
         data: FlowRecord,
         identity: FlowIdentity,
     ) -> Result<(), PluginError> {
+        if !self.active {
+            return Ok(());
+        }
+
         match self.sender.try_send((data, identity)) {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -188,6 +193,15 @@ impl PluginManager {
             }
             Err(mpsc::error::TrySendError::Closed(_)) => Err(PluginError::WorkerStopped),
         }
+    }
+
+    /// Whether any plugin was actually loaded.
+    ///
+    /// Callers check this before describing a flow for the plugins: the
+    /// description allocates, and a run with no plugins loaded would otherwise
+    /// build one for every flow only to drop it at the far end of the queue.
+    pub fn is_active(&self) -> bool {
+        self.active
     }
 
     /// How many flows never reached the plugins because the queue was full.
@@ -228,6 +242,10 @@ fn spawn_worker(
 ) -> PluginWorker {
     let handle = tokio::spawn(async move {
         while let Some((record, identity)) = receiver.recv().await {
+            if runtimes.iter().all(Runtime::is_empty) {
+                continue;
+            }
+
             // Built once and marshalled by each runtime, so the field list
             // lives in one place however many languages are loaded.
             let view = FlowView::new(&record, &identity);

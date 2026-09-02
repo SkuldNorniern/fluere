@@ -27,9 +27,7 @@ fn process_packet(
 ) -> Result<(), FluereError> {
     for flow in engine.accept(observation).completed {
         trace!("Flow finished: {flow:?}");
-        plugin_manager
-            .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        crate::net::identity::offer_to_plugins(plugin_manager, &flow)?;
         exporter.write(&flow)?;
     }
 
@@ -45,9 +43,7 @@ fn drain_engine(
     exporter: &mut CsvExporter,
 ) -> Result<(), FluereError> {
     for flow in engine.drain() {
-        plugin_manager
-            .process_flow_data(flow.record, crate::net::identity::for_plugin(&flow))
-            .map_err(|error| FluereError::Plugin(error.to_string()))?;
+        crate::net::identity::offer_to_plugins(plugin_manager, &flow)?;
         exporter.write(&flow)?;
     }
 
