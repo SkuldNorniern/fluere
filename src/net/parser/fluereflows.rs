@@ -33,11 +33,19 @@ pub(super) fn wire_length(packet: &pcap::Packet) -> usize {
 /// libpcap reports microseconds, which the model widens to nanoseconds while
 /// recording that microseconds is all the source could resolve.
 pub(super) fn packet_time(packet: &pcap::Packet) -> fluereflow::Timestamp {
-    // A stamp before the epoch is not a time this model can express, and the
-    // width of `tv_sec` differs by platform. `try_from` covers both: a negative
-    // second reads as the epoch rather than as the enormous positive number a
-    // cast would produce.
-    let seconds = u64::try_from(packet.header.ts.tv_sec).unwrap_or(0);
+    // A capture file stores its seconds unsigned and 32 bits wide, and libpcap
+    // widens that into a signed `tv_sec` by sign extension. Every stamp from
+    // 2038-01-19 on therefore arrives negative: `0x8000_0000` reads as
+    // -2147483648. Casting that straight to `u64` made it an enormous positive
+    // number that then overflowed the multiply, and rejecting it outright put
+    // the packet at the epoch. Mask it back to the unsigned value it was
+    // written as instead.
+    //
+    // A live capture's clock is a real `time_t` and stays positive, so it takes
+    // the first branch and keeps its full range.
+    let seconds = u64::try_from(packet.header.ts.tv_sec)
+        .or_else(|_| u64::try_from(packet.header.ts.tv_sec & 0xFFFF_FFFF))
+        .unwrap_or(0);
     let microseconds = u64::try_from(packet.header.ts.tv_usec).unwrap_or(0);
 
     fluereflow::Timestamp::from_micros(parse_microseconds(seconds, microseconds))
@@ -86,15 +94,36 @@ mod tests {
         assert_eq!(time.nanos(), 7_000_008_000);
     }
 
-    /// A capture whose clock ran before the epoch. Casting the negative second
-    /// straight to `u64` made it an enormous positive one, which then overflowed
-    /// the multiply; the flow would carry a time no packet had.
+    /// A capture file holds its seconds unsigned and 32 bits wide, and libpcap
+    /// sign-extends that into `tv_sec`. Every stamp from 2038-01-19 on arrives
+    /// negative, so the boundary has to stay continuous rather than wrapping to
+    /// an enormous number or collapsing to the epoch.
     #[test]
-    fn a_stamp_before_the_epoch_reads_as_the_epoch() {
+    fn a_stamp_past_2038_keeps_its_time() {
+        let data = [0u8; 4];
+        // 0x7FFF_FFFF, then 0x8000_0000 as libpcap delivers it.
+        let before = header(4, 4, 2_147_483_647, 0);
+        let after = header(4, 4, -2_147_483_648, 0);
+
+        assert_eq!(
+            packet_time(&Packet::new(&before, &data)).micros(),
+            2_147_483_647_000_000
+        );
+        assert_eq!(
+            packet_time(&Packet::new(&after, &data)).micros(),
+            2_147_483_648_000_000
+        );
+    }
+
+    /// The largest second a capture file can hold, delivered as -1.
+    #[test]
+    fn the_last_second_a_capture_file_can_hold_is_read_whole() {
         let data = [0u8; 4];
         let header = header(4, 4, -1, 0);
-        let time = packet_time(&Packet::new(&header, &data));
 
-        assert_eq!(time.nanos(), 0);
+        assert_eq!(
+            packet_time(&Packet::new(&header, &data)).micros(),
+            4_294_967_295_000_000
+        );
     }
 }
