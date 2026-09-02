@@ -392,15 +392,15 @@ mod tests {
         frame.extend_from_slice(&0x0800u16.to_be_bytes());
 
         // Outer IPv4 + UDP to the VXLAN port.
-        let inner_len = 8 + 14 + 20 + 20; // vxlan + eth + ip + tcp
+        let inner_len: u16 = 8 + 14 + 20 + 20; // vxlan + eth + ip + tcp
         frame.extend_from_slice(&[0x45, 0x00]);
-        frame.extend_from_slice(&((20 + 8 + inner_len) as u16).to_be_bytes());
+        frame.extend_from_slice(&(20 + 8 + inner_len).to_be_bytes());
         frame.extend_from_slice(&[0, 1, 0, 0, 64, 17, 0, 0]);
         frame.extend_from_slice(&[203, 0, 113, 1]);
         frame.extend_from_slice(&[203, 0, 113, outer_dst_last]);
         frame.extend_from_slice(&50_000u16.to_be_bytes());
         frame.extend_from_slice(&4789u16.to_be_bytes());
-        frame.extend_from_slice(&((8 + inner_len) as u16).to_be_bytes());
+        frame.extend_from_slice(&(8 + inner_len).to_be_bytes());
         frame.extend_from_slice(&[0, 0]);
 
         // VXLAN header: flags, reserved, VNI, reserved.
