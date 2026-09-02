@@ -130,7 +130,7 @@ fn rotate_export(
 
     info!("running without blocking");
     let file_path = cur_time_file(csv_file, file_dir, ".csv");
-    let file = fs::File::create(file_path.as_ref())?;
+    let file = crate::utils::output::create(file_path.as_ref())?;
     Ok((file_path, file))
 }
 
