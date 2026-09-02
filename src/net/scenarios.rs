@@ -467,6 +467,30 @@ mod tests {
         assert_eq!(flow.forward.tcp_flags.rst + flow.reverse.tcp_flags.rst, 1);
     }
 
+    /// A headers-only capture is a deliberate practice: keep the addresses,
+    /// drop the payload, save the disk. The packets are real and their bytes
+    /// crossed the wire, so they must be counted even though the ports did not
+    /// survive.
+    #[test]
+    fn a_packet_whose_transport_header_was_cut_is_still_counted() {
+        let mut capture = Capture::new(600_000);
+        // A complete IPv4 header saying TCP, with nothing after it.
+        let full = ipv4(6, 64, A, B, &tcp(40_001, 443, SYN));
+        capture.push(&ethernet(0x0800, &full[..20]));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.len(), 1, "the packet is not dropped");
+        let flow = flows.only_flow(|f| f.key.protocol == 6);
+        assert_eq!(flow.record.packets(), 1);
+        assert_eq!(
+            flow.key.endpoints,
+            fluereflow::Endpoints::None,
+            "the ports are unknown, which is not port 0"
+        );
+    }
+
     #[test]
     fn a_capture_that_starts_mid_conversation_says_so() {
         let mut capture = Capture::new(600_000);
