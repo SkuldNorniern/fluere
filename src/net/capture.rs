@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     FluereError,
-    error::{CaptureError, OptionExt},
+    error::CaptureError,
     net::{
         CaptureDevice, find_device,
         flow_engine::FlowEngine,
@@ -36,60 +36,9 @@ use fluere_plugin::PluginManager;
 use log::{debug, error, info, trace};
 use tokio::{task, task::JoinHandle};
 
-struct OnlineArgs {
-    csv_file: String,
-    use_mac: bool,
-    snaplen: u64,
-    interface_name: String,
-    duration: u64,
-    interval: u64,
-    flow_timeout: u64,
-}
-
-fn extract_online_args(arg: Args) -> Result<OnlineArgs, FluereError> {
-    let csv_file = arg
-        .files
-        .csv
-        .required("this should be defaulted to `output` on construction")?;
-    let use_mac = arg
-        .parameters
-        .use_mac
-        .required("this should be defaulted to `false` on construction")?;
-    let interface_name = arg.interface.required("interface should be provided")?;
-    let duration = arg
-        .parameters
-        .duration
-        .required("this should be defaulted to `0(infinite)` on construction")?;
-    let interval = arg
-        .parameters
-        .interval
-        .required("this should be defaulted to `30 minutes` on construction")?;
-    let flow_timeout = arg
-        .parameters
-        .timeout
-        .required("this should be defaulted to `10 minutes` on construction")?;
-    let snaplen = arg
-        .parameters
-        .snaplen
-        .required("this should be defaulted to `65535` on construction")?;
-    Ok(OnlineArgs {
-        csv_file,
-        use_mac,
-        snaplen,
-        interface_name,
-        duration,
-        interval,
-        flow_timeout,
-    })
-}
-
 struct ExportSchedule {
     interval: u64,
     last_export: Instant,
-}
-
-fn duration_reached(start: Instant, duration: u64) -> bool {
-    start.elapsed() >= Duration::from_millis(duration) && duration != 0
 }
 
 fn process_packet(
@@ -175,24 +124,12 @@ fn spawn_final_export(records: &mut Vec<Flow>, file: fs::File) -> JoinHandle<()>
     })
 }
 
-/// Wait for every export to finish, reporting one that did not.
-///
-/// A panicking task used to be discarded here, so a run whose export died
-/// still exited successfully with nothing written.
-async fn await_export_tasks(export_tasks: Vec<JoinHandle<()>>) {
-    for task in export_tasks {
-        if let Err(error) = task.await {
-            error!("An export did not finish: {error}");
-        }
-    }
-}
-
 /// Capture from an interface and export FluereFlow records.
 ///
 /// Runs until the requested duration elapses or the operator interrupts it,
 /// then drains the engine so flows still open are exported rather than lost.
 pub async fn run(arg: Args) -> Result<(), FluereError> {
-    let OnlineArgs {
+    let crate::net::live::Settings {
         csv_file,
         use_mac,
         snaplen,
@@ -200,7 +137,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
         duration,
         interval,
         flow_timeout,
-    } = extract_online_args(arg)?;
+    } = crate::net::live::Settings::from_args(arg)?;
     let config = Config::new();
     let (plugin_manager, plugin_worker) = PluginManager::start(&config)
         .await
@@ -242,7 +179,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
             info!("Stopping capture");
             break;
         }
-        if duration_reached(start, duration) {
+        if crate::net::live::duration_reached(start, duration) {
             break;
         }
 
@@ -286,7 +223,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     // Consumes the manager: dropping its sender is what lets the worker drain
     // the queue and stop before plugin cleanup runs.
     plugin_manager.shutdown(plugin_worker).await;
-    await_export_tasks(export_tasks).await;
+    crate::net::live::await_export_tasks(export_tasks).await;
     // info!("Exporting task excutation result: {:?}", result);
 
     Ok(())
