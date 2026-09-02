@@ -225,7 +225,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
     // FIX:TASK: there is a possibility of a permission error
     // | need to check, if it is a permission error and handle it
-    let mut file = fs::File::create(file_path.as_ref())?;
+    let mut file = crate::utils::output::create(file_path.as_ref())?;
 
     //let mut wtr = csv::Writer::from_writer(file);
 

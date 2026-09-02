@@ -88,7 +88,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
         )
     });
     let output_file_path = format!("{file_dir}/{file_noext}.csv");
-    let file = fs::File::create(&output_file_path)?;
+    let file = crate::utils::output::create(&output_file_path)?;
 
     let mut records: Vec<Flow> = Vec::new();
     let mut engine = FlowEngine::new(flow_timeout);
