@@ -52,12 +52,16 @@ pub async fn execute_mode(mode: Mode, args: types::Args) -> Result<(), FluereErr
     Ok(())
 }
 
-// Add a function to setup logging
+/// Send diagnostics to stderr, leaving stdout for what a command produces.
+///
+/// They went to stdout, which is the wrong stream for them: `fluere devices`
+/// writes its list there, and anything piping or redirecting a command's
+/// output should get that output rather than a running commentary beside it.
 pub fn setup_logging(verbose: u8) -> Result<(), FluereError> {
     let logger = logger::Logger::new(
         None,
         Some(Level::Trace),
-        Some(logger::Logstdout::Stdout),
+        Some(logger::Logstdout::StdErr),
         false,
     );
     let filter = get_log_level(verbose);
