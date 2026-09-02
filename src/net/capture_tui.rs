@@ -789,7 +789,16 @@ mod tests {
 
         assert!(snapshot.recent_flows.is_empty());
         assert_eq!(snapshot.active_flows, 0);
-        assert_eq!(export_progress(snapshot.last_export.elapsed(), 1_000), 0.0);
+
+        // Barely started, so barely any progress. Asserting exactly zero would
+        // hold only while the elapsed time rounds down to zero milliseconds,
+        // which is a property of how busy the machine is rather than of the
+        // code under test.
+        let progress = export_progress(snapshot.last_export.elapsed(), 1_000);
+        assert!(
+            (0.0..0.1).contains(&progress),
+            "a fresh snapshot should be near the start of its interval, got {progress}"
+        );
     }
 
     /// The recent-flow list is bounded, so a long capture cannot grow the
