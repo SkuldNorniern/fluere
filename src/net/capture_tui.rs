@@ -20,7 +20,7 @@ use std::{
     borrow::Cow,
     fs, io,
     mem::take,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 
 use crate::net::Flow;
@@ -68,13 +68,6 @@ struct FlowSummary {
     protocol: Cow<'static, str>, //flow_data: String, // or any other relevant data you want to display
 }
 
-/// When the last export happened, and how often the next one is due.
-struct ExportSchedule<'a> {
-    interval: u64,
-    last_export: &'a mut Instant,
-    last_export_unix_time: &'a mut u64,
-}
-
 /// Everything the terminal draws, as published by the capture loop.
 ///
 /// The capture task owns the flow engine and the export schedule outright; the
@@ -97,7 +90,7 @@ impl Default for UiSnapshot {
             recent_flows: Vec::new(),
             active_flows: 0,
             last_export: Instant::now(),
-            last_export_unix_time: unix_time_seconds(),
+            last_export_unix_time: crate::net::live::unix_time_seconds(),
         }
     }
 }
@@ -186,12 +179,10 @@ fn export_if_due(
     file_path: Cow<'static, str>,
     csv_file: &str,
     file_dir: &str,
-    schedule: ExportSchedule<'_>,
+    schedule: &mut crate::net::live::ExportSchedule,
     export_tasks: &mut Vec<task::JoinHandle<()>>,
 ) -> Result<(fs::File, Cow<'static, str>), FluereError> {
-    if schedule.last_export.elapsed() >= Duration::from_millis(schedule.interval)
-        && schedule.interval != 0
-    {
+    if schedule.is_due() {
         let records_to_export = take(records);
         let file_path_clone = file_path.clone();
         export_tasks.push(task::spawn(async move {
@@ -203,8 +194,7 @@ fn export_if_due(
 
         let file_path = cur_time_file(csv_file, file_dir, ".csv");
         let file = crate::utils::output::create(file_path.as_ref())?;
-        *schedule.last_export = Instant::now();
-        *schedule.last_export_unix_time = unix_time_seconds();
+        schedule.mark_exported();
         return Ok((file, file_path));
     }
     Ok((file, file_path))
@@ -251,8 +241,7 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
     fs::create_dir_all(file_dir)?;
 
     let start = Instant::now();
-    let mut last_export_unix_time = unix_time_seconds();
-    let mut last_export = Instant::now();
+    let mut export_schedule = crate::net::live::ExportSchedule::new(interval);
     let mut file_path = cur_time_file(csv_file.as_str(), file_dir, ".csv");
     let mut file = crate::utils::output::create(file_path.as_ref())?;
 
@@ -334,11 +323,7 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
                 file_path,
                 csv_file.as_str(),
                 file_dir,
-                ExportSchedule {
-                    interval,
-                    last_export: &mut last_export,
-                    last_export_unix_time: &mut last_export_unix_time,
-                },
+                &mut export_schedule,
                 &mut export_tasks,
             )?;
 
@@ -350,8 +335,8 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
                 let _ = ui_tx.send(UiSnapshot {
                     recent_flows: recent_flows.clone(),
                     active_flows: engine.active_count(),
-                    last_export,
-                    last_export_unix_time,
+                    last_export: export_schedule.last_export,
+                    last_export_unix_time: export_schedule.last_export_unix_time,
                 });
             }
         }
@@ -461,20 +446,8 @@ async fn render_ui(
     Ok(())
 }
 
-/// How far through the current export interval, as 0.0 to 1.0.
-///
-/// An interval of zero means exports are not scheduled at all, so there is no
-/// progress to show rather than a bar permanently at full.
-fn export_progress(since_last_export: Duration, interval: u64) -> f64 {
-    if interval == 0 {
-        return 0.0;
-    }
-
-    (since_last_export.as_millis() as f64 / interval as f64).clamp(0.0, 1.0)
-}
-
 fn refresh_ui(terminal: &mut LiveTerminal, snapshot: &UiSnapshot, interval: u64) {
-    let progress = export_progress(snapshot.last_export.elapsed(), interval);
+    let progress = crate::net::live::export_progress(snapshot.last_export.elapsed(), interval);
 
     if let Err(error) = terminal.draw(|f| {
         draw_ui(
@@ -489,15 +462,6 @@ fn refresh_ui(terminal: &mut LiveTerminal, snapshot: &UiSnapshot, interval: u64)
     }
 }
 
-fn unix_time_seconds() -> u64 {
-    match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(duration) => duration.as_secs(),
-        Err(error) => {
-            error!("System time is before UNIX epoch: {error}");
-            0
-        }
-    }
-}
 fn draw_ui(
     f: &mut Frame,
     recent_flows: &[FlowSummary],
@@ -701,27 +665,6 @@ mod tests {
         assert_eq!(recent[0].protocol, "arp");
     }
 
-    #[test]
-    fn export_progress_runs_from_empty_to_full() {
-        assert_eq!(export_progress(Duration::from_millis(0), 1_000), 0.0);
-        assert_eq!(export_progress(Duration::from_millis(500), 1_000), 0.5);
-        assert_eq!(export_progress(Duration::from_millis(1_000), 1_000), 1.0);
-    }
-
-    /// Overdue exports must not run the bar past the end.
-    #[test]
-    fn export_progress_is_clamped() {
-        assert_eq!(export_progress(Duration::from_millis(9_000), 1_000), 1.0);
-    }
-
-    /// With no export interval there is nothing to be partway through. The
-    /// previous code divided by the interval regardless, which left the bar
-    /// pinned at full for a capture that never exports on a timer.
-    #[test]
-    fn an_unscheduled_export_shows_no_progress() {
-        assert_eq!(export_progress(Duration::from_millis(5_000), 0), 0.0);
-    }
-
     /// The snapshot is what the render task reads; a fresh one must be drawable
     /// before the capture loop has published anything.
     #[test]
@@ -735,7 +678,7 @@ mod tests {
         // hold only while the elapsed time rounds down to zero milliseconds,
         // which is a property of how busy the machine is rather than of the
         // code under test.
-        let progress = export_progress(snapshot.last_export.elapsed(), 1_000);
+        let progress = crate::net::live::export_progress(snapshot.last_export.elapsed(), 1_000);
         assert!(
             (0.0..0.1).contains(&progress),
             "a fresh snapshot should be near the start of its interval, got {progress}"
