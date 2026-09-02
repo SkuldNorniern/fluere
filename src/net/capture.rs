@@ -22,9 +22,6 @@ use crate::{
 
 use fluere_config::Config;
 
-// FEAT:TASK: set plugin as feature
-// | Since the plugin manager uses Lua, for edge cases that require minimal feature,
-// | setting the plugin as a feature would be beneficial.
 use crate::net::Flow;
 use fluere_plugin::PluginManager;
 
