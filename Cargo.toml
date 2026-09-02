@@ -35,9 +35,8 @@ log = { version = "0.4", features = ["std"]}
 indicatif = "0.18"
 ahash = "0.8.12"
 
-[lints.clippy]
-unwrap_used = "deny"
-cognitive_complexity = "deny"
+[lints]
+workspace = true
 
 [features]
 default = ["plugins"]
@@ -52,6 +51,17 @@ members = [
   "fluere-config",
   "fluereflow",
 ]
+
+# One lint policy for every crate here, rather than three that disagreed and
+# one with none at all. Tests are exempted from the unwrap and expect rules by
+# clippy.toml, where a failed unwrap is the test failing.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+cognitive_complexity = "deny"
 
 [package.metadata.rpm]
 package = "fluere"

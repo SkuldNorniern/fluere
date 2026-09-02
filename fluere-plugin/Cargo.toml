@@ -37,6 +37,5 @@ log = ["dep:log"]
 # compiles out every interpreter, so no vendored C toolchain is needed.
 lua = ["dep:mlua"]
 
-[lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
+[lints]
+workspace = true

@@ -13,3 +13,5 @@ repository = "https://github.com/SkuldNorniern/fluere"
 
 [dependencies]
 
+[lints]
+workspace = true
