@@ -70,6 +70,24 @@ pub fn ethertype(flow: &Flow) -> String {
 }
 
 /// Everything a plugin is told about what identified this flow.
+/// Hand a finished flow to the plugins.
+///
+/// The identity is built only when a plugin is loaded to receive it. Describing
+/// a flow allocates, and a run with no plugins would otherwise pay for one on
+/// every flow just to have it dropped at the far end of the queue.
+pub fn offer_to_plugins(
+    plugin_manager: &fluere_plugin::PluginManager,
+    flow: &Flow,
+) -> Result<(), crate::FluereError> {
+    if !plugin_manager.is_active() {
+        return Ok(());
+    }
+
+    plugin_manager
+        .process_flow_data(flow.record, for_plugin(flow))
+        .map_err(|error| crate::FluereError::Plugin(error.to_string()))
+}
+
 pub fn for_plugin(flow: &Flow) -> fluere_plugin::FlowIdentity {
     let encapsulation = flow.key.encapsulation;
 
