@@ -246,8 +246,10 @@ impl FlowEngine {
         let mut opened_flow = false;
         let finished = self.offer_with_reason(observation, &mut opened_flow);
 
-        let mut completed = Vec::with_capacity(expired.len() + usize::from(finished.is_some()));
-        completed.extend(expired);
+        // The swept flows are carried on rather than copied into a second
+        // vector: a sweep can return thousands of them, and each is a whole
+        // record.
+        let mut completed = expired;
         if let Some((flow, reason)) = finished {
             trace!("flow ended: {reason:?}");
             completed.push(flow);
