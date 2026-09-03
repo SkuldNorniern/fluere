@@ -322,7 +322,7 @@ impl FlowEngine {
                     continue;
                 }
 
-                let deadline = state.record.time.end.nanos() + timeout;
+                let deadline = state.record.time.end.nanos().saturating_add(timeout);
                 if deadline <= current_time {
                     if let Some(mut state) = self.active.remove(&key) {
                         trace!("flow ended: {:?}", EndReason::IdleTimeout);
@@ -379,8 +379,15 @@ impl FlowEngine {
     }
 
     /// When a flow last seen at `packet_time` would idle out.
+    ///
+    /// Saturating: a capture can name a time the model already saturated at,
+    /// and adding the timeout to it overflowed. In a release build that wrapped
+    /// to a deadline in the past, which expired the flow on the packet that
+    /// opened it. A deadline at the end of the range means the flow leaves
+    /// through termination or a drain instead, which is what a time that far
+    /// ahead deserves.
     fn deadline_from(&self, packet_time: u64) -> u64 {
-        packet_time + self.timeout.unwrap_or(0)
+        packet_time.saturating_add(self.timeout.unwrap_or(0))
     }
 
     /// Queue `key` to be checked once its deadline comes round. Does nothing
@@ -457,6 +464,38 @@ mod tests {
     /// Feed a frame in at `time` microseconds.
     fn accept_at(engine: &mut FlowEngine, frame: &[u8], time: u64) -> AcceptOutcome {
         engine.accept(observe_frame(frame, time))
+    }
+
+    /// A capture can name a time this model saturates at. Adding the timeout to
+    /// it used to overflow: a panic in a debug build, and in a release one a
+    /// deadline that had wrapped into the past, expiring the flow on the very
+    /// packet that opened it.
+    #[test]
+    fn a_saturated_timestamp_does_not_overflow_the_deadline() {
+        let frame = tcp_frame(true, SYN);
+        let header = PacketHeader {
+            ts: libc::timeval {
+                tv_sec: i64::MAX as _,
+                tv_usec: 0,
+            },
+            caplen: frame.len() as u32,
+            len: frame.len() as u32,
+        };
+        let observation = crate::net::parser::observe(
+            Packet::new(&header, &frame),
+            false,
+            1,
+            &mut crate::net::parser::ParserState::new(),
+        )
+        .expect("parsable frame");
+        assert_eq!(observation.time().nanos(), u64::MAX, "the model saturated");
+
+        let mut engine = FlowEngine::new(600_000);
+        let outcome = engine.accept(observation);
+
+        assert!(outcome.opened_flow, "the flow opened");
+        assert!(outcome.completed.is_empty(), "and did not expire at once");
+        assert_eq!(engine.drain().len(), 1, "it leaves through the drain");
     }
 
     #[test]
