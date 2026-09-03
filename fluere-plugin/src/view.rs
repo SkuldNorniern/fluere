@@ -22,7 +22,10 @@ use fluereflow::{FlowRecord, Range};
 ///   report where a flow moved to. Fields that do not apply to a flow are now
 ///   absent rather than zero, so a plugin must check a field exists before
 ///   using it.
-pub const SCHEMA_VERSION: u32 = 3;
+/// - 4: `captured_octets` joins `truncated`. The CSV reported both from the
+///   start; the plugin view showed only the flag, so a plugin could tell that a
+///   snaplen had cut a flow short but not by how much.
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// One field's value, in the few shapes a flow record actually uses.
 #[derive(Debug, Clone, PartialEq)]
@@ -206,6 +209,10 @@ impl FlowView {
                             .map(|reason| reason.as_str().to_string()),
                     ),
                 ),
+                // What the capture kept, against the wire length above.
+                // `truncated` says whether a short snaplen made the two differ;
+                // this says by how much, which is the half that shows how badly.
+                ("captured_octets", Unsigned(record.capture.captured_octets)),
                 ("truncated", Bool(record.capture.truncated)),
                 // Where the flow was seen. A QUIC connection that changes
                 // address stays one flow; these say where it moved to.
@@ -282,7 +289,7 @@ mod tests {
 
         assert_eq!(
             view.fields.len(),
-            47,
+            48,
             "one entry per record field, plus what identified the flow"
         );
         assert_eq!(view.schema_version, SCHEMA_VERSION);
@@ -380,5 +387,7 @@ mod tests {
             FieldValue::Text("synobserved".into())
         );
         assert_eq!(field(&view, "truncated"), FieldValue::Bool(false));
+        // The pair: whether a snaplen cut the flow short, and by how much.
+        assert_eq!(field(&view, "captured_octets"), FieldValue::Unsigned(174));
     }
 }
