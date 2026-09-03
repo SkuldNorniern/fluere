@@ -498,6 +498,71 @@ mod tests {
         assert_eq!(engine.drain().len(), 1, "it leaves through the drain");
     }
 
+    /// Every packet the engine accepts must come back out on exactly one flow.
+    ///
+    /// Randomised over timeouts, directions, terminating flags and out-of-order
+    /// delivery, because those are the paths where a packet could be counted
+    /// twice or dropped: a flow that expires, reopens on the same tuple, closes
+    /// on a FIN or a RST, or arrives behind the engine's clock.
+    #[test]
+    fn no_packet_is_lost_or_counted_twice() {
+        // xorshift, so the sequence is fixed and a failure is reproducible.
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        for round in 0..300 {
+            let timeout = [0, 1, 10, 1_000][round % 4];
+            let mut engine = FlowEngine::new(timeout);
+            let mut accepted = 0u64;
+            let mut emitted = 0u64;
+            let mut clock = 1u64;
+
+            for _ in 0..40 {
+                let pick = next();
+                // Out-of-order delivery: sometimes step the clock backwards.
+                clock = if pick % 8 == 0 {
+                    clock.saturating_sub(next() % 5_000).max(1)
+                } else {
+                    clock + next() % 5_000
+                };
+
+                let frame = match pick % 5 {
+                    0 => udp_frame(),
+                    1 => tcp_frame(true, SYN),
+                    2 => tcp_frame(false, 0),
+                    3 => tcp_frame(true, FIN),
+                    _ => tcp_frame(false, RST),
+                };
+
+                let outcome = accept_at(&mut engine, &frame, clock);
+                accepted += 1;
+                emitted += outcome
+                    .completed
+                    .iter()
+                    .map(|flow| flow.record.packets())
+                    .sum::<u64>();
+            }
+
+            emitted += engine
+                .drain()
+                .iter()
+                .map(|flow| flow.record.packets())
+                .sum::<u64>();
+
+            assert_eq!(
+                emitted, accepted,
+                "round {round} (timeout {timeout}ms): every accepted packet must \
+                 leave on exactly one flow"
+            );
+            assert_eq!(engine.active_count(), 0, "the drain emptied the engine");
+        }
+    }
+
     #[test]
     fn a_tcp_flow_without_a_syn_started_before_the_capture() {
         let mut engine = FlowEngine::new(10);
