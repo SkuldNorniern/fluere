@@ -102,7 +102,15 @@ impl QuicTracker {
     }
 
     fn remember(&mut self, cid: &[u8], key: Key, now: u64) {
-        if cid.is_empty() {
+        // An identifier this cannot look up again is not worth a slot.
+        // `attribute` reads its candidate lengths off `lengths`, which only
+        // holds bits up to `MAX_CID_LEN`, so a longer one would sit in the
+        // table forever without ever matching a packet. RFC 9000 caps a
+        // connection ID at 20 bytes, but the cap is only enforced on the wire
+        // for versions the parser knows, so a packet naming an unknown version
+        // can still claim 255 bytes. Enough of those would push out the
+        // connections actually worth following.
+        if cid.is_empty() || cid.len() > MAX_CID_LEN {
             return;
         }
 
@@ -123,9 +131,7 @@ impl QuicTracker {
             super::expiry::make_room(&mut self.connections, now, MAX_AGE, |entry| entry.last_seen);
         }
 
-        if cid.len() <= MAX_CID_LEN {
-            self.lengths |= 1 << cid.len();
-        }
+        self.lengths |= 1 << cid.len();
 
         self.connections.insert(
             cid.to_vec(),
@@ -249,6 +255,23 @@ mod tests {
 
     /// A connection ID is unique to the endpoint that issued it, not to the
     /// capture. Two connections holding the same one must not be merged: a
+    /// A packet naming an unknown QUIC version can claim a connection ID far
+    /// longer than RFC 9000 allows. Such an ID can never be matched, because
+    /// only lengths up to `MAX_CID_LEN` are ever looked for, so remembering one
+    /// held a slot nothing could use and let a flood of them evict the
+    /// connections worth following.
+    #[test]
+    fn a_connection_id_too_long_to_look_up_is_not_remembered() {
+        let mut tracker = QuicTracker::new();
+
+        tracker.remember(&[7u8; 255], key(), 1_000);
+        tracker.remember(&[9u8; MAX_CID_LEN + 1], key(), 1_000);
+        assert_eq!(tracker.tracked(), 0, "neither can ever be looked up");
+
+        tracker.remember(&[3u8; MAX_CID_LEN], key(), 1_000);
+        assert_eq!(tracker.tracked(), 1, "the longest allowed one still is");
+    }
+
     /// wrong attribution is worse than a missed migration.
     #[test]
     fn an_id_claimed_by_two_connections_stops_being_used() {
