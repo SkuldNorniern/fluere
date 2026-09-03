@@ -33,27 +33,29 @@ pub(super) fn make_room<K, V>(
         return;
     }
 
+    if map.is_empty() {
+        return;
+    }
+
     // Nothing was stale, so the map is full of live entries and one has to go
     // regardless. Take a batch: doing this per insert is what made a flood
     // expensive.
+    //
+    // The batch is picked by key rather than by a timestamp cutoff. A capture's
+    // clock is routinely coarser than its packet rate, so entries share a
+    // timestamp often; dropping everything at or below a cutoff then took far
+    // more than the batch, and emptied the map outright when every entry shared
+    // one. That loses the fragment and connection-ID state the trackers exist
+    // to hold.
     let drop_count = (map.len() / EVICT_FRACTION).max(1);
-    let mut ages: Vec<u64> = map.values().map(&last_seen).collect();
-    ages.sort_unstable();
-    let Some(&cutoff) = ages.get(drop_count.saturating_sub(1)) else {
-        return;
-    };
+    let mut by_age: Vec<(u64, K)> = map
+        .iter()
+        .map(|(key, entry)| (last_seen(entry), key.clone()))
+        .collect();
+    by_age.sort_unstable_by_key(|(age, _)| *age);
 
-    map.retain(|_, entry| last_seen(entry) > cutoff);
-
-    // A cutoff shared by more entries than the batch can leave the map
-    // untouched. Drop one outright so an insert always has room.
-    if map.len() >= before
-        && let Some(oldest) = map
-            .iter()
-            .min_by_key(|(_, entry)| last_seen(entry))
-            .map(|(key, _)| key.clone())
-    {
-        map.remove(&oldest);
+    for (_, key) in by_age.into_iter().take(drop_count) {
+        map.remove(&key);
     }
 }
 
@@ -88,12 +90,35 @@ mod tests {
 
     /// Every entry sharing one timestamp leaves the batch cutoff with nothing
     /// to separate, and an insert still needs room.
+    /// Every entry sharing one timestamp leaves a cutoff with nothing to
+    /// separate. Choosing the batch by key instead keeps that from emptying the
+    /// map, which is what used to happen: a capture whose clock is coarser than
+    /// its packet rate would lose the whole tracker rather than a quarter of it.
     #[test]
-    fn room_is_made_even_when_every_entry_is_the_same_age() {
-        let mut map: HashMap<u32, u64> = (0..10u32).map(|i| (i, 5)).collect();
+    fn one_batch_goes_when_every_entry_is_the_same_age() {
+        let mut map: HashMap<u32, u64> = (0..100u32).map(|i| (i, 5)).collect();
         make_room(&mut map, 5, 10_000, |seen| *seen);
 
-        assert!(map.len() < 10, "something was dropped");
+        assert_eq!(map.len(), 75, "a quarter went, not the whole map");
+    }
+
+    /// Coarse timestamps put many entries on the same tick without putting all
+    /// of them there.
+    #[test]
+    fn a_coarse_clock_still_drops_only_one_batch() {
+        let mut map: HashMap<u32, u64> = (0..8192u32).map(|i| (i, u64::from(i / 1000))).collect();
+        make_room(&mut map, 8, 10_000, |seen| *seen);
+
+        assert_eq!(map.len(), 8192 - 2048);
+    }
+
+    /// A single entry still has to give way, or an insert has nowhere to go.
+    #[test]
+    fn the_only_entry_goes_when_it_has_to() {
+        let mut map: HashMap<u32, u64> = map_of(&[(1, 5)]);
+        make_room(&mut map, 5, 10_000, |seen| *seen);
+
+        assert!(map.is_empty());
     }
 
     #[test]
