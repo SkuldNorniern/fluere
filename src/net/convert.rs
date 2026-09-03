@@ -98,10 +98,17 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let bar = ProgressBar::new_spinner();
     let mut parser_state = ParserState::new();
 
+    // A read failure is not end of file. Treating it as one meant a damaged
+    // capture produced partial output and still reported success, which is the
+    // worst of both. It is not a reason to throw away the flows already read
+    // either: a capture truncated at the end is ordinary, and abandoning the
+    // run there lost every flow still open, which on a short file was almost
+    // all of them. The failure is carried past the drain and returned once the
+    // flows have been written, so the run still reports it and still exits
+    // non-zero.
+    let mut read_failure = None;
+
     loop {
-        // A read failure is not end of file. Treating it as one meant a damaged
-        // capture produced partial output and still reported success, which is
-        // the worst of both.
         let observation = match source::read(&mut cap) {
             source::Read::Packet(packet) => {
                 trace!("Parsing packet");
@@ -112,7 +119,8 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
             source::Read::Timeout => continue,
             source::Read::Fatal(error) => {
                 error!("Reading {file_name} failed: {error}");
-                return Err(FluereError::Capture(CaptureError::Pcap(error)));
+                read_failure = Some(error);
+                break;
             }
         };
 
@@ -136,5 +144,10 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
 
     info!("Active flows: {ac_flow_cnt:?}");
     info!("Ended flows: {ended_flow_cnt:?}");
+
+    if let Some(error) = read_failure {
+        return Err(FluereError::Capture(CaptureError::Pcap(error)));
+    }
+
     Ok(())
 }

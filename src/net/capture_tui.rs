@@ -246,6 +246,12 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
     let mut file = crate::utils::output::create(file_path.as_ref())?;
 
     let mut records: Vec<Flow> = Vec::new();
+
+    // A read failure does not discard the flows already gathered: the capture
+    // still drains and exports below, then reports the failure. Returning here
+    // lost every flow that was open, which on a long-running capture is the
+    // bulk of them.
+    let mut read_failure = None;
     let mut recent_flows: Vec<FlowSummary> = Vec::new();
     let mut engine = FlowEngine::new(flow_timeout);
 
@@ -313,7 +319,8 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
                 source::Read::Eof => break,
                 source::Read::Fatal(error) => {
                     error!("Capture failed: {error}");
-                    return Err(FluereError::Capture(CaptureError::Pcap(error)));
+                    read_failure = Some(error);
+                    break;
                 }
             }
 
@@ -366,6 +373,10 @@ async fn capture_with_ui(arg: Args) -> Result<(), FluereError> {
     // the queue and stop before plugin cleanup runs.
     plugin_manager.shutdown(plugin_worker).await;
     crate::net::live::await_export_tasks(export_tasks).await;
+
+    if let Some(error) = read_failure {
+        return Err(FluereError::Capture(CaptureError::Pcap(error)));
+    }
 
     capture_result?;
     render_result?;
