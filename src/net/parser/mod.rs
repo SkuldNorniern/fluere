@@ -78,33 +78,20 @@ fn endpoints_of(parsed: &ParsedPacket, protocol: u8, ports: (u16, u16)) -> Endpo
     }
 }
 
-/// Decode one captured frame with paccel.
+/// Decode one captured frame with paccel, into a buffer the caller owns.
 ///
 /// Every parser in this module works from the result of this single call, so a
 /// frame is never decoded more than once on the capture path.
-fn parse_frame(data: &[u8], linktype: u16) -> Result<ParsedPacket, ParseError> {
+///
+/// `out` is reset by the parser, so a reused buffer never carries a field over
+/// from the packet before it. Reusing one is what keeps a parse from moving the
+/// whole `ParsedPacket` per packet.
+fn parse_frame_into(data: &[u8], linktype: u16, out: &mut ParsedPacket) -> Result<(), ParseError> {
     let config = ParseConfig {
         stop_after: StopLayer::Transport,
         ..Default::default()
     };
 
-    match BuiltinPacketParser::parse_with_config_and_linktype(data, config, Some(linktype)) {
-        Ok(parsed) => Ok(parsed),
-        // A capture taken with a small snaplen keeps the addresses and drops
-        // the ports, and headers-only captures are a deliberate practice
-        // rather than corruption. Asking only for the network layer returns
-        // what survived, so the packet is still counted against the flow its
-        // addresses name instead of vanishing from the totals.
-        //
-        // paccel 0.2.0 fails the whole frame here even in permissive mode.
-        // Fixed upstream; this retry can go once a release carries the fix.
-        Err(_) => {
-            let config = ParseConfig {
-                stop_after: StopLayer::Network,
-                ..config
-            };
-            BuiltinPacketParser::parse_with_config_and_linktype(data, config, Some(linktype))
-                .map_err(|_| ParseError::InvalidPacket)
-        }
-    }
+    BuiltinPacketParser::parse_into(data, config, Some(linktype), out)
+        .map_err(|_| ParseError::InvalidPacket)
 }

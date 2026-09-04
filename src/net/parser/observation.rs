@@ -1,3 +1,4 @@
+use paccel::engine::ParsedPacket;
 use pcap::Packet;
 
 use crate::error::ParseError;
@@ -74,15 +75,18 @@ pub fn observe(
         return Err(ParseError::EmptyPacket);
     }
 
-    let parsed = super::parse_frame(packet.data, linktype)?;
+    // Parsed into the buffer the state already owns, so the packet is not moved
+    // out of the parser and back on every frame.
+    super::parse_frame_into(packet.data, linktype, &mut state.parsed)?;
+    let parsed = &state.parsed;
 
-    let (mut key, _) = keys_from_parsed(&parsed, packet.data)?;
+    let (mut key, _) = keys_from_parsed(parsed, packet.data)?;
     if !use_mac {
         key.forget_link_addresses();
     }
 
     let properties = properties::from_parsed(
-        &parsed,
+        parsed,
         packet.data,
         wire_length(&packet) as u32,
         packet.data.len() as u32,
@@ -102,7 +106,7 @@ pub fn observe(
 
     // A later fragment has no transport header of its own, so it inherits the
     // endpoints its first fragment reported.
-    let fragment = Fragment::of(innermost(&parsed));
+    let fragment = Fragment::of(innermost(parsed));
     state.fragments.resolve(&mut observation, fragment.as_ref());
 
     // Where the packet came from on the wire. Taken after fragment handling,
@@ -112,7 +116,9 @@ pub fn observe(
 
     // A QUIC connection that changed address is still the same connection, and
     // its Connection ID says which one.
-    state.quic.resolve(&mut observation, &parsed, packet.data);
+    state
+        .quic
+        .resolve(&mut observation, &state.parsed, packet.data);
 
     Ok(observation)
 }
@@ -126,6 +132,9 @@ pub fn observe(
 pub struct ParserState {
     pub fragments: FragmentTracker,
     pub quic: QuicTracker,
+    /// The packet buffer every frame is parsed into, kept across packets so the
+    /// parser has somewhere to write that it does not have to allocate or move.
+    parsed: ParsedPacket,
 }
 
 impl ParserState {

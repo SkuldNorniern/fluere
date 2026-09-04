@@ -32,7 +32,8 @@ pub fn parse_keys(packet: pcap::Packet, linktype: u16) -> Result<(Key, Key), Par
         return Err(ParseError::EmptyPacket);
     }
 
-    let parsed = super::parse_frame(packet.data, linktype)?;
+    let mut parsed = ParsedPacket::default();
+    super::parse_frame_into(packet.data, linktype, &mut parsed)?;
     keys_from_parsed(&parsed, packet.data)
 }
 
