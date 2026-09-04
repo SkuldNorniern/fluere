@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use log::{trace, warn};
 
-use paccel::engine::{BuiltinPacketParser, ParsedPacket, TransportSegment};
+use paccel::engine::{BuiltinPacketParser, ParsedPacket};
 
 /// `LINKTYPE_RAW`: no link-layer header, the frame starts at the IP header.
 const LINKTYPE_RAW: u16 = 101;
@@ -44,12 +44,10 @@ impl RawProtocolHeader {
 
     /// Ports of the transport segment paccel decoded, `(0, 0)` when there is
     /// none (non-TCP/UDP, or a header too truncated to decode).
+    /// The ports, including those of a header a snaplen cut short: paccel
+    /// reports the pair that survived, which is what the flow is keyed on.
     fn transport_ports(parsed: &ParsedPacket) -> (u16, u16) {
-        match &parsed.transport {
-            Some(TransportSegment::Tcp(tcp)) => (tcp.source_port, tcp.destination_port),
-            Some(TransportSegment::Udp(udp)) => (udp.source_port, udp.destination_port),
-            _ => (0, 0),
-        }
+        parsed.ports().unwrap_or((0, 0))
     }
 
     /// Project a paccel parse onto the tuple, preferring ARP, then IPv4, then

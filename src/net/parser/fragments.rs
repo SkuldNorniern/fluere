@@ -288,6 +288,7 @@ mod tests {
             source: Ipv4Addr::new(192, 0, 2, 1),
             destination: Ipv4Addr::new(198, 51, 100, 2),
             options: None,
+            options_truncated: false,
         };
 
         assert!(Fragment::of_ipv4(&header(0, 0)).is_none(), "not fragmented");

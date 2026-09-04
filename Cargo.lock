@@ -1402,9 +1402,9 @@ dependencies = [
 
 [[package]]
 name = "paccel"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c615edc79416afb0d3a3484bee31573ff56649b393782656c6145cada3d82fe3"
+checksum = "626ea31259432184c3427eb6852ba8c8b997ed51b4c519bad2fc2e406dfdf6d7"
 
 [[package]]
 name = "parking_lot"

@@ -86,7 +86,7 @@ impl QuicTracker {
     ) -> bool {
         let now = observation.time().nanos();
 
-        if let Some(quic) = parsed.quic.as_ref() {
+        if let Some(quic) = parsed.quic() {
             // The sender announces its own ID here; the peer will put it in the
             // destination field of every later packet, which travel the other
             // way. Those belong to this flow seen in reverse.
