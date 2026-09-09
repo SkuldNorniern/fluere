@@ -109,6 +109,25 @@ pub fn tcp(source_port: u16, destination_port: u16, flags: u8) -> Vec<u8> {
     segment
 }
 
+/// A TCP segment with a real sequence number and a payload behind it, which is
+/// what stream reassembly needs and `tcp` deliberately does not carry.
+pub fn tcp_data(
+    source_port: u16,
+    destination_port: u16,
+    flags: u8,
+    seq: u32,
+    payload: &[u8],
+) -> Vec<u8> {
+    let mut segment = Vec::with_capacity(20 + payload.len());
+    segment.extend_from_slice(&source_port.to_be_bytes());
+    segment.extend_from_slice(&destination_port.to_be_bytes());
+    segment.extend_from_slice(&seq.to_be_bytes());
+    segment.extend_from_slice(&[0; 4]);
+    segment.extend_from_slice(&[0x50, flags, 0x20, 0x00, 0, 0, 0, 0]);
+    segment.extend_from_slice(payload);
+    segment
+}
+
 pub fn udp(source_port: u16, destination_port: u16, payload: &[u8]) -> Vec<u8> {
     let mut datagram = Vec::with_capacity(8 + payload.len());
     datagram.extend_from_slice(&source_port.to_be_bytes());
@@ -252,6 +271,12 @@ impl Capture {
     }
 
     /// Offer one frame, one millisecond after the last.
+    /// Classify what each TCP session carries, as `--l7` does.
+    pub fn classifying_sessions(&mut self) -> &mut Self {
+        self.parser_state = ParserState::new().classifying_sessions();
+        self
+    }
+
     pub fn push(&mut self, frame: &[u8]) -> &mut Self {
         self.push_at(frame, self.time + 1_000)
     }
@@ -423,6 +448,40 @@ mod tests {
     const FIN_ACK: u8 = 0x11;
     const RST: u8 = 0x04;
 
+    /// The smallest TLS ClientHello that carries a server name.
+    fn client_hello(server_name: &str) -> Vec<u8> {
+        let name = server_name.as_bytes();
+        let mut sni = Vec::new();
+        sni.extend_from_slice(&((name.len() + 3) as u16).to_be_bytes());
+        sni.push(0); // host_name
+        sni.extend_from_slice(&(name.len() as u16).to_be_bytes());
+        sni.extend_from_slice(name);
+
+        let mut extensions = Vec::new();
+        extensions.extend_from_slice(&0u16.to_be_bytes()); // server_name
+        extensions.extend_from_slice(&(sni.len() as u16).to_be_bytes());
+        extensions.extend_from_slice(&sni);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0x03, 0x03]); // client_version
+        body.extend_from_slice(&[0x11; 32]); // random
+        body.push(0); // no session id
+        body.extend_from_slice(&2u16.to_be_bytes()); // one cipher suite
+        body.extend_from_slice(&[0x13, 0x01]);
+        body.extend_from_slice(&[1, 0]); // one compression method: null
+        body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+        body.extend_from_slice(&extensions);
+
+        let mut handshake = vec![1]; // client_hello
+        handshake.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
+        handshake.extend_from_slice(&body);
+
+        let mut record = vec![22, 0x03, 0x01];
+        record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+        record.extend_from_slice(&handshake);
+        record
+    }
+
     fn v4(protocol: u8, ttl: u8, src: [u8; 4], dst: [u8; 4], payload: &[u8]) -> Vec<u8> {
         ethernet(0x0800, &ipv4(protocol, ttl, src, dst, payload))
     }
@@ -539,6 +598,110 @@ mod tests {
         assert_eq!(
             flows.count(|f| f.key.ports().0 == 40_006 || f.key.ports().1 == 40_006),
             2
+        );
+    }
+
+    /// A flow is annotated with what its session turned out to be carrying.
+    ///
+    /// The point of putting this on the plugin surface rather than in the CSV:
+    /// most flows have no answer, so it would be a column that is empty nearly
+    /// always, and a plugin that wants it already has every flow in process.
+    #[test]
+    fn a_recognised_session_names_what_the_flow_was_carrying() {
+        let request = b"GET /index.html HTTP/1.1\r\nHost: example.org\r\n\r\n";
+        let mut capture = Capture::new(600_000);
+        capture
+            .classifying_sessions()
+            .push(&v4(6, 64, A, B, &tcp_data(40_001, 80, SYN, 1_000, &[])))
+            .push(&v4(
+                6,
+                64,
+                A,
+                B,
+                &tcp_data(40_001, 80, 0x18, 1_001, request),
+            ));
+
+        let flows = capture.finish();
+        let flow = flows.only_flow(|f| f.key.protocol == 6);
+        let l7 = flow.l7.as_ref().expect("the request should be recognised");
+
+        assert_eq!(l7.protocol, "http");
+        assert_eq!(l7.name.as_deref(), Some("example.org"));
+        assert_eq!(l7.to_string(), "http:example.org");
+    }
+
+    /// Nothing is classified unless it was asked for.
+    ///
+    /// Not a preference: reassembling every stream costs far more than the rest
+    /// of a parse, so a capture that did not ask must not be paying for it.
+    #[test]
+    fn sessions_are_not_classified_unless_asked_for() {
+        let request = b"GET / HTTP/1.1\r\nHost: example.org\r\n\r\n";
+        let mut capture = Capture::new(600_000);
+        capture
+            .push(&v4(6, 64, A, B, &tcp_data(40_001, 80, SYN, 1_000, &[])))
+            .push(&v4(
+                6,
+                64,
+                A,
+                B,
+                &tcp_data(40_001, 80, 0x18, 1_001, request),
+            ));
+
+        let flows = capture.finish();
+        assert!(
+            flows.only_flow(|f| f.key.protocol == 6).l7.is_none(),
+            "the same request is recognised only when classification is on"
+        );
+    }
+
+    /// A TLS handshake names the server it was for, which is the one thing an
+    /// otherwise opaque connection says about itself.
+    #[test]
+    fn a_tls_handshake_names_its_server() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .classifying_sessions()
+            .push(&v4(6, 64, A, B, &tcp_data(40_001, 443, SYN, 1_000, &[])))
+            .push(&v4(
+                6,
+                64,
+                A,
+                B,
+                &tcp_data(40_001, 443, 0x18, 1_001, &client_hello("example.com")),
+            ));
+
+        let flows = capture.finish();
+        let flow = flows.only_flow(|f| f.key.protocol == 6);
+        let l7 = flow
+            .l7
+            .as_ref()
+            .expect("the handshake should be recognised");
+
+        assert_eq!(l7.protocol, "tls");
+        assert_eq!(l7.name.as_deref(), Some("example.com"));
+    }
+
+    /// A connection nothing was recognised in is left unlabelled rather than
+    /// guessed at from its port. Port 443 is a convention, not a fact.
+    #[test]
+    fn an_unrecognised_session_is_not_labelled() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .classifying_sessions()
+            .push(&v4(6, 64, A, B, &tcp_data(40_001, 443, SYN, 1_000, &[])))
+            .push(&v4(
+                6,
+                64,
+                A,
+                B,
+                &tcp_data(40_001, 443, 0x18, 1_001, &[0xAB; 64]),
+            ));
+
+        let flows = capture.finish();
+        assert!(
+            flows.only_flow(|f| f.key.protocol == 6).l7.is_none(),
+            "nothing in this flow said what it was"
         );
     }
 

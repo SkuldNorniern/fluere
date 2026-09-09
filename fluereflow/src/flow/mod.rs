@@ -170,7 +170,7 @@ impl FlowRecord {
 /// another lives on the key, so anything consuming flows needs both: two
 /// tenants on different segments produce records that are identical field for
 /// field, and only the key says they are different traffic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Flow {
     pub key: FlowKey,
     pub record: FlowRecord,
@@ -181,6 +181,36 @@ pub struct Flow {
     /// counted against the error's own flow, because moving them would change
     /// the counts on a flow that never carried them.
     pub quoted: Option<QuotedFlow>,
+    /// What this flow's session turned out to be carrying, once something in
+    /// it was recognised.
+    ///
+    /// Beside the record for the same reason as `quoted`: it is what the bytes
+    /// were, not how many there were, and nothing in the record was measured
+    /// from it.
+    pub l7: Option<SessionL7>,
+}
+
+/// What a flow's session was carrying.
+///
+/// A summary, not the message: the request or handshake that identified the
+/// flow is not kept, only the protocol and the name it was about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionL7 {
+    /// `tls`, `http`, `dns`, and so on.
+    pub protocol: &'static str,
+    /// The name the conversation was about, for protocols that carry one: a
+    /// TLS server name, an HTTP host, a DNS question.
+    pub name: Option<String>,
+}
+
+impl fmt::Display for SessionL7 {
+    /// `tls:example.com`, or just `bgp` for a protocol that names nothing.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.name {
+            Some(name) => write!(f, "{}:{name}", self.protocol),
+            None => f.write_str(self.protocol),
+        }
+    }
 }
 
 /// The datagram an ICMP error quoted back.
@@ -225,12 +255,19 @@ impl Flow {
             key,
             record,
             quoted: None,
+            l7: None,
         }
     }
 
     /// The same flow, noting the datagram an ICMP error quoted.
     pub fn quoting(mut self, quoted: Option<QuotedFlow>) -> Self {
         self.quoted = quoted;
+        self
+    }
+
+    /// The same flow, noting what its session was carrying.
+    pub fn carrying(mut self, l7: Option<SessionL7>) -> Self {
+        self.l7 = l7;
         self
     }
 

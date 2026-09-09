@@ -98,6 +98,14 @@ pub fn use_mac() -> Arg {
         .action(ArgAction::SetTrue)
 }
 
+pub fn classify_l7() -> Arg {
+    Arg::new("classifyL7")
+        .help("Identify what each TCP session carries (slow: reassembles every stream)")
+        .short('L')
+        .long("l7")
+        .action(ArgAction::SetTrue)
+}
+
 pub fn tui() -> Arg {
     Arg::new("tui")
         .help("Show live flow activity in a terminal UI")

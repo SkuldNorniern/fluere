@@ -81,6 +81,7 @@ pub fn convert(args: &ArgMatches) -> Result<Args, ConfigError> {
             None,
             None,
             None,
-        ),
+        )
+        .classifying_l7(args.get_flag("classifyL7")),
     ))
 }

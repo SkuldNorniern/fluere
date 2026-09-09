@@ -38,6 +38,12 @@ impl Files {
 #[derive(Debug, Default)]
 pub struct Parameters {
     pub use_mac: Option<bool>,
+    /// Reassemble TCP streams to identify what each session carries.
+    ///
+    /// Off by default: paccel 0.4.0 spends roughly 250 microseconds a packet
+    /// doing it, which is seventy times the cost of the rest of a parse, so it
+    /// is a deliberate choice rather than something a capture pays for silently.
+    pub classify_l7: Option<bool>,
     pub timeout: Option<u64>,
     pub duration: Option<u64>,
     pub interval: Option<u64>,
@@ -59,6 +65,16 @@ impl Parameters {
             duration,
             interval,
             snaplen,
+            classify_l7: None,
         }
+    }
+
+    /// The same parameters, asking for session classification.
+    ///
+    /// Set separately rather than as a sixth positional argument, which is
+    /// already more than reads clearly at a call site.
+    pub fn classifying_l7(mut self, classify_l7: bool) -> Self {
+        self.classify_l7 = Some(classify_l7);
+        self
     }
 }

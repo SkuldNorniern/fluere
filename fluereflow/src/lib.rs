@@ -13,6 +13,6 @@ pub mod flow;
 pub use flow::{
     protocol_name, CaptureStats, Direction, DirectionStats, EncapKind, Encapsulation, EndReason,
     Endpoints, Flow, FlowKey, FlowRecord, FlowTime, MacAddress, NetworkStats, PacketFacts, Paths,
-    QuotedFlow, Range, StartState, TcpFlagCounts, TcpFlags, TimeResolution, Timestamp,
+    QuotedFlow, Range, SessionL7, StartState, TcpFlagCounts, TcpFlags, TimeResolution, Timestamp,
     TransportStats, VlanTags, ETHERTYPE_ARP, SCHEMA_VERSION,
 };

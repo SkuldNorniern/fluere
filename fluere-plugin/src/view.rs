@@ -6,7 +6,7 @@
 
 use std::net::IpAddr;
 
-use fluereflow::{FlowRecord, QuotedFlow, Range};
+use fluereflow::{FlowRecord, QuotedFlow, Range, SessionL7};
 
 /// Version of the field set below.
 ///
@@ -25,7 +25,8 @@ use fluereflow::{FlowRecord, QuotedFlow, Range};
 /// - 4: `captured_octets` joins `truncated`. The CSV reported both from the
 ///   start; the plugin view showed only the flag, so a plugin could tell that a
 ///   snaplen had cut a flow short but not by how much.
-/// - 5: added `quoted_flow`, naming the datagram an ICMP error quoted back.
+/// - 5: added `quoted_flow`, naming the datagram an ICMP error quoted back,
+///   and `l7`, naming what the flow's session turned out to be carrying.
 pub const SCHEMA_VERSION: u32 = 5;
 
 /// One field's value, in the few shapes a flow record actually uses.
@@ -88,6 +89,13 @@ pub struct FlowIdentity {
     /// carried them. Only the first quote is kept: a router sending
     /// unreachables to one host quotes a different datagram every time.
     pub quoted_flow: Option<QuotedFlow>,
+    /// What the flow's session was carrying, once something in it was
+    /// recognised: `tls:example.com`, `http:example.org`, `bgp`.
+    ///
+    /// Absent for a flow nothing was recognised in, which is most of them: an
+    /// encrypted connection past its handshake says nothing about itself, and
+    /// neither does traffic paccel has no probe for.
+    pub l7: Option<SessionL7>,
 }
 
 /// A flow record flattened into named, typed fields.
@@ -234,6 +242,7 @@ impl FlowView {
                     "quoted_flow",
                     text(identity.quoted_flow.map(|q| q.to_string())),
                 ),
+                ("l7", text(identity.l7.as_ref().map(SessionL7::to_string))),
             ],
         }
     }

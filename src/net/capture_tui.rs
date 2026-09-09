@@ -165,10 +165,12 @@ fn process_packet(
     plugin_manager: &PluginManager,
     records: &mut Vec<Flow>,
 ) -> Result<(), FluereError> {
+    // Copied out before the observation moves into the engine.
+    let key = observation.key;
     let outcome = engine.accept(observation);
 
     if outcome.opened_flow {
-        add_recent_flow(recent_flows, observation.key);
+        add_recent_flow(recent_flows, key);
     }
     emit_completed_flows(outcome.completed, plugin_manager, records)
 }

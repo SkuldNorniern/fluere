@@ -29,10 +29,12 @@ const MAX_LATENESS: u64 = 1_000_000_000;
 
 use crate::net::parser::PacketObservation;
 use crate::net::types::Key;
-use fluereflow::{Direction, EndReason, Flow, FlowRecord, QuotedFlow, StartState, TimeResolution};
+use fluereflow::{
+    Direction, EndReason, Flow, FlowRecord, QuotedFlow, SessionL7, StartState, TimeResolution,
+};
 
 /// Per-flow state the engine keeps but the record does not carry.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct FlowState {
     record: FlowRecord,
     /// FIN seen travelling in the direction the flow was opened in.
@@ -51,6 +53,12 @@ struct FlowState {
     /// keeping every one of them would put an unbounded list on a flow that
     /// exists to count bytes.
     quoted: Option<QuotedFlow>,
+    /// What this flow's session turned out to be carrying.
+    ///
+    /// First recognition only. A connection is one conversation, and a later
+    /// classification on the same flow is a probe seeing the reply, not the
+    /// flow turning into something else.
+    l7: Option<SessionL7>,
 }
 
 impl FlowState {
@@ -61,6 +69,7 @@ impl FlowState {
             reverse_fin: false,
             scheduled,
             quoted: None,
+            l7: None,
         }
     }
 
@@ -105,6 +114,14 @@ fn fold(
     // the flow record has room for one reference, not a log of them.
     if state.quoted.is_none() {
         state.quoted = observation.quoted;
+    }
+    if state.l7.is_none()
+        && let Some(l7) = observation.l7.as_ref()
+    {
+        state.l7 = Some(SessionL7 {
+            protocol: l7.protocol,
+            name: l7.name.clone(),
+        });
     }
     // Only somewhere the key does not already name: ordinary traffic in either
     // direction arrives from one of the flow's own two endpoints.
@@ -266,7 +283,9 @@ impl FlowEngine {
         self.active.remove(&flow_key).map(|mut state| {
             state.record.close(reason);
             (
-                Flow::new(flow_key, state.record).quoting(state.quoted),
+                Flow::new(flow_key, state.record)
+                    .quoting(state.quoted)
+                    .carrying(state.l7),
                 reason,
             )
         })
@@ -351,7 +370,11 @@ impl FlowEngine {
                     if let Some(mut state) = self.active.remove(&key) {
                         trace!("flow ended: {:?}", EndReason::IdleTimeout);
                         state.record.close(EndReason::IdleTimeout);
-                        expired.push(Flow::new(key, state.record).quoting(state.quoted));
+                        expired.push(
+                            Flow::new(key, state.record)
+                                .quoting(state.quoted)
+                                .carrying(state.l7),
+                        );
                     }
                 } else {
                     // Touched since it was queued, so it lives on until its
@@ -376,7 +399,9 @@ impl FlowEngine {
             .map(|(key, mut state)| {
                 trace!("flow ended: {:?}", EndReason::CaptureEnd);
                 state.record.close(EndReason::CaptureEnd);
-                Flow::new(key, state.record).quoting(state.quoted)
+                Flow::new(key, state.record)
+                    .quoting(state.quoted)
+                    .carrying(state.l7)
             })
             .collect()
     }

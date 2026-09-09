@@ -62,6 +62,7 @@ fn convert_command() -> Command {
         .arg(args::csv(false))
         .arg(args::timeout())
         .arg(args::use_mac())
+        .arg(args::classify_l7())
         .arg(args::verbose())
 }
 

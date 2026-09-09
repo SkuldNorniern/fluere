@@ -336,6 +336,7 @@ mod tests {
         };
         let mut observation = PacketObservation {
             quoted: None,
+            l7: None,
             key: Key {
                 source: parsed.ipv4.as_ref().expect("addresses").source.into(),
                 destination: parsed.ipv4.as_ref().expect("addresses").destination.into(),

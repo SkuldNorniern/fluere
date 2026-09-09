@@ -1,4 +1,4 @@
-use paccel::engine::ParsedPacket;
+use paccel::engine::{ParsedPacket, SessionTracker, StreamEvent, StreamL7};
 use pcap::Packet;
 
 use crate::error::ParseError;
@@ -22,7 +22,7 @@ use super::quic::QuicTracker;
 /// Note what is *not* here: a partly built flow record. The parser reports what
 /// it measured and the engine does the accumulating, so a packet cannot be
 /// counted once by the parser and again by the engine.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PacketObservation {
     /// Flow key in the direction this packet travelled.
     pub key: Key,
@@ -37,6 +37,11 @@ pub struct PacketObservation {
     pub arrived_from: (std::net::IpAddr, u16),
     /// TCP control bits, `None` for anything that is not TCP.
     pub tcp_flags: Option<TcpFlags>,
+    /// What the session this packet belongs to turned out to be carrying.
+    ///
+    /// Set on the packet that let paccel decide, which is normally the first
+    /// request or handshake, and `None` on every other packet of the flow.
+    pub l7: Option<FlowL7>,
     /// The datagram this packet quoted, for an ICMP error that carried one.
     ///
     /// Reported, never acted on. The error's octets stay counted against the
@@ -100,13 +105,29 @@ pub fn observe(
         packet_time(&packet, state.resolution),
     );
 
+    // Taken while `parsed` is still borrowed; everything after this needs the
+    // state mutably.
+    let quoted = quoted_datagram(parsed, packet.data, &mut state.quoted);
+
+    let now = properties.facts.time.nanos();
+    expire_sessions(state.sessions.as_mut(), &mut state.last_session_expiry, now);
+    // Offered the whole frame: paccel reassembles the stream itself, and has to
+    // see the sequence numbers to do it.
+    let l7 = state
+        .sessions
+        .as_mut()
+        .and_then(|sessions| sessions.offer_frame_at(packet.data, now))
+        .as_ref()
+        .and_then(FlowL7::from_event);
+
     let mut observation = PacketObservation {
         key,
         facts: properties.facts,
         dscp: properties.dscp,
         ecn: properties.ecn,
         tcp_flags: properties.facts.tcp_flags,
-        quoted: quoted_datagram(parsed, packet.data, &mut state.quoted),
+        quoted,
+        l7,
         // Filled in below, once fragment reattribution has supplied the ports a
         // later fragment does not carry.
         arrived_from: (key.source, 0),
@@ -150,11 +171,100 @@ pub struct ParserState {
     /// The unit libpcap is reporting sub-second timestamps in. Set once, from
     /// the precision the capture was opened with.
     pub resolution: CaptureResolution,
+    /// Reassembles each TCP stream far enough to say what it is carrying,
+    /// when asked for.
+    ///
+    /// `None` unless the caller opted in. paccel 0.4.0 spends around 250
+    /// microseconds a packet on this, measured at seventy times the cost of
+    /// everything else a parse does, so a capture does not pay for it unless
+    /// somebody asked.
+    pub sessions: Option<SessionTracker>,
+    /// When the session probes were last aged out, on capture time.
+    last_session_expiry: u64,
+}
+
+/// How long an undecided probe is kept, in nanoseconds.
+///
+/// paccel bounds the probes by count and by bytes, which stops the memory
+/// growing, but a capture with a long tail of half-open connections would keep
+/// evicting live probes to hold dead ones. Five minutes is the same silence
+/// after which a connection is not going to say what it is.
+const SESSION_MAX_AGE: u64 = 300_000_000_000;
+
+/// Drop probes that have gone quiet, so the caps are spent on live streams.
+///
+/// Takes the two fields rather than the whole state: the packet buffer is still
+/// borrowed out at the point in a parse where this runs.
+fn expire_sessions(sessions: Option<&mut SessionTracker>, last: &mut u64, now: u64) {
+    let Some(sessions) = sessions else {
+        return;
+    };
+    if now.saturating_sub(*last) < SESSION_MAX_AGE {
+        return;
+    }
+    *last = now;
+    sessions.expire_before(now.saturating_sub(SESSION_MAX_AGE));
 }
 
 impl ParserState {
     pub fn new() -> Self {
         ParserState::default()
+    }
+
+    /// The same state, reassembling TCP streams to classify them.
+    pub fn classifying_sessions(mut self) -> Self {
+        self.sessions = Some(SessionTracker::new());
+        self
+    }
+}
+
+/// What a session was carrying, named the way a flow record can hold it.
+///
+/// A summary and not the message: paccel returns the parsed request or
+/// handshake, and a flow that lives for an hour is not going to keep one. The
+/// protocol name and the one field that says which conversation it was are what
+/// a flow is worth annotating with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowL7 {
+    /// `tls`, `http`, `dns`, `bgp`, `smb2`, `smb1`, `ldap`, `mqtt`.
+    pub protocol: &'static str,
+    /// The name this conversation was about, where the protocol has one: a TLS
+    /// server name, an HTTP host, a DNS question. `None` for the protocols
+    /// that name nothing.
+    pub name: Option<String>,
+}
+
+impl FlowL7 {
+    /// `None` for a protocol paccel classifies and this does not name yet.
+    ///
+    /// `StreamL7` is `#[non_exhaustive]`, so paccel can add one without a major
+    /// version. Leaving the flow unannotated is right where inventing a label
+    /// would put a name in the output that nothing here can explain.
+    fn from_event(event: &StreamEvent) -> Option<Self> {
+        let (protocol, name) = match &event.l7 {
+            StreamL7::Tls(hello) => ("tls", hello.server_name.clone()),
+            StreamL7::Http(message) => ("http", http_host(message)),
+            StreamL7::Dns(message) => ("dns", message.questions.first().map(|q| q.qname.clone())),
+            StreamL7::Bgp(_) => ("bgp", None),
+            StreamL7::Smb2(_) => ("smb2", None),
+            StreamL7::Smb1(_) => ("smb1", None),
+            StreamL7::Ldap(_) => ("ldap", None),
+            StreamL7::Mqtt(_) => ("mqtt", None),
+            _ => return None,
+        };
+
+        Some(FlowL7 {
+            protocol,
+            name: name.filter(|name| !name.is_empty()),
+        })
+    }
+}
+
+/// The host an HTTP request was for. A response names no host of its own.
+fn http_host(message: &paccel::layer::application::http::HttpMessage) -> Option<String> {
+    match message {
+        paccel::layer::application::http::HttpMessage::Request { host, .. } => host.clone(),
+        paccel::layer::application::http::HttpMessage::Response { .. } => None,
     }
 }
 

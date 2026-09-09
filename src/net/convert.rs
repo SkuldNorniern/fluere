@@ -60,6 +60,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
         .parameters
         .use_mac
         .required("this should be defaulted to `false` on construction")?;
+    let classify_l7 = arg.parameters.classify_l7.unwrap_or(false);
     let flow_timeout = arg
         .parameters
         .timeout
@@ -107,7 +108,11 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     info!("Converting file: {file_name}");
 
     let bar = ProgressBar::new_spinner();
-    let mut parser_state = ParserState::new();
+    let mut parser_state = if classify_l7 {
+        ParserState::new().classifying_sessions()
+    } else {
+        ParserState::new()
+    };
     parser_state.resolution = resolution;
 
     // A read failure is not end of file. Treating it as one meant a damaged

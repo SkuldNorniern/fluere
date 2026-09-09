@@ -107,5 +107,6 @@ pub fn for_plugin(flow: &Flow) -> fluere_plugin::FlowIdentity {
         tunnel_id: encapsulation.and_then(|e| e.id),
         tunnel_endpoints: encapsulation.and_then(|e| e.outer),
         quoted_flow: flow.quoted,
+        l7: flow.l7.clone(),
     }
 }
