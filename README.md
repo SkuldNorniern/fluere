@@ -17,6 +17,7 @@ FluereFlow is Fluere's own flow format. It is not NetFlow, and Fluere is not a N
 ### Key Features:
 - Cross-platform support (Windows, macOS, Linux)
 - Live and offline flow record generation, exported as CSV
+- Optional application-layer identification: what a TCP or QUIC session carries
 - Packet capture in pcap format
 - Terminal User Interface (TUI) for real-time feedback during live capture
 
@@ -61,6 +62,19 @@ Convert a pcap file:
 ```sh
 fluere convert -f input.pcap -c flows
 ```
+
+Identify what each TCP session carries, reported to plugins as `tls:example.com`
+or `http:example.org`:
+
+```sh
+fluere convert -f input.pcap -c flows --l7
+```
+
+Off by default: it reassembles every stream, which costs somewhat under twice
+the parse time, and most flows have no answer either way. Build with
+`--features quic-l7` and the same flag reads the server name out of a QUIC
+handshake too. That is a separate feature because it pulls in four crypto
+crates.
 
 List the interfaces available:
 
