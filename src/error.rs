@@ -3,6 +3,12 @@ use std::{fmt, io, path::PathBuf};
 #[derive(Debug)]
 pub enum ParseError {
     InvalidPacket,
+    /// A frame the parser refused, with the layer it stopped at.
+    ///
+    /// Kept separate from `InvalidPacket` because "the transport header did
+    /// not survive the capture" and "this is not a frame at all" call for
+    /// different answers from whoever is reading the log.
+    Unparsable(paccel::layer::ParseError),
     EmptyPacket,
     UnknownProtocol(u8),
     UnknownEtherType(String),
@@ -12,6 +18,7 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidPacket => write!(f, "Invalid packet"),
+            Self::Unparsable(error) => write!(f, "{error}"),
             Self::EmptyPacket => write!(f, "Empty packet"),
             Self::UnknownProtocol(protocol) => write!(f, "Unknown protocol: {protocol}"),
             Self::UnknownEtherType(ether_type) => {

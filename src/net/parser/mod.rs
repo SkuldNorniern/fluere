@@ -99,7 +99,7 @@ fn parse_frame_into(data: &[u8], linktype: u16, out: &mut ParsedPacket) -> Resul
     if BuiltinPacketParser::parse_into(data, config, Some(linktype), out).is_ok() {
         return Ok(());
     }
-    BuiltinPacketParser::parse_into(data, config, None, out).map_err(|_| ParseError::InvalidPacket)
+    BuiltinPacketParser::parse_into(data, config, None, out).map_err(ParseError::Unparsable)
 }
 
 #[cfg(test)]

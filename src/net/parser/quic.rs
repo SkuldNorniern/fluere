@@ -15,8 +15,10 @@ use std::collections::HashMap;
 
 use log::trace;
 
-use paccel::engine::ParsedPacket;
-use paccel::layer::application::quic::parse_quic_short_header;
+use paccel::engine::{
+    Endpoint, ParsedPacket, QuicConnectionId, QuicConnectionTracker, QuicDirection,
+};
+use paccel::layer::Confidence;
 
 use crate::net::types::Key;
 
@@ -33,45 +35,60 @@ const MAX_AGE: u64 = 300_000_000_000;
 /// A UDP header is a fixed eight bytes, after which the QUIC packet begins.
 const UDP_HEADER_LEN: usize = 8;
 
-/// The longest connection ID RFC 9000 allows.
-const MAX_CID_LEN: usize = 20;
-
-/// Where a connection ID's traffic belongs.
+/// A QUIC connection's flow, and the direction that flow key names.
 #[derive(Debug, Clone, Copy)]
-struct Destination {
-    /// The key a packet bearing this ID should be counted under. Its reverse
-    /// is derived where needed rather than stored beside it.
-    key: Key,
-    last_seen: u64,
-    /// Whether more than one connection has claimed this ID.
-    ///
-    /// A connection ID identifies a connection to the endpoint that issued it.
-    /// It is not unique across a capture, so two connections can hold the same
-    /// one. When that happens there is no way to tell which of them a later
-    /// packet belongs to, and attributing it to either would merge two
-    /// conversations. Failing to follow a migration is the smaller mistake, so
-    /// an ambiguous ID stops being used.
-    ambiguous: bool,
+struct Origin {
+    /// The flow key in the initiator-to-responder direction. The other
+    /// direction is its reverse, derived rather than stored so the two cannot
+    /// disagree after a migration rewrites one of them.
+    initiator_to_responder: Key,
 }
 
-#[derive(Debug, Default)]
+/// Follows a QUIC connection across a change of address.
+///
+/// Connection identity is paccel's: it knows the connection-ID lengths in use,
+/// which endpoint issued which id, and how to follow a move. What it does not
+/// know is what fluere means by a flow - the VLAN, the tunnel, the link
+/// addresses - so the mapping from a connection to a flow stays here.
+#[derive(Debug)]
 pub struct QuicTracker {
-    connections: HashMap<Vec<u8>, Destination>,
-    /// Which connection ID lengths handshakes have used, as a bit per length.
-    ///
-    /// A short header does not carry the length, so the only way to read one is
-    /// to try the lengths actually seen. RFC 9000 caps a connection ID at 20
-    /// bytes, so every possible length fits in a mask, which needs no
-    /// allocation and is already ordered.
-    lengths: u32,
+    connections: QuicConnectionTracker,
+    /// The flow each connection was first seen on.
+    origins: HashMap<QuicConnectionId, Origin>,
+    /// When the last age-out ran, so it runs on capture time, not wall clock.
+    last_expiry: u64,
+}
+
+impl Default for QuicTracker {
+    fn default() -> Self {
+        QuicTracker {
+            connections: QuicConnectionTracker::new().with_max_flows(MAX_TRACKED),
+            origins: HashMap::new(),
+            last_expiry: 0,
+        }
+    }
 }
 
 impl QuicTracker {
     pub fn new() -> Self {
-        QuicTracker {
-            connections: HashMap::new(),
-            lengths: 0,
+        QuicTracker::default()
+    }
+
+    /// Drop connections idle for longer than `MAX_AGE`, and the origins that
+    /// pointed at them.
+    ///
+    /// paccel bounds its own side, but it has never heard of `origins`, so the
+    /// two are swept together or this map keeps every connection the capture
+    /// ever saw.
+    fn expire(&mut self, now: u64) {
+        if now.saturating_sub(self.last_expiry) < MAX_AGE {
+            return;
         }
+        self.last_expiry = now;
+        self.connections.expire_before(now.saturating_sub(MAX_AGE));
+        let connections = &self.connections;
+        self.origins
+            .retain(|id, _| !connections.tuples_for_connection(*id).is_empty());
     }
 
     /// Learn from a handshake packet, and attribute a migrated one.
@@ -85,128 +102,135 @@ impl QuicTracker {
         packet_data: &[u8],
     ) -> bool {
         let now = observation.time().nanos();
+        self.expire(now);
+        let Some((source, destination)) = endpoints_of(observation) else {
+            return false;
+        };
 
         if let Some(quic) = parsed.quic() {
-            // The sender announces its own ID here; the peer will put it in the
-            // destination field of every later packet, which travel the other
-            // way. Those belong to this flow seen in reverse.
-            self.remember(&quic.scid, observation.reverse_key(), now);
+            self.learn(observation, source, destination, &quic.scid, now);
             return false;
         }
 
         let Some(payload) = udp_payload(parsed, packet_data) else {
             return false;
         };
-
-        self.attribute(observation, payload, now)
+        self.attribute(observation, source, destination, payload, now)
     }
 
-    fn remember(&mut self, cid: &[u8], key: Key, now: u64) {
-        // An identifier this cannot look up again is not worth a slot.
-        // `attribute` reads its candidate lengths off `lengths`, which only
-        // holds bits up to `MAX_CID_LEN`, so a longer one would sit in the
-        // table forever without ever matching a packet. RFC 9000 caps a
-        // connection ID at 20 bytes, but the cap is only enforced on the wire
-        // for versions the parser knows, so a packet naming an unknown version
-        // can still claim 255 bytes. Enough of those would push out the
-        // connections actually worth following.
-        if cid.is_empty() || cid.len() > MAX_CID_LEN {
-            return;
-        }
-
-        // The same connection re-announcing its ID is normal. A different one
-        // claiming it is not, and there is no way to tell the two apart later,
-        // so the ID stops being used rather than pointing at whichever arrived
-        // last.
-        if let Some(existing) = self.connections.get_mut(cid) {
-            if existing.key != key {
-                trace!("connection ID claimed by a second connection, no longer usable");
-                existing.ambiguous = true;
-            }
-            existing.last_seen = existing.last_seen.max(now);
-            return;
-        }
-
-        if self.connections.len() >= MAX_TRACKED {
-            super::expiry::make_room(&mut self.connections, now, MAX_AGE, |entry| entry.last_seen);
-        }
-
-        self.lengths |= 1 << cid.len();
-
-        self.connections.insert(
-            cid.to_vec(),
-            Destination {
-                key,
-                last_seen: now,
-                ambiguous: false,
-            },
+    /// Records a handshake packet, and the flow the connection is on.
+    fn learn(
+        &mut self,
+        observation: &PacketObservation,
+        source: Endpoint,
+        destination: Endpoint,
+        scid: &[u8],
+        now: u64,
+    ) {
+        self.connections.observe_long_header_at(
+            source.address,
+            source.port,
+            destination.address,
+            destination.port,
+            scid,
+            now,
         );
+        let Some(id) = self.connections.connection_id_for_dcid(scid) else {
+            return;
+        };
+        let Some(direction) = self.connections.direction_for(id, source, destination) else {
+            return;
+        };
+        // Stored in one canonical direction, so a packet the other way is the
+        // reverse of it rather than a second entry that could drift.
+        let initiator_to_responder = match direction {
+            QuicDirection::InitiatorToResponder => observation.key,
+            QuicDirection::ResponderToInitiator => observation.reverse_key(),
+        };
+        self.origins.entry(id).or_insert(Origin {
+            initiator_to_responder,
+        });
     }
 
-    /// Read the destination connection ID out of a short header and, if it
-    /// belongs to a connection seen elsewhere, point this packet at it.
-    fn attribute(&mut self, observation: &mut PacketObservation, payload: &[u8], now: u64) -> bool {
-        // Try only the lengths handshakes have used, longest first: a short ID
-        // can be a prefix of a longer one, and the longer match is the specific
-        // connection. Read off the mask rather than a list, so nothing is
-        // allocated for a packet that turns out not to match anything.
-        let mut remaining = self.lengths;
-        while remaining != 0 {
-            let length = (u32::BITS - 1 - remaining.leading_zeros()) as usize;
-            remaining &= !(1 << length);
+    /// Puts a short-header packet back on the flow its connection started on.
+    fn attribute(
+        &mut self,
+        observation: &mut PacketObservation,
+        source: Endpoint,
+        destination: Endpoint,
+        payload: &[u8],
+        now: u64,
+    ) -> bool {
+        let Some((header, confidence)) = self.connections.classify_short_header(
+            source.address,
+            source.port,
+            destination.address,
+            destination.port,
+            payload,
+        ) else {
+            return false;
+        };
+        // Only a connection paccel actually knows. A structural match is a
+        // well-shaped header, not evidence of which connection it is.
+        if confidence != Confidence::Stateful {
+            return false;
+        }
+        let Some(id) = self.connections.connection_id_for_dcid(header.dcid) else {
+            return false;
+        };
+        let dcid = header.dcid.to_vec();
 
-            let Some(header) = parse_quic_short_header(payload, length) else {
-                continue;
-            };
-            let Some(destination) = self.connections.get_mut(header.dcid) else {
-                continue;
-            };
+        let Some(origin) = self.origins.get(&id).copied() else {
+            return false;
+        };
+        let Some(direction) = self.connections.direction_for(id, source, destination) else {
+            return false;
+        };
+        let target = match direction {
+            QuicDirection::InitiatorToResponder => origin.initiator_to_responder,
+            QuicDirection::ResponderToInitiator => origin.initiator_to_responder.reversed(),
+        };
 
-            if now.saturating_sub(destination.last_seen) > MAX_AGE {
-                let stale = header.dcid.to_vec();
-                self.connections.remove(&stale);
-                return false;
-            }
-            if destination.ambiguous {
-                // Two connections hold this ID. Leave the packet on the flow
-                // its own addresses name.
-                return false;
-            }
-            // Never backwards, for the same reason the record's end time is
-            // not: out-of-order delivery would age the entry out early.
-            destination.last_seen = destination.last_seen.max(now);
-
-            let key = destination.key;
-            if key == observation.key {
-                // Same addresses as before: nothing migrated.
-                return false;
-            }
-
-            // A connection ID says which connection a packet belongs to, not
-            // which segment it is on. Two tenants can carry the same ID,
-            // through a replayed capture or a mirror that sees both copies of
-            // one connection, and reattributing across the boundary would
-            // merge their traffic, which is what keying on the VLAN and tunnel
-            // exists to prevent. Migration within a segment is what gets
-            // followed.
-            if !same_segment(&key, &observation.key) {
-                return false;
-            }
-
-            observation.key = key;
-            return true;
+        if target == observation.key {
+            // Same addresses as before: nothing migrated.
+            return false;
+        }
+        // A connection ID says which connection a packet belongs to, not which
+        // segment it is on. Two tenants can carry the same one, through a
+        // replayed capture or a mirror that sees both copies of a connection,
+        // and reattributing across the boundary would merge their traffic.
+        if !same_segment(&target, &observation.key) {
+            return false;
         }
 
-        false
-    }
-
-    #[cfg(test)]
-    fn tracked(&self) -> usize {
-        self.connections.len()
+        // Bind the new address pair, so paccel's own state follows the move
+        // too rather than only fluere's view of it.
+        self.connections.observe_short_header_at(
+            source.address,
+            source.port,
+            destination.address,
+            destination.port,
+            &dcid,
+            now,
+        );
+        trace!(
+            "quic connection {id:?} moved to {}:{}",
+            source.address, source.port
+        );
+        observation.key = target;
+        true
     }
 }
 
-/// Whether two keys describe traffic on the same VLAN and tunnel.
+/// The addresses a packet travelled between, as paccel names them.
+fn endpoints_of(observation: &PacketObservation) -> Option<(Endpoint, Endpoint)> {
+    let (source_port, destination_port) = observation.key.ports();
+    Some((
+        Endpoint::new(observation.key.source, source_port),
+        Endpoint::new(observation.key.destination, destination_port),
+    ))
+}
+
 fn same_segment(remembered: &Key, observed: &Key) -> bool {
     remembered.vlan == observed.vlan && remembered.encapsulation == observed.encapsulation
 }
@@ -253,126 +277,170 @@ mod tests {
         }
     }
 
-    /// A connection ID is unique to the endpoint that issued it, not to the
-    /// capture. Two connections holding the same one must not be merged: a
-    /// A packet naming an unknown QUIC version can claim a connection ID far
-    /// longer than RFC 9000 allows. Such an ID can never be matched, because
-    /// only lengths up to `MAX_CID_LEN` are ever looked for, so remembering one
-    /// held a slot nothing could use and let a flood of them evict the
-    /// connections worth following.
-    #[test]
-    fn a_connection_id_too_long_to_look_up_is_not_remembered() {
-        let mut tracker = QuicTracker::new();
+    use crate::net::parser::observation::PacketObservation;
+    use fluereflow::{PacketFacts, Timestamp};
+    use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket};
+    use std::net::{IpAddr, Ipv4Addr};
 
-        tracker.remember(&[7u8; 255], key(), 1_000);
-        tracker.remember(&[9u8; MAX_CID_LEN + 1], key(), 1_000);
-        assert_eq!(tracker.tracked(), 0, "neither can ever be looked up");
+    const SERVER: [u8; 4] = [192, 0, 2, 1];
+    const CLIENT: [u8; 4] = [198, 51, 100, 2];
+    const MOVED: [u8; 4] = [203, 0, 113, 9];
 
-        tracker.remember(&[3u8; MAX_CID_LEN], key(), 1_000);
-        assert_eq!(tracker.tracked(), 1, "the longest allowed one still is");
+    /// An ethernet/IPv4/UDP frame carrying `payload` between the given ports.
+    fn udp_frame(source: ([u8; 4], u16), destination: ([u8; 4], u16), payload: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x08, 0x00];
+        let total = 20 + 8 + payload.len();
+        frame.extend([0x45, 0x00]);
+        frame.extend(u16::try_from(total).expect("short frame").to_be_bytes());
+        frame.extend([0x00, 0x01, 0x00, 0x00, 64, 17, 0, 0]);
+        frame.extend(source.0);
+        frame.extend(destination.0);
+        frame.extend(source.1.to_be_bytes());
+        frame.extend(destination.1.to_be_bytes());
+        frame.extend(
+            u16::try_from(8 + payload.len())
+                .expect("short")
+                .to_be_bytes(),
+        );
+        frame.extend([0, 0]);
+        frame.extend(payload);
+        frame
     }
 
-    /// wrong attribution is worse than a missed migration.
-    #[test]
-    fn an_id_claimed_by_two_connections_stops_being_used() {
-        let mut tracker = QuicTracker::new();
-        let first = key();
-        let mut second = key();
-        second.source = "203.0.113.9".parse().expect("valid address");
-
-        tracker.remember(&[1, 2, 3, 4], first, 1_000);
-        tracker.remember(&[1, 2, 3, 4], second, 2_000);
-
-        let destination = tracker
-            .connections
-            .get(&vec![1, 2, 3, 4])
-            .expect("still tracked");
-        assert!(destination.ambiguous, "neither connection owns it now");
+    /// A QUIC v1 Initial announcing `scid`, with no destination id.
+    fn long_header(scid: &[u8]) -> Vec<u8> {
+        let mut packet = vec![0xc0, 0x00, 0x00, 0x00, 0x01, 0x00];
+        packet.push(u8::try_from(scid.len()).expect("short id"));
+        packet.extend(scid);
+        packet.extend([0x00, 0x41, 0x00]);
+        packet
     }
 
-    /// The same connection re-announcing its ID during a handshake is ordinary
-    /// and must not poison it.
-    #[test]
-    fn a_repeated_announcement_from_one_connection_is_fine() {
-        let mut tracker = QuicTracker::new();
-        let flow = key();
-
-        tracker.remember(&[1, 2, 3, 4], flow, 1_000);
-        tracker.remember(&[1, 2, 3, 4], flow, 2_000);
-
-        let destination = tracker
-            .connections
-            .get(&vec![1, 2, 3, 4])
-            .expect("still tracked");
-        assert!(!destination.ambiguous);
-        assert_eq!(destination.last_seen, 2_000);
+    /// A 1-RTT packet addressed to `dcid`.
+    fn short_header(dcid: &[u8]) -> Vec<u8> {
+        let mut packet = vec![0x40];
+        packet.extend(dcid);
+        packet.extend([0xaa; 16]);
+        packet
     }
 
-    /// Out-of-order delivery must not age an entry out early.
-    #[test]
-    fn a_late_delivered_packet_does_not_age_an_entry() {
-        let mut tracker = QuicTracker::new();
-        let flow = key();
-
-        tracker.remember(&[1, 2, 3, 4], flow, 9_000);
-        tracker.remember(&[1, 2, 3, 4], flow, 3_000);
-
-        let destination = tracker
-            .connections
-            .get(&vec![1, 2, 3, 4])
-            .expect("still tracked");
-        assert_eq!(destination.last_seen, 9_000, "the latest packet seen");
+    fn observe(tracker: &mut QuicTracker, frame: &[u8], now: u64) -> (PacketObservation, bool) {
+        let mut parsed = ParsedPacket::default();
+        BuiltinPacketParser::parse_into(frame, ParseConfig::default(), Some(1), &mut parsed)
+            .expect("the fixture parses");
+        let (source_port, destination_port) = match &parsed.transport {
+            Some(paccel::engine::TransportSegment::Udp(udp)) => {
+                (udp.source_port, udp.destination_port)
+            }
+            _ => panic!("the fixture is udp"),
+        };
+        let mut observation = PacketObservation {
+            key: Key {
+                source: parsed.ipv4.as_ref().expect("addresses").source.into(),
+                destination: parsed.ipv4.as_ref().expect("addresses").destination.into(),
+                endpoints: fluereflow::Endpoints::Ports {
+                    source: source_port,
+                    destination: destination_port,
+                },
+                // Zeroed, as they are when MACs are not in the key, so that
+                // reversing a key is symmetric on the link addresses too.
+                source_mac: fluereflow::MacAddress::new([0; 6]),
+                destination_mac: fluereflow::MacAddress::new([0; 6]),
+                ..key()
+            },
+            facts: PacketFacts {
+                time: Timestamp::from_nanos(now),
+                frame_octets: 0,
+                captured_octets: 0,
+                ttl: None,
+                tcp_flags: None,
+                icmp: None,
+            },
+            dscp: None,
+            ecn: None,
+            arrived_from: (IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
+            tcp_flags: None,
+        };
+        let moved = tracker.resolve(&mut observation, &parsed, frame);
+        (observation, moved)
     }
 
-    /// Lengths are tried longest first, so a short ID that is a prefix of a
-    /// longer one does not shadow the more specific match.
+    /// The point of the tracker: a connection that changes address is still
+    /// the same flow, and its connection id is what says so.
     #[test]
-    fn connection_id_lengths_are_kept_longest_first() {
-        let mut tracker = QuicTracker::new();
-        let flow = key();
-
-        tracker.remember(&[1, 2, 3, 4], flow, 1_000);
-        tracker.remember(&[9; 8], flow, 1_000);
-        tracker.remember(&[7; 6], flow, 1_000);
-
-        // Bits 4, 6 and 8, read longest first when a packet is attributed.
-        assert_eq!(tracker.lengths, (1 << 4) | (1 << 6) | (1 << 8));
-    }
-
-    #[test]
-    fn an_empty_connection_id_is_not_tracked() {
-        let mut tracker = QuicTracker::new();
-        tracker.remember(&[], key(), 1_000);
-
-        assert_eq!(tracker.tracked(), 0, "an empty ID identifies nothing");
-    }
-
-    #[test]
-    fn tracking_stays_bounded_under_a_flood_of_connections() {
+    fn a_migrated_packet_goes_back_to_the_flow_it_started_on() {
+        let cid = [9u8, 9, 9, 9];
         let mut tracker = QuicTracker::new();
 
-        for connection in 0..(MAX_TRACKED as u32 * 2) {
-            tracker.remember(&connection.to_be_bytes(), key(), u64::from(connection));
-        }
+        // Handshake from the server, announcing the id clients will address.
+        let handshake = udp_frame((SERVER, 443), (CLIENT, 50_000), &long_header(&cid));
+        let (opened, _) = observe(&mut tracker, &handshake, 1_000);
 
-        assert!(
-            tracker.tracked() <= MAX_TRACKED,
-            "tracked {} connections, cap is {}",
-            tracker.tracked(),
-            MAX_TRACKED
+        // The client now appears from a new address, using that id.
+        let moved = udp_frame((MOVED, 53_000), (SERVER, 443), &short_header(&cid));
+        let (attributed, was_moved) = observe(&mut tracker, &moved, 2_000);
+
+        assert!(was_moved, "the packet was not reattributed");
+        assert_eq!(
+            attributed.key,
+            opened.reverse_key(),
+            "it belongs to the flow the handshake opened, seen the other way"
         );
     }
 
-    /// Short headers carry no length, so the only readable IDs are the lengths
-    /// handshakes have actually used.
+    /// An id nobody has announced says nothing, so the packet stays on the
+    /// flow its own addresses name.
     #[test]
-    fn only_observed_id_lengths_are_tried() {
+    fn an_unknown_connection_id_moves_nothing() {
         let mut tracker = QuicTracker::new();
-        assert_eq!(tracker.lengths, 0);
+        let frame = udp_frame((MOVED, 53_000), (SERVER, 443), &short_header(&[7u8; 4]));
+        let (observation, moved) = observe(&mut tracker, &frame, 1_000);
 
-        tracker.remember(&[1, 2, 3, 4], key(), 1_000);
-        tracker.remember(&[9; 8], key(), 1_000);
+        assert!(!moved);
+        assert_eq!(observation.key.source, IpAddr::V4(Ipv4Addr::from(MOVED)));
+    }
 
-        assert_eq!(tracker.lengths, (1 << 4) | (1 << 8));
+    /// A packet on the addresses the connection already had is not a move.
+    /// An idle connection stops being followed, and its origin goes with it.
+    ///
+    /// The map fluere keeps beside paccel's tracker is the one that would grow
+    /// without bound, so it is what this asserts on.
+    #[test]
+    fn an_idle_connection_is_forgotten_along_with_its_origin() {
+        let mut tracker = QuicTracker::new();
+        let cid = [9u8, 8, 7, 6, 5, 4, 3, 2];
+
+        let handshake = udp_frame((SERVER, 443), (CLIENT, 50_000), &long_header(&cid));
+        observe(&mut tracker, &handshake, 1_000);
+        assert_eq!(tracker.origins.len(), 1, "the handshake should be learned");
+
+        // A packet far enough later that the connection has aged out.
+        let later = udp_frame((SERVER, 443), (CLIENT, 50_000), &long_header(&[1u8; 8]));
+        observe(&mut tracker, &later, 1_000 + MAX_AGE * 2);
+
+        assert_eq!(
+            tracker.origins.len(),
+            1,
+            "only the connection just seen should remain, not both"
+        );
+
+        // And the aged-out id no longer follows a migration.
+        let moved = udp_frame((MOVED, 53_000), (SERVER, 443), &short_header(&cid));
+        let (observation, migrated) = observe(&mut tracker, &moved, 1_000 + MAX_AGE * 2);
+        assert!(!migrated, "a forgotten connection cannot be migrated to");
+        assert_eq!(observation.key.source, IpAddr::V4(Ipv4Addr::from(MOVED)));
+    }
+
+    #[test]
+    fn a_packet_that_did_not_move_is_not_reattributed() {
+        let cid = [1u8, 2, 3, 4];
+        let mut tracker = QuicTracker::new();
+        let handshake = udp_frame((SERVER, 443), (CLIENT, 50_000), &long_header(&cid));
+        observe(&mut tracker, &handshake, 1_000);
+
+        // The client replying from the address it has had all along.
+        let same = udp_frame((CLIENT, 50_000), (SERVER, 443), &short_header(&cid));
+        let (_, moved) = observe(&mut tracker, &same, 2_000);
+        assert!(!moved, "nothing migrated, so nothing to reattribute");
     }
 }
