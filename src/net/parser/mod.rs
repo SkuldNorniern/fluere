@@ -9,6 +9,7 @@ mod raw;
 mod time;
 mod tos;
 
+pub use fluereflows::CaptureResolution;
 pub use fragments::FragmentTracker;
 pub use keys::parse_keys;
 pub use observation::{PacketObservation, ParserState, observe};

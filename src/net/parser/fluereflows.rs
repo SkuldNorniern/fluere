@@ -32,7 +32,32 @@ pub(super) fn wire_length(packet: &pcap::Packet) -> usize {
 ///
 /// libpcap reports microseconds, which the model widens to nanoseconds while
 /// recording that microseconds is all the source could resolve.
-pub(super) fn packet_time(packet: &pcap::Packet) -> fluereflow::Timestamp {
+/// How finely the capture this packet came from records time.
+///
+/// libpcap reports the sub-second field in whichever unit the file was opened
+/// with, and says nothing about which. A nanosecond capture read as if it were
+/// microseconds is a thousand times off, so the unit travels with the reader
+/// that chose it rather than being guessed from the value.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CaptureResolution {
+    #[default]
+    Microseconds,
+    Nanoseconds,
+}
+
+impl CaptureResolution {
+    pub fn to_flow_resolution(self) -> fluereflow::TimeResolution {
+        match self {
+            CaptureResolution::Microseconds => fluereflow::TimeResolution::Microseconds,
+            CaptureResolution::Nanoseconds => fluereflow::TimeResolution::Nanoseconds,
+        }
+    }
+}
+
+pub(super) fn packet_time(
+    packet: &pcap::Packet,
+    resolution: CaptureResolution,
+) -> fluereflow::Timestamp {
     // A capture file stores its seconds unsigned and 32 bits wide, and libpcap
     // widens that into a signed `tv_sec` by sign extension. Every stamp from
     // 2038-01-19 on therefore arrives negative: `0x8000_0000` reads as
@@ -46,9 +71,18 @@ pub(super) fn packet_time(packet: &pcap::Packet) -> fluereflow::Timestamp {
     let seconds = u64::try_from(packet.header.ts.tv_sec)
         .or_else(|_| u64::try_from(packet.header.ts.tv_sec & 0xFFFF_FFFF))
         .unwrap_or(0);
-    let microseconds = u64::try_from(packet.header.ts.tv_usec).unwrap_or(0);
+    let subsecond = u64::try_from(packet.header.ts.tv_usec).unwrap_or(0);
 
-    fluereflow::Timestamp::from_micros(parse_microseconds(seconds, microseconds))
+    match resolution {
+        CaptureResolution::Microseconds => {
+            fluereflow::Timestamp::from_micros(parse_microseconds(seconds, subsecond))
+        }
+        CaptureResolution::Nanoseconds => fluereflow::Timestamp::from_nanos(
+            seconds
+                .saturating_mul(1_000_000_000)
+                .saturating_add(subsecond.min(999_999_999)),
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -88,10 +122,34 @@ mod tests {
     fn a_microsecond_capture_widens_to_nanoseconds() {
         let data = [0u8; 4];
         let header = header(4, 4, 7, 8);
-        let time = packet_time(&Packet::new(&header, &data));
+        let time = packet_time(
+            &Packet::new(&header, &data),
+            CaptureResolution::Microseconds,
+        );
 
         assert_eq!(time.micros(), 7_000_008);
         assert_eq!(time.nanos(), 7_000_008_000);
+    }
+
+    /// The same field means nanoseconds in a capture opened that way, and
+    /// reading it as microseconds would put the packet a thousand times too far
+    /// into the second.
+    #[test]
+    fn a_nanosecond_capture_keeps_its_sub_microsecond_digits() {
+        let data = [0u8; 4];
+        let header = header(4, 4, 7, 8_000_500);
+        let time = packet_time(&Packet::new(&header, &data), CaptureResolution::Nanoseconds);
+
+        assert_eq!(time.nanos(), 7_008_000_500);
+        // The same field read the other way would have been 7008000500000.
+        assert_ne!(
+            time.nanos(),
+            packet_time(
+                &Packet::new(&header, &data),
+                CaptureResolution::Microseconds
+            )
+            .nanos()
+        );
     }
 
     /// A capture file holds its seconds unsigned and 32 bits wide, and libpcap
@@ -106,11 +164,15 @@ mod tests {
         let after = header(4, 4, -2_147_483_648, 0);
 
         assert_eq!(
-            packet_time(&Packet::new(&before, &data)).micros(),
+            packet_time(
+                &Packet::new(&before, &data),
+                CaptureResolution::Microseconds
+            )
+            .micros(),
             2_147_483_647_000_000
         );
         assert_eq!(
-            packet_time(&Packet::new(&after, &data)).micros(),
+            packet_time(&Packet::new(&after, &data), CaptureResolution::Microseconds).micros(),
             2_147_483_648_000_000
         );
     }
@@ -122,7 +184,11 @@ mod tests {
         let header = header(4, 4, -1, 0);
 
         assert_eq!(
-            packet_time(&Packet::new(&header, &data)).micros(),
+            packet_time(
+                &Packet::new(&header, &data),
+                CaptureResolution::Microseconds
+            )
+            .micros(),
             4_294_967_295_000_000
         );
     }

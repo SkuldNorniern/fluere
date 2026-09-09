@@ -6,7 +6,7 @@ use crate::{
     net::{
         flow_engine::FlowEngine,
         observe_packet,
-        parser::{PacketObservation, ParserState},
+        parser::{CaptureResolution, PacketObservation, ParserState},
         source,
     },
     types::Args,
@@ -17,7 +17,7 @@ use fluere_config::Config;
 use fluere_plugin::PluginManager;
 use indicatif::ProgressBar;
 use log::{error, info, trace};
-use pcap::Capture;
+use pcap::{Capture, Precision};
 
 fn process_packet(
     observation: PacketObservation,
@@ -65,7 +65,18 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
         .timeout
         .required("this should be defaulted to `10 minutes` on construction")?;
 
-    let mut cap = Capture::from_file(file_name.clone())?;
+    // Nanosecond precision, falling back to the default. libpcap converts a
+    // microsecond capture up for free, but a nanosecond one read at the default
+    // precision is rounded to the microsecond and the detail is gone: the
+    // ordering of packets less than a microsecond apart with it.
+    let (mut cap, resolution) =
+        match Capture::from_file_with_precision(file_name.clone(), Precision::Nano) {
+            Ok(cap) => (cap, CaptureResolution::Nanoseconds),
+            Err(_) => (
+                Capture::from_file(file_name.clone())?,
+                CaptureResolution::Microseconds,
+            ),
+        };
     let linktype = u16::try_from(cap.get_datalink().0).unwrap_or(1);
 
     let file_dir = "./output";
@@ -86,7 +97,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
     let file = crate::utils::output::create(&output_file_path)?;
 
     let mut exporter = CsvExporter::create(file)?;
-    let mut engine = FlowEngine::new(flow_timeout);
+    let mut engine = FlowEngine::with_resolution(flow_timeout, resolution.to_flow_resolution());
 
     let config = Config::new();
     let (plugin_manager, plugin_worker) = PluginManager::start(&config)
@@ -97,6 +108,7 @@ pub async fn run(arg: Args) -> Result<(), FluereError> {
 
     let bar = ProgressBar::new_spinner();
     let mut parser_state = ParserState::new();
+    parser_state.resolution = resolution;
 
     // A read failure is not end of file. Treating it as one meant a damaged
     // capture produced partial output and still reported success, which is the

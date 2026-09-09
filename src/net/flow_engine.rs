@@ -141,7 +141,7 @@ fn fold(
 ///
 /// A TCP flow whose first packet has no SYN began before the capture did; other
 /// protocols have no handshake to have missed.
-fn open_record(observation: &PacketObservation) -> FlowRecord {
+fn open_record(observation: &PacketObservation, resolution: TimeResolution) -> FlowRecord {
     let start_state = if observation.key.protocol == 6 {
         match observation.tcp_flags {
             Some(flags) if flags.syn => StartState::SynObserved,
@@ -151,11 +151,7 @@ fn open_record(observation: &PacketObservation) -> FlowRecord {
         StartState::NotApplicable
     };
 
-    let mut record = FlowRecord::open(
-        observation.time(),
-        TimeResolution::Microseconds,
-        start_state,
-    );
+    let mut record = FlowRecord::open(observation.time(), resolution, start_state);
     record.network.dscp = observation.dscp;
     record.network.ecn = observation.ecn;
     record
@@ -186,12 +182,21 @@ pub struct FlowEngine {
     /// How late a packet may be delivered and still be counted on its own
     /// flow, in nanoseconds. Expiry is held back by this much.
     lateness: u64,
+    /// How finely the capture records time. Reported on every record this
+    /// engine opens, so a consumer can tell a stamp that is precise to the
+    /// nanosecond from one that was only ever precise to the microsecond.
+    resolution: TimeResolution,
 }
 
 impl FlowEngine {
     /// `flow_timeout` is an idle timeout in milliseconds; zero means flows
     /// never expire on their own, matching what the CLI documents.
     pub fn new(flow_timeout: u64) -> Self {
+        FlowEngine::with_resolution(flow_timeout, TimeResolution::Microseconds)
+    }
+
+    /// The same, for a capture whose timestamps are known to be finer.
+    pub fn with_resolution(flow_timeout: u64, resolution: TimeResolution) -> Self {
         // Milliseconds in, nanoseconds inside: the record's timestamps are
         // nanoseconds, so the deadline arithmetic is too.
         let timeout = (flow_timeout > 0).then_some(flow_timeout * 1_000_000);
@@ -207,6 +212,7 @@ impl FlowEngine {
             // A second of skew covers merged captures and multi-queue
             // delivery. Never more than half the timeout, so a short timeout
             // still expires flows roughly when it says it will.
+            resolution,
             lateness: timeout.map_or(0, |timeout| MAX_LATENESS.min(timeout / 2)),
         }
     }
@@ -221,6 +227,8 @@ impl FlowEngine {
         let reverse = observation.reverse_key();
         let flags = observation.tcp_flags.unwrap_or_default();
         let at = observation.time().nanos();
+        // Copied out before the borrow below, which holds `self` mutably.
+        let resolution = self.resolution;
 
         // One lookup for the case that repeats on every packet: traffic on a
         // flow already keyed the way this packet is. The key is 112 bytes and
@@ -247,7 +255,7 @@ impl FlowEngine {
             let state = self
                 .active
                 .entry(key)
-                .or_insert_with(|| FlowState::new(open_record(&observation), deadline));
+                .or_insert_with(|| FlowState::new(open_record(&observation, resolution), deadline));
             let reason = fold(state, &key, Direction::Forward, &observation, flags);
             self.enqueue(key, deadline);
             *opened = true;

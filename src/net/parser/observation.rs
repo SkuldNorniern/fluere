@@ -6,7 +6,7 @@ use crate::net::types::Key;
 
 use fluereflow::{PacketFacts, QuotedFlow, TcpFlags, Timestamp};
 
-use super::fluereflows::{innermost, packet_time, wire_length};
+use super::fluereflows::{CaptureResolution, innermost, packet_time, wire_length};
 use super::fragments::{Fragment, FragmentTracker};
 use super::keys::keys_from_parsed;
 use super::parse_frame_into;
@@ -97,7 +97,7 @@ pub fn observe(
         packet.data,
         wire_length(&packet) as u32,
         packet.data.len() as u32,
-        packet_time(&packet),
+        packet_time(&packet, state.resolution),
     );
 
     let mut observation = PacketObservation {
@@ -147,6 +147,9 @@ pub struct ParserState {
     /// `parsed` because the quote is decoded while the error itself is still
     /// being read out of it.
     quoted: ParsedPacket,
+    /// The unit libpcap is reporting sub-second timestamps in. Set once, from
+    /// the precision the capture was opened with.
+    pub resolution: CaptureResolution,
 }
 
 impl ParserState {
