@@ -123,6 +123,13 @@ pub fn icmp(icmp_type: u8) -> Vec<u8> {
     vec![icmp_type, 0, 0, 0, 0, 0, 0, 0]
 }
 
+/// An ICMP error quoting the datagram that provoked it, as RFC 792 requires.
+pub fn icmp_error(icmp_type: u8, code: u8, quoted: &[u8]) -> Vec<u8> {
+    let mut message = vec![icmp_type, code, 0, 0, 0, 0, 0, 0];
+    message.extend_from_slice(quoted);
+    message
+}
+
 pub fn esp(spi: u32) -> Vec<u8> {
     let mut header = Vec::with_capacity(16);
     header.extend_from_slice(&spi.to_be_bytes());
@@ -401,10 +408,14 @@ impl Flows {
 mod tests {
     use super::*;
 
+    use std::net::{IpAddr, Ipv4Addr};
+
     const A: [u8; 4] = [192, 0, 2, 10];
     const B: [u8; 4] = [198, 51, 100, 20];
     const A6: [u8; 16] = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
     const B6: [u8; 16] = [0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+    /// The router that sends the unreachables, on neither end of the flow.
+    const ROUTER: [u8; 4] = [203, 0, 113, 1];
 
     const SYN: u8 = 0x02;
     const SYN_ACK: u8 = 0x12;
@@ -528,6 +539,59 @@ mod tests {
         assert_eq!(
             flows.count(|f| f.key.ports().0 == 40_006 || f.key.ports().1 == 40_006),
             2
+        );
+    }
+
+    /// An unreachable names the conversation it was sent about, and its octets
+    /// stay on the error's own flow.
+    ///
+    /// Reattributing them would add bytes to a TCP flow that never carried
+    /// them, so every count on that flow would be wrong by the size of an error
+    /// nobody sent over it.
+    #[test]
+    fn an_icmp_error_names_the_flow_it_refers_to_without_moving_its_bytes() {
+        let mut capture = Capture::new(600_000);
+        // A TCP connection, and a router telling the client it is unreachable.
+        let quoted = ipv4(6, 64, A, B, &tcp(40_001, 443, 0x02));
+        capture
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, 0x02)))
+            .push(&v4(1, 64, ROUTER, A, &icmp_error(3, 1, &quoted)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        let error = flows.only_flow(|f| f.key.protocol == 1);
+        let named = error.quoted.expect("the unreachable quoted a datagram");
+        assert_eq!(named.source, IpAddr::V4(Ipv4Addr::from(A)));
+        assert_eq!(named.destination, IpAddr::V4(Ipv4Addr::from(B)));
+        assert_eq!(named.ports, Some((40_001, 443)));
+        assert_eq!(named.protocol, 6);
+        assert_eq!(named.to_string(), "192.0.2.10:40001->198.51.100.20:443/tcp");
+
+        // The TCP flow saw one packet, its own, and nothing about it changed.
+        let tcp_flow = flows.only(|f| f.key.protocol == 6);
+        assert_eq!(tcp_flow.packets(), 1, "the error must not be counted here");
+        assert!(
+            flows.only_flow(|f| f.key.protocol == 6).quoted.is_none(),
+            "the quoted flow is not itself quoting anything"
+        );
+    }
+
+    /// An echo request's eight bytes are an identifier and a sequence number,
+    /// not a quoted datagram, and whatever follows them is the sender's own
+    /// payload. Reading it as a datagram invents a flow that does not exist.
+    #[test]
+    fn an_echo_request_is_not_read_as_quoting_anything() {
+        let mut capture = Capture::new(600_000);
+        // A payload that would decode as an IPv4 header if anything looked.
+        let mut echo = icmp(8);
+        echo.extend_from_slice(&ipv4(6, 64, A, B, &tcp(1234, 80, 0x02)));
+        capture.push(&v4(1, 64, A, B, &echo));
+
+        let flows = capture.finish();
+        assert!(
+            flows.only_flow(|f| f.key.protocol == 1).quoted.is_none(),
+            "an echo request quotes nothing"
         );
     }
 

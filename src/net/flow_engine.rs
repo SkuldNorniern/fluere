@@ -29,7 +29,7 @@ const MAX_LATENESS: u64 = 1_000_000_000;
 
 use crate::net::parser::PacketObservation;
 use crate::net::types::Key;
-use fluereflow::{Direction, EndReason, Flow, FlowRecord, StartState, TimeResolution};
+use fluereflow::{Direction, EndReason, Flow, FlowRecord, QuotedFlow, StartState, TimeResolution};
 
 /// Per-flow state the engine keeps but the record does not carry.
 #[derive(Debug, Clone, Copy)]
@@ -44,6 +44,13 @@ struct FlowState {
     /// is dropped when the sweep reaches it, so a flow never has more than one
     /// live entry.
     scheduled: u64,
+    /// The datagram the first ICMP error on this flow quoted, if any.
+    ///
+    /// First rather than last, and never overwritten: a router sending
+    /// unreachables to one host quotes a different datagram each time, and
+    /// keeping every one of them would put an unbounded list on a flow that
+    /// exists to count bytes.
+    quoted: Option<QuotedFlow>,
 }
 
 impl FlowState {
@@ -53,6 +60,7 @@ impl FlowState {
             forward_fin: false,
             reverse_fin: false,
             scheduled,
+            quoted: None,
         }
     }
 
@@ -93,6 +101,11 @@ fn fold(
     flags: fluereflow::TcpFlags,
 ) -> Option<EndReason> {
     state.record.observe(direction, observation.facts);
+    // The first quote only. Later errors on this flow may name other flows, and
+    // the flow record has room for one reference, not a log of them.
+    if state.quoted.is_none() {
+        state.quoted = observation.quoted;
+    }
     // Only somewhere the key does not already name: ordinary traffic in either
     // direction arrives from one of the flow's own two endpoints.
     if !names_endpoint(flow_key, observation.arrived_from) {
@@ -244,7 +257,10 @@ impl FlowEngine {
         let reason = reason?;
         self.active.remove(&flow_key).map(|mut state| {
             state.record.close(reason);
-            (Flow::new(flow_key, state.record), reason)
+            (
+                Flow::new(flow_key, state.record).quoting(state.quoted),
+                reason,
+            )
         })
     }
 
@@ -327,7 +343,7 @@ impl FlowEngine {
                     if let Some(mut state) = self.active.remove(&key) {
                         trace!("flow ended: {:?}", EndReason::IdleTimeout);
                         state.record.close(EndReason::IdleTimeout);
-                        expired.push(Flow::new(key, state.record));
+                        expired.push(Flow::new(key, state.record).quoting(state.quoted));
                     }
                 } else {
                     // Touched since it was queued, so it lives on until its
@@ -352,7 +368,7 @@ impl FlowEngine {
             .map(|(key, mut state)| {
                 trace!("flow ended: {:?}", EndReason::CaptureEnd);
                 state.record.close(EndReason::CaptureEnd);
-                Flow::new(key, state.record)
+                Flow::new(key, state.record).quoting(state.quoted)
             })
             .collect()
     }

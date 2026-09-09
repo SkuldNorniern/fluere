@@ -335,6 +335,7 @@ mod tests {
             _ => panic!("the fixture is udp"),
         };
         let mut observation = PacketObservation {
+            quoted: None,
             key: Key {
                 source: parsed.ipv4.as_ref().expect("addresses").source.into(),
                 destination: parsed.ipv4.as_ref().expect("addresses").destination.into(),

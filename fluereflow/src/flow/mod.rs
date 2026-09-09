@@ -15,6 +15,9 @@
 //! timestamps are nanoseconds, so a record means the same thing whatever
 //! machine wrote it.
 
+use std::fmt;
+use std::net::IpAddr;
+
 mod encapsulation;
 mod key;
 mod link;
@@ -24,7 +27,7 @@ mod time;
 mod vlan;
 
 pub use encapsulation::{EncapKind, Encapsulation};
-pub use key::{Endpoints, FlowKey};
+pub use key::{protocol_name, Endpoints, FlowKey};
 pub use link::MacAddress;
 pub use paths::Paths;
 pub use stats::{
@@ -171,11 +174,64 @@ impl FlowRecord {
 pub struct Flow {
     pub key: FlowKey,
     pub record: FlowRecord,
+    /// The datagram the first ICMP error on this flow quoted, if any.
+    ///
+    /// Held beside the record rather than in it: it names *another* flow, and
+    /// nothing about this one was measured from it. An ICMP error's bytes stay
+    /// counted against the error's own flow, because moving them would change
+    /// the counts on a flow that never carried them.
+    pub quoted: Option<QuotedFlow>,
+}
+
+/// The datagram an ICMP error quoted back.
+///
+/// An unreachable or time-exceeded message carries the head of the packet that
+/// provoked it. That names a conversation, which is usually the reason the
+/// error is interesting, but it is a reference and not a measurement: only the
+/// first one a flow saw is kept, and later errors on the same flow may quote
+/// something else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuotedFlow {
+    /// Source of the datagram that provoked the error.
+    pub source: IpAddr,
+    /// Its destination, which is the host that could not be reached.
+    pub destination: IpAddr,
+    /// Its ports, for protocols that have them.
+    pub ports: Option<(u16, u16)>,
+    /// Its IP protocol number.
+    pub protocol: u8,
+}
+
+impl fmt::Display for QuotedFlow {
+    /// `192.0.2.1:1234->198.51.100.1:80/tcp`, or without the ports for a
+    /// protocol that has none. The trailing name is empty for a protocol with
+    /// no well-known one, leaving the number to the reader of `protocol`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.ports {
+            Some((source, destination)) => write!(
+                f,
+                "{}:{}->{}:{}",
+                self.source, source, self.destination, destination
+            )?,
+            None => write!(f, "{}->{}", self.source, self.destination)?,
+        }
+        write!(f, "/{}", key::protocol_name(self.protocol))
+    }
 }
 
 impl Flow {
     pub fn new(key: FlowKey, record: FlowRecord) -> Self {
-        Flow { key, record }
+        Flow {
+            key,
+            record,
+            quoted: None,
+        }
+    }
+
+    /// The same flow, noting the datagram an ICMP error quoted.
+    pub fn quoting(mut self, quoted: Option<QuotedFlow>) -> Self {
+        self.quoted = quoted;
+        self
     }
 
     /// Readable name of the protocol this flow carried, or empty when it has no

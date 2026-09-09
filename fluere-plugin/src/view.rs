@@ -6,7 +6,7 @@
 
 use std::net::IpAddr;
 
-use fluereflow::{FlowRecord, Range};
+use fluereflow::{FlowRecord, QuotedFlow, Range};
 
 /// Version of the field set below.
 ///
@@ -25,7 +25,8 @@ use fluereflow::{FlowRecord, Range};
 /// - 4: `captured_octets` joins `truncated`. The CSV reported both from the
 ///   start; the plugin view showed only the flag, so a plugin could tell that a
 ///   snaplen had cut a flow short but not by how much.
-pub const SCHEMA_VERSION: u32 = 4;
+/// - 5: added `quoted_flow`, naming the datagram an ICMP error quoted back.
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// One field's value, in the few shapes a flow record actually uses.
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +81,13 @@ pub struct FlowIdentity {
     pub tunnel_id: Option<u32>,
     /// The tunnel's own endpoints, for tunnels that run over IP.
     pub tunnel_endpoints: Option<(IpAddr, IpAddr)>,
+    /// The datagram the first ICMP error on this flow quoted back, if any.
+    ///
+    /// A reference to another conversation, not a measurement of this one. The
+    /// error's own octets stay counted here, because the flow it names never
+    /// carried them. Only the first quote is kept: a router sending
+    /// unreachables to one host quotes a different datagram every time.
+    pub quoted_flow: Option<QuotedFlow>,
 }
 
 /// A flow record flattened into named, typed fields.
@@ -222,6 +230,10 @@ impl FlowView {
                 ("encap", text(identity.encapsulation.clone())),
                 ("tunnel_id", optional(identity.tunnel_id.map(u64::from))),
                 ("tunnel_endpoints", text(endpoints)),
+                (
+                    "quoted_flow",
+                    text(identity.quoted_flow.map(|q| q.to_string())),
+                ),
             ],
         }
     }

@@ -205,21 +205,7 @@ impl FlowKey {
             return "arp";
         }
 
-        match self.protocol {
-            1 => "icmp",
-            2 => "igmp",
-            6 => "tcp",
-            17 => "udp",
-            41 => "ipv6",
-            47 => "gre",
-            50 => "esp",
-            51 => "ah",
-            58 => "icmpv6",
-            89 => "ospf",
-            112 => "vrrp",
-            132 => "sctp",
-            _ => "",
-        }
+        protocol_name(self.protocol)
     }
 
     /// `4` or `6`, or `None` for traffic that is not IP.
@@ -418,5 +404,28 @@ mod tests {
         assert_eq!(key.destination_mac, MacAddress::new([0; 6]));
         assert_eq!(key.source, before.source);
         assert_eq!(key.endpoints, before.endpoints);
+    }
+}
+
+/// Readable name for an IP protocol number, or empty when it has no well-known
+/// one.
+///
+/// Split out of [`FlowKey::protocol_name`] because a quoted datagram is named
+/// the same way and does not have a key of its own.
+pub fn protocol_name(protocol: u8) -> &'static str {
+    match protocol {
+        1 => "icmp",
+        2 => "igmp",
+        6 => "tcp",
+        17 => "udp",
+        41 => "ipv6",
+        47 => "gre",
+        50 => "esp",
+        51 => "ah",
+        58 => "icmpv6",
+        89 => "ospf",
+        112 => "vrrp",
+        132 => "sctp",
+        _ => "",
     }
 }
