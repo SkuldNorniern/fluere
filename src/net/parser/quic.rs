@@ -15,10 +15,17 @@ use std::collections::HashMap;
 
 use log::trace;
 
+#[cfg(feature = "quic-l7")]
+use paccel::engine::QuicStreamReassembler;
 use paccel::engine::{
     Endpoint, ParsedPacket, QuicConnectionId, QuicConnectionTracker, QuicDirection,
 };
 use paccel::layer::Confidence;
+#[cfg(feature = "quic-l7")]
+use paccel::layer::application::quic::{
+    decrypt::decrypt_initial_packet, frame::QuicFrame, frame::iter_quic_frames,
+    split_coalesced_packets,
+};
 
 use crate::net::types::Key;
 
@@ -55,6 +62,18 @@ pub struct QuicTracker {
     connections: QuicConnectionTracker,
     /// The flow each connection was first seen on.
     origins: HashMap<QuicConnectionId, Origin>,
+    /// The handshake bytes of each connection, keyed on the connection and not
+    /// the address pair.
+    ///
+    /// A ClientHello does not always fit one Initial packet, and a client that
+    /// moves between them would have its handshake split in two if this were
+    /// keyed on addresses. Keyed on the connection, the move is invisible.
+    #[cfg(feature = "quic-l7")]
+    crypto: QuicStreamReassembler,
+    /// What has been reassembled of each handshake so far, and whether it has
+    /// already been read.
+    #[cfg(feature = "quic-l7")]
+    handshakes: HashMap<HandshakeKey, Handshake>,
     /// When the last age-out ran, so it runs on capture time, not wall clock.
     last_expiry: u64,
 }
@@ -64,6 +83,10 @@ impl Default for QuicTracker {
         QuicTracker {
             connections: QuicConnectionTracker::new().with_max_flows(MAX_TRACKED),
             origins: HashMap::new(),
+            #[cfg(feature = "quic-l7")]
+            crypto: QuicStreamReassembler::default(),
+            #[cfg(feature = "quic-l7")]
+            handshakes: HashMap::new(),
             last_expiry: 0,
         }
     }
@@ -89,6 +112,16 @@ impl QuicTracker {
         let connections = &self.connections;
         self.origins
             .retain(|id, _| !connections.tuples_for_connection(*id).is_empty());
+        #[cfg(feature = "quic-l7")]
+        {
+            self.handshakes.retain(|held, _| match held {
+                HandshakeKey::Connection(id) => !connections.tuples_for_connection(*id).is_empty(),
+                // An untracked handshake has no connection to outlive, so it goes
+                // with the reassembly under it.
+                HandshakeKey::Tuple(..) => false,
+            });
+            self.crypto.expire_before(now.saturating_sub(MAX_AGE));
+        }
     }
 
     /// Learn from a handshake packet, and attribute a migrated one.
@@ -220,6 +253,192 @@ impl QuicTracker {
         observation.key = target;
         true
     }
+}
+
+#[cfg(feature = "quic-l7")]
+impl QuicTracker {
+    /// The server name a QUIC client asked for, once its handshake is readable.
+    ///
+    /// A client Initial is encrypted with keys derived from its own connection
+    /// ID, so this needs no secrets: RFC 9001 section 5.2 makes the Initial
+    /// packet protection a formality against middleboxes, not a secret.
+    ///
+    /// Returns the name once per connection, on the packet that completed the
+    /// ClientHello, so a flow is annotated rather than every packet of it.
+    pub fn client_hello(
+        &mut self,
+        parsed: &ParsedPacket,
+        packet_data: &[u8],
+        now: u64,
+    ) -> Option<String> {
+        let header = parsed.quic()?;
+        if !header.is_initial {
+            return None;
+        }
+        // Looked up by address pair rather than connection ID: the tracker
+        // indexes the id an endpoint *issued*, and a client's first Initial may
+        // carry a zero-length SCID and a DCID of its own invention, neither of
+        // which names a connection yet.
+        let key = parsed.flow_key()?;
+        let scope = self.connections.connection_and_direction(
+            key.src_ip,
+            key.src_port,
+            key.dst_ip,
+            key.dst_port,
+            &header.dcid,
+        );
+        let handshake = HandshakeKey::of(&key, scope);
+        if self
+            .handshakes
+            .get(&handshake)
+            .is_some_and(|held| held.read)
+        {
+            return None;
+        }
+
+        let datagram = udp_payload(parsed, packet_data)?;
+        // A datagram may hold several QUIC packets; only the Initials matter,
+        // and each is decrypted from its own header.
+        for packet in split_coalesced_packets(datagram) {
+            self.absorb_initial(handshake, scope, &key, packet, now);
+        }
+
+        let held = self.handshakes.get_mut(&handshake)?;
+        let hello = paccel::layer::application::tls::parse_tls_client_hello(&wrap_as_tls_record(
+            &held.bytes,
+        )?)
+        .ok()?;
+        held.read = true;
+        held.bytes = Vec::new();
+        hello.server_name
+    }
+
+    /// Feeds one Initial packet's CRYPTO frames into the handshake buffer.
+    fn absorb_initial(
+        &mut self,
+        handshake: HandshakeKey,
+        scope: Option<(QuicConnectionId, QuicDirection)>,
+        key: &paccel::engine::FlowKey,
+        packet: &[u8],
+        now: u64,
+    ) {
+        let Ok(header) = paccel::layer::application::quic::parse_quic_long_header(packet) else {
+            return;
+        };
+        if !header.is_initial {
+            return;
+        }
+        let Ok(decrypted) = decrypt_initial_packet(&header, packet) else {
+            return;
+        };
+
+        for frame in iter_quic_frames(&decrypted.payload) {
+            // A frame that does not decode poisons the iterator, so the rest
+            // of the packet is simply not there to read.
+            let Ok(QuicFrame::Crypto { offset, data }) = frame else {
+                continue;
+            };
+            // Keyed on the connection wherever there is one: a client that
+            // moves mid-handshake keeps a single stream instead of starting a
+            // second at its new address. A connection that named itself with a
+            // zero-length SCID is not tracked, and falls back to its addresses,
+            // which is what it had before this existed.
+            let delivered = match scope {
+                Some((id, direction)) => {
+                    self.crypto
+                        .offer_for_connection_at(
+                            id,
+                            direction,
+                            CRYPTO_STREAM_ID,
+                            offset,
+                            false,
+                            data,
+                            now,
+                        )
+                        .data
+                }
+                None => self.crypto.offer_at(
+                    key.src_ip,
+                    key.src_port,
+                    key.dst_ip,
+                    key.dst_port,
+                    CRYPTO_STREAM_ID,
+                    offset,
+                    false,
+                    data,
+                    now,
+                ),
+            };
+            if delivered.is_empty() {
+                continue;
+            }
+            let held = self.handshakes.entry(handshake).or_default();
+            if held.bytes.len() + delivered.len() > MAX_HANDSHAKE_BYTES {
+                continue;
+            }
+            held.bytes.extend_from_slice(&delivered);
+        }
+    }
+}
+
+#[cfg(feature = "quic-l7")]
+#[cfg(feature = "quic-l7")]
+/// Wraps handshake bytes in the TLS record header QUIC leaves out.
+///
+/// RFC 9001 section 4: a QUIC CRYPTO stream carries handshake messages with no
+/// record layer, and the ClientHello parser expects one.
+fn wrap_as_tls_record(handshake: &[u8]) -> Option<Vec<u8>> {
+    let length = u16::try_from(handshake.len()).ok()?;
+    let mut record = Vec::with_capacity(5 + handshake.len());
+    record.extend_from_slice(&[0x16, 0x03, 0x03]);
+    record.extend_from_slice(&length.to_be_bytes());
+    record.extend_from_slice(handshake);
+    Some(record)
+}
+
+#[cfg(feature = "quic-l7")]
+/// The largest handshake worth holding, in bytes.
+///
+/// A ClientHello runs to a few kilobytes; one that does not fit this is not a
+/// handshake anybody needs read, and holding more per connection would let a
+/// sender that never finishes one cost memory without limit.
+const MAX_HANDSHAKE_BYTES: usize = 16_384;
+
+#[cfg(feature = "quic-l7")]
+/// QUIC's CRYPTO frames carry no stream id, so one is invented for them. It is
+/// never mixed with a real STREAM id: the two are offered under separate keys.
+const CRYPTO_STREAM_ID: u64 = 0;
+
+#[cfg(feature = "quic-l7")]
+/// What the handshake buffer is filed under.
+///
+/// The connection where one is known, so a migration mid-handshake does not
+/// split it; the address pair otherwise, which is all an untracked connection
+/// has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum HandshakeKey {
+    Connection(QuicConnectionId),
+    Tuple(std::net::IpAddr, u16, std::net::IpAddr, u16),
+}
+
+#[cfg(feature = "quic-l7")]
+impl HandshakeKey {
+    fn of(key: &paccel::engine::FlowKey, scope: Option<(QuicConnectionId, QuicDirection)>) -> Self {
+        match scope {
+            Some((id, _)) => HandshakeKey::Connection(id),
+            None => HandshakeKey::Tuple(key.src_ip, key.src_port, key.dst_ip, key.dst_port),
+        }
+    }
+}
+
+#[cfg(feature = "quic-l7")]
+/// What has been reassembled of one connection's handshake.
+#[derive(Debug, Default)]
+struct Handshake {
+    bytes: Vec<u8>,
+    /// Set once a ClientHello has been read out, so the work is not repeated
+    /// for every later packet of the connection.
+    read: bool,
 }
 
 /// The addresses a packet travelled between, as paccel names them.

@@ -149,6 +149,21 @@ pub fn observe(
         .quic
         .resolve(&mut observation, &state.parsed, packet.data);
 
+    // A QUIC handshake names its server the same way a TLS one does, and is the
+    // only thing an otherwise opaque connection says about itself. Read only
+    // when session classification was asked for, and only where the crypto to
+    // read it was compiled in.
+    #[cfg(feature = "quic-l7")]
+    if state.sessions.is_some() && observation.l7.is_none() {
+        observation.l7 = state
+            .quic
+            .client_hello(&state.parsed, packet.data, now)
+            .map(|name| FlowL7 {
+                protocol: "quic",
+                name: Some(name),
+            });
+    }
+
     Ok(observation)
 }
 

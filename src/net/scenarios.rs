@@ -448,6 +448,55 @@ mod tests {
     const FIN_ACK: u8 = 0x11;
     const RST: u8 = 0x04;
 
+    /// A self-generated QUIC v1 client Initial, DCID a1b2c3d4e5f60718, SNI
+    /// `paccel-test.example`. Copied from paccel, which generated and verified
+    /// it with an independent implementation. No captured traffic.
+    #[cfg(feature = "quic-l7")]
+    const SYNTHETIC_INITIAL_HEX: &str = concat!(
+        "c10000000108a1b2c3d4e5f607180000449e465f93f6fe01a10fdd248ff58a7eb9888d4f",
+        "9eb99c5027cdc4112ba6246e9431ea279954012891844e8770659dcbdf7bdb19e184e270",
+        "df75071e28d383e82af141edac3027b2dc32c34897e418dd8e7a844b89eb4bc5414e0125",
+        "caedd84ca68a18ec32c85a73d507f10e5d8d294f105bc9cf8cad065e721a9ccc9a9882b8",
+        "b3fc0b1647e28bb4d44e963a1b6280065cef74a0088e2eea2488b1f3edf892267a8c020f",
+        "fd1ea49d39e33bedf2b8c122405e9345e3141a774bc23ed826099fde2f0bc70178524cc3",
+        "03114e60a651df4c080280b64f3d4aea5899d1d2064183bc489c9479c1aab3c29ff83eea",
+        "9afb2fc0c087fc50b06c9d32c63ff28e5d2c77de46c7eb0ae7c97cc02587a74c45f80484",
+        "2734168ebae1ae96d51a39653916188fdcb91bf2dde6fc32557ea567e25674b4c817344b",
+        "7ed517dc8b68c31b5011dd1899d69f9e1e85bc72dabfabb6b74bd44196fc4705c070681e",
+        "d55bbe81f909768c3c502492f7c89fd4653acbf2a5cd62a2594ea3dd195751b232eae00e",
+        "ad908e84b367cc58c3dfe61fac0bc68026f7747099613aa4ccfc2ef3e2cb5b6f8aca2eb9",
+        "f6ef32304374ff42b35241f5c60139465f9e1d0ab2acc4df53814db1005bb35394a1e783",
+        "1ccb87b91f6d6613be7afb7b76a46dcb2c7dd7fb593e512ced621555268bbe7ad716186f",
+        "5ba31fc04d985de491322d00319d104ebf9b361a2c463dfdc08ca4e902719c866b2b8016",
+        "041d3c97378163d053b19dfb6b32b690d21aaed0c37f83639f1e3c6f70ec8c2c8f439097",
+        "dc1649084a64b79f318ee720bc408cf6482bd2cd93b55aea025ded6c24a806b6106f0e74",
+        "6e1b1a47ac6b3194f80e95ab930cc763814168aa005068cce58a19066e3d37d0d060c032",
+        "aef787227636ca96a3c88575c2293c0912b418b62dd4016e9ab104c04d8dd087f0d590c5",
+        "24d13ecafafadeb673e7d31eae3ac9e2c5a4e6345bcbde0d524e3d040598b0a0b9832ff3",
+        "3f2092cd7d4677603220c1e8c15afae4bcac6bcc4ab7f1eecf5557ae635fdfa9b9a06a08",
+        "1fddf304903efca5d889a6c49fe0cc3077e292838d6a5dad1cf45f5af9bf72af8f688e4d",
+        "d2eb3b755bdb63b500785a7f2b55edbc960761f802508251ed0a8d2e11ec180a47d9bbcf",
+        "b35ed732cf060c5a1d3df14e72b64d0b5b57a8c3862c9bba83fbfa72dcdc4c9727fd8a60",
+        "4fd96109a06de061b143c870c87f44e27a5fdb29f5eaf1cd0b9e359548c3ade91656804c",
+        "a43b113bf78f4df85cd7f8106d6d62a4abaeef6eeacb2e5ee0b0b154056f740a600f8ea1",
+        "0bfcd219f15d2219768b8465253f1c1cea24e4908b4649b1f6c440b71f179d8e158f1037",
+        "c9c81fae15e9d214de718c1c6761fca06182fa86a9e1ec1d62759ed3862bffe18d18734d",
+        "93b1982f6595f88dd45cc166f62217ec3b181ae21bb9df5ea00dd3324accfbbdf9b3395d",
+        "fe4f672ead42b93b2d7fbadf97cf50e7255cef2d8e3b7bc10d46351847bf8850fda0e3f7",
+        "b5fc45d6adbc8597ff95764c36c79eb9a76c4a45c1337403d1231e55c053d47629e218b2",
+        "4c5482200e630b648d5db976b3776522e57106d0031e6be9086eafca558e89175b796cd6",
+        "39af14a3a10b0b6c9fe8b387a6077dde8b6c351576de4f0ac373958d9d5b186680ead9bb",
+        "4e765ed21c469e7eeed9ae35",
+    );
+
+    #[cfg(feature = "quic-l7")]
+    fn from_hex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+            .collect()
+    }
+
     /// The smallest TLS ClientHello that carries a server name.
     fn client_hello(server_name: &str) -> Vec<u8> {
         let name = server_name.as_bytes();
@@ -628,6 +677,29 @@ mod tests {
         assert_eq!(l7.protocol, "http");
         assert_eq!(l7.name.as_deref(), Some("example.org"));
         assert_eq!(l7.to_string(), "http:example.org");
+    }
+
+    /// A QUIC handshake names its server too, read out of the Initial packet.
+    ///
+    /// A client Initial is protected with keys derived from its own connection
+    /// ID, so this needs no secrets. The packet is the synthetic conformance
+    /// vector paccel tests its own decryption with, carrying SNI
+    /// `paccel-test.example`.
+    #[cfg(feature = "quic-l7")]
+    #[test]
+    fn a_quic_handshake_names_its_server() {
+        let initial = from_hex(SYNTHETIC_INITIAL_HEX);
+        let mut capture = Capture::new(600_000);
+        capture
+            .classifying_sessions()
+            .push(&v4(17, 64, A, B, &udp(50_000, 443, &initial)));
+
+        let flows = capture.finish();
+        let flow = flows.only_flow(|f| f.key.protocol == 17);
+        let l7 = flow.l7.as_ref().expect("the handshake should be readable");
+
+        assert_eq!(l7.protocol, "quic");
+        assert_eq!(l7.name.as_deref(), Some("paccel-test.example"));
     }
 
     /// Nothing is classified unless it was asked for.

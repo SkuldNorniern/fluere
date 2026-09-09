@@ -44,6 +44,11 @@ default = ["plugins"]
 # built at all; the plugin manager stays, and reports that no runtime can load
 # a configured plugin.
 plugins = ["fluere_plugin/lua"]
+# Read the server name out of a QUIC handshake. Off, the four crypto crates
+# paccel needs for it are not built. A client Initial is protected with keys
+# derived from its own connection ID, so this reads no secrets - it is still a
+# deliberate opt-in because of what it pulls in.
+quic-l7 = ["paccel/quic-decrypt"]
 
 [workspace]
 members = [
