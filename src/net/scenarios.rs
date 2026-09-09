@@ -845,6 +845,42 @@ mod tests {
         );
     }
 
+    /// Two tenants on different VLANs inside one VXLAN segment are two flows.
+    ///
+    /// A VXLAN carries a whole Ethernet frame, tags included, so the VNI is not
+    /// the only thing separating what is inside it.
+    #[test]
+    fn inner_vlans_inside_one_vxlan_are_different_flows() {
+        let mut capture = Capture::new(600_000);
+        let payload = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_001, 9_000, SYN),
+        );
+
+        for tag in [100u16, 200] {
+            let inner_frame = vlan_ethernet(&[tag], 0x0800, &payload);
+            capture.push(&v4(
+                17,
+                64,
+                A,
+                B,
+                &udp(4_789, 4_789, &vxlan(42, &inner_frame)),
+            ));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 6),
+            2,
+            "the same VNI carrying two VLANs is two conversations"
+        );
+    }
+
     /// A header inside a payload nothing could read is not the carrier.
     ///
     /// When the innermost payload does not decode, the flow is keyed on the

@@ -14,7 +14,12 @@ pub struct VlanTags {
     tags: [u16; MAX_TAGS],
 }
 
-const MAX_TAGS: usize = 2;
+/// Tags a frame may carry, counting every Ethernet header in the stack.
+///
+/// Two covers QinQ on the wire. A tunnel that carries a whole Ethernet frame -
+/// VXLAN, Geneve - can put a tagged frame inside a tagged one, and truncating
+/// there would merge two tenants that share everything but a tag.
+const MAX_TAGS: usize = 4;
 
 impl VlanTags {
     /// Take the outermost tags from a frame's stack.

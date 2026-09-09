@@ -158,15 +158,23 @@ fn raw_fallback_tuple(parsed: &ParsedPacket, packet_data: &[u8]) -> Result<Ident
 
 /// The VLAN segment a packet arrived on.
 ///
-/// Taken from the outermost Ethernet header: an inner frame inside a tunnel is
-/// already separated by the tunnel itself.
+/// Every Ethernet header in the stack, outermost first.
+///
+/// Not just the outer one. A tunnel that carries a whole Ethernet frame carries
+/// its tags too, so two tenants on different VLANs inside one VXLAN segment
+/// differ by nothing else - reading only the outer tags counted them as one
+/// conversation.
 fn vlan_of(parsed: &ParsedPacket) -> VlanTags {
-    parsed
-        .ethernet
-        .as_ref()
-        .map_or_else(VlanTags::default, |ethernet| {
-            VlanTags::from_stack(&ethernet.vlan_tags)
-        })
+    let mut stack = Vec::new();
+    let mut level = Some(parsed);
+    while let Some(here) = level {
+        if let Some(ethernet) = here.ethernet.as_ref() {
+            stack.extend_from_slice(&ethernet.vlan_tags);
+        }
+        level = here.inner.as_deref();
+    }
+
+    VlanTags::from_stack(&stack)
 }
 
 /// The encapsulation a packet arrived inside, if any.
