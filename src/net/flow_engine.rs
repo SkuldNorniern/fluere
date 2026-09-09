@@ -216,7 +216,14 @@ impl FlowEngine {
     pub fn with_resolution(flow_timeout: u64, resolution: TimeResolution) -> Self {
         // Milliseconds in, nanoseconds inside: the record's timestamps are
         // nanoseconds, so the deadline arithmetic is too.
-        let timeout = (flow_timeout > 0).then_some(flow_timeout * 1_000_000);
+        //
+        // Saturating, because the multiply overflows above about 18,446,744
+        // seconds and the CLI takes any `u64`. Wrapping turned a timeout far
+        // longer than any capture into a fraction of a millisecond, so every
+        // flow expired at once and the output was quietly wrong; in a debug
+        // build it panicked instead. Saturating gives what such a value asks
+        // for, which is a timeout no capture will reach.
+        let timeout = (flow_timeout > 0).then_some(flow_timeout.saturating_mul(1_000_000));
 
         Self {
             active: AHashMap::new(),
@@ -685,6 +692,28 @@ mod tests {
         assert_eq!(
             expired[0].record.time.end_reason,
             Some(EndReason::IdleTimeout)
+        );
+    }
+
+    /// A timeout too large to convert must not come out small.
+    ///
+    /// Milliseconds to nanoseconds overflows a `u64` above roughly 213 days,
+    /// and the CLI accepts any number. Wrapping produced a sub-millisecond
+    /// timeout, which is the opposite of what was asked for and splits every
+    /// flow that has a gap in it.
+    #[test]
+    fn a_timeout_too_large_to_convert_does_not_wrap_to_a_small_one() {
+        // Chosen so the millisecond-to-nanosecond multiply wraps to 448384.
+        let engine = FlowEngine::new(18_446_744_073_710);
+
+        assert_eq!(
+            engine.timeout,
+            Some(u64::MAX),
+            "a timeout past what fits is a timeout nothing reaches"
+        );
+        assert!(
+            engine.lateness <= u64::MAX / 2,
+            "the lateness allowance stays derived from it"
         );
     }
 
