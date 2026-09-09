@@ -176,6 +176,44 @@ fn vlan_of(parsed: &ParsedPacket) -> VlanTags {
 /// no inner packet and no addresses of their own, but they still separate
 /// traffic that would otherwise collide.
 fn encapsulation_of(parsed: &ParsedPacket) -> Option<Encapsulation> {
+    // The innermost tunnel, not the outermost. A flow record describes the
+    // innermost traffic, so the tunnel that separates one flow from another is
+    // the one directly carrying it. Reading only the outer header meant two
+    // tenants tunnelling separately inside one carrier - same private
+    // addresses, different inner tunnels - were counted as one conversation.
+    //
+    // A tunnel counts as the carrier only when something was decoded inside
+    // it. The innermost header on a packet whose payload could not be read is
+    // part of what the flow *is*, not what carried it: such a flow is keyed on
+    // the outer addresses, and naming a header from inside its own payload as
+    // its carrier would describe the wrong thing.
+    let mut level = parsed;
+    let mut carrier = None;
+    loop {
+        if level.inner.is_some()
+            && let Some(tunnel) = tunnel_at(level)
+        {
+            carrier = Some((level, tunnel));
+        }
+        match level.inner.as_deref() {
+            Some(inner) => level = inner,
+            None => break,
+        }
+    }
+    let carrier = carrier.or_else(|| tunnel_at(parsed).map(|tunnel| (parsed, tunnel)));
+
+    let (level, (kind, id, over_ip)) = carrier?;
+    Some(Encapsulation {
+        kind,
+        // Only an IP-based tunnel has endpoints of its own. For the others the
+        // addresses on the packet are the carried traffic, not the carrier.
+        outer: over_ip.then(|| outer_addresses(level)).flatten(),
+        id,
+    })
+}
+
+/// The tunnel header at one level of the stack, if it has one.
+fn tunnel_at(parsed: &ParsedPacket) -> Option<(EncapKind, Option<u32>, bool)> {
     let (kind, id, over_ip) = if let Some(vxlan) = parsed.vxlan.as_ref() {
         (EncapKind::Vxlan, Some(vxlan.vni), true)
     } else if let Some(geneve) = parsed.geneve.as_ref() {
@@ -199,13 +237,7 @@ fn encapsulation_of(parsed: &ParsedPacket) -> Option<Encapsulation> {
         return None;
     };
 
-    Some(Encapsulation {
-        kind,
-        // Only an IP-based tunnel has endpoints of its own. For the others the
-        // addresses on the packet are the carried traffic, not the carrier.
-        outer: over_ip.then(|| outer_addresses(parsed)).flatten(),
-        id,
-    })
+    Some((kind, id, over_ip))
 }
 
 /// Addresses of the outermost IP header, which belong to the tunnel endpoints.

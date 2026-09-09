@@ -812,6 +812,64 @@ mod tests {
         );
     }
 
+    /// Two tunnels that differ only deeper in the stack are still two tunnels.
+    ///
+    /// Nested encapsulation is what a carrier hands a customer who tunnels
+    /// again inside it. If only the outermost header separates traffic, two
+    /// tenants running the same private addresses inside different inner
+    /// tunnels are counted as one conversation.
+    #[test]
+    fn nested_tunnels_with_different_inner_keys_are_different_flows() {
+        let mut capture = Capture::new(600_000);
+        let payload = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_001, 9_000, SYN),
+        );
+
+        for inner_key in [100u32, 200] {
+            let inner_tunnel = [gre(0x0800, Some(inner_key)), payload.clone()].concat();
+            let carried = ipv4(47, 64, [203, 0, 113, 5], [203, 0, 113, 6], &inner_tunnel);
+            capture.push(&v4(47, 64, A, B, &[gre(0x0800, Some(1)), carried].concat()));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 6),
+            2,
+            "different inner tunnels are different flows"
+        );
+    }
+
+    /// A header inside a payload nothing could read is not the carrier.
+    ///
+    /// When the innermost payload does not decode, the flow is keyed on the
+    /// outer addresses - it *is* the tunnel packet. Naming a header found
+    /// inside its own undecoded payload as what carried it describes the wrong
+    /// thing, and loses the tunnel endpoints that are the useful part.
+    #[test]
+    fn a_tunnel_carrying_nothing_readable_is_still_named_by_its_own_header() {
+        let mut capture = Capture::new(600_000);
+        // GRE carrying MPLS, whose payload is not anything decodable.
+        let carried = [mpls(1_000), vec![0xAB; 24]].concat();
+        capture.push(&v4(47, 64, A, B, &[gre(0x8847, None), carried].concat()));
+
+        let flows = capture.finish();
+        let flow = flows.only_flow(|f| f.key.protocol == 47);
+        let encapsulation = flow.key.encapsulation.expect("a tunnel");
+
+        assert_eq!(encapsulation.kind, fluereflow::EncapKind::Gre);
+        assert_eq!(
+            encapsulation.outer,
+            Some((IpAddr::V4(Ipv4Addr::from(A)), IpAddr::V4(Ipv4Addr::from(B)))),
+            "the endpoints are what makes a tunnel worth naming"
+        );
+    }
+
     /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
     ///
     /// Naming the flow it refers to needs paccel's decode of the quote: the
