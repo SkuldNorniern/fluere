@@ -812,6 +812,34 @@ mod tests {
         );
     }
 
+    /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
+    ///
+    /// Naming the flow it refers to needs paccel's decode of the quote: the
+    /// offsets on an inner packet are relative to the tunnel payload, which is
+    /// a slice fluere never holds. paccel 0.4.0 fills that in only for an
+    /// application-depth parse, which costs far more than it is worth here, so
+    /// a tunnelled error goes unnamed until that reaches a release. What must
+    /// hold either way is that nothing is misread: the error counts on its own
+    /// flow and never claims a quote belonging to the outer packet.
+    #[test]
+    fn a_tunnelled_icmp_error_is_counted_on_its_own_flow() {
+        let mut capture = Capture::new(600_000);
+        let quoted = ipv4(6, 64, A, B, &tcp(40_001, 443, SYN));
+        let inner = ipv4(1, 64, ROUTER, A, &icmp_error(3, 1, &quoted));
+        capture.push(&v4(47, 64, A, B, &[gre(0x0800, None), inner].concat()));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        let error = flows.only_flow(|f| f.key.protocol == 1);
+        assert_eq!(error.record.packets(), 1);
+        assert_eq!(
+            error.key.source,
+            IpAddr::V4(Ipv4Addr::from(ROUTER)),
+            "the innermost error, not the tunnel it arrived in"
+        );
+    }
+
     /// An echo request's eight bytes are an identifier and a sequence number,
     /// not a quoted datagram, and whatever follows them is the sender's own
     /// payload. Reading it as a datagram invents a flow that does not exist.

@@ -295,12 +295,33 @@ fn quoted_datagram(
     packet_data: &[u8],
     scratch: &mut ParsedPacket,
 ) -> Option<QuotedFlow> {
+    // The error that matters is the innermost one, because that is the flow the
+    // packet counts towards.
+    let inner = innermost(parsed);
+
+    // paccel's own decode where it has one. It is the only way to reach a
+    // tunnelled error: the offsets on an inner packet are relative to the
+    // tunnel payload, which is a slice this does not have.
+    if let Some(quoted) = inner.icmp_quoted.as_deref() {
+        return quoted_flow_of(quoted);
+    }
+
+    // Otherwise decode it here, which works for an error that is not tunnelled
+    // - where the innermost packet is the frame itself and the offsets index
+    // the buffer directly.
+    if inner.transport_segment_offset != parsed.transport_segment_offset {
+        return None;
+    }
     let quoted = quoted_bytes(parsed, packet_data)?;
     // 101 is LINKTYPE_RAW: an IP datagram with no link header, which is exactly
     // what an error quotes. It covers both families; the version nibble picks.
     parse_frame_into(quoted, 101, scratch).ok()?;
+    quoted_flow_of(scratch)
+}
 
-    let key = scratch.flow_key()?;
+/// Names the flow an already-decoded quoted datagram refers to.
+fn quoted_flow_of(quoted: &ParsedPacket) -> Option<QuotedFlow> {
+    let key = quoted.flow_key()?;
     let ports = (key.src_port, key.dst_port);
 
     Some(QuotedFlow {
@@ -309,7 +330,7 @@ fn quoted_datagram(
         // Whether the quoted protocol has ports at all is the same question the
         // flow key asks, so it is answered the same way rather than by testing
         // the numbers: port 0 is a real port.
-        ports: super::endpoints_of(scratch, key.protocol, ports).ports(),
+        ports: super::endpoints_of(quoted, key.protocol, ports).ports(),
         protocol: key.protocol,
     })
 }
