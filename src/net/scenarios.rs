@@ -254,6 +254,7 @@ pub struct Capture {
     offered_packets: usize,
     offered_octets: usize,
     skipped: usize,
+    use_mac: bool,
 }
 
 impl Capture {
@@ -267,7 +268,14 @@ impl Capture {
             offered_packets: 0,
             offered_octets: 0,
             skipped: 0,
+            use_mac: false,
         }
+    }
+
+    /// Keep MAC addresses in the flow key, as `--useMAC` does.
+    pub fn using_mac(&mut self) -> &mut Self {
+        self.use_mac = true;
+        self
     }
 
     /// Offer one frame, one millisecond after the last.
@@ -301,7 +309,7 @@ impl Capture {
 
         match observe(
             Packet::new(&header, frame),
-            false,
+            self.use_mac,
             1,
             &mut self.parser_state,
         ) {
@@ -842,6 +850,45 @@ mod tests {
             flows.count(|f| f.key.protocol == 6),
             2,
             "different inner tunnels are different flows"
+        );
+    }
+
+    /// With `--useMAC`, the addresses that separate tunnelled traffic are the
+    /// ones on the frame inside the tunnel.
+    ///
+    /// The outer header carries the underlay's addresses, which every tunnelled
+    /// flow on the link shares, so keying on those adds nothing and hides the
+    /// tenant addresses that do differ.
+    #[test]
+    fn inner_macs_inside_one_vxlan_are_different_flows() {
+        let mut capture = Capture::new(600_000);
+        let payload = ipv4(
+            6,
+            32,
+            [10, 1, 0, 1],
+            [10, 2, 0, 2],
+            &tcp(41_001, 9_000, SYN),
+        );
+
+        for host in [0x11u8, 0x22] {
+            let mut inner_frame = ethernet(0x0800, &payload);
+            inner_frame[6..12].copy_from_slice(&[host; 6]);
+            capture.using_mac().push(&v4(
+                17,
+                64,
+                A,
+                B,
+                &udp(4_789, 4_789, &vxlan(42, &inner_frame)),
+            ));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 6),
+            2,
+            "two tenant hosts inside one segment are two conversations"
         );
     }
 

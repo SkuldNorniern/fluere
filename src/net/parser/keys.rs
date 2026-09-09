@@ -69,8 +69,23 @@ pub(super) fn keys_from_parsed(
     ))
 }
 
+/// The link addresses of the frame carrying the flow, innermost first.
+///
+/// A tunnel that carries a whole Ethernet frame carries its addresses too. The
+/// outer ones belong to the underlay and are shared by every tunnelled flow on
+/// the link, so keying on them separates nothing while hiding the tenant
+/// addresses that do differ.
 fn mac_addresses(parsed: &ParsedPacket) -> (MacAddress, MacAddress) {
-    parsed.ethernet.as_ref().map_or_else(
+    let mut framing = parsed.ethernet.as_ref();
+    let mut level = parsed;
+    while let Some(inner) = level.inner.as_deref() {
+        level = inner;
+        if let Some(ethernet) = level.ethernet.as_ref() {
+            framing = Some(ethernet);
+        }
+    }
+
+    framing.map_or_else(
         || {
             let empty = MacAddress::new([0; 6]);
             (empty, empty)
