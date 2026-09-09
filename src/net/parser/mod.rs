@@ -92,6 +92,56 @@ fn parse_frame_into(data: &[u8], linktype: u16, out: &mut ParsedPacket) -> Resul
         ..Default::default()
     };
 
-    BuiltinPacketParser::parse_into(data, config, Some(linktype), out)
-        .map_err(|_| ParseError::InvalidPacket)
+    // paccel refuses a linktype it does not know rather than guessing, which
+    // is right for a parser but wrong for a capture tool: libpcap reports
+    // whatever the interface says, and a link paccel has no case for is still
+    // worth a look. Sniffing is the fallback, not the first choice.
+    if BuiltinPacketParser::parse_into(data, config, Some(linktype), out).is_ok() {
+        return Ok(());
+    }
+    BuiltinPacketParser::parse_into(data, config, None, out).map_err(|_| ParseError::InvalidPacket)
+}
+
+#[cfg(test)]
+mod linktype_tests {
+    use super::parse_frame_into;
+    use paccel::engine::ParsedPacket;
+
+    /// An ethernet frame carrying IPv4/UDP.
+    fn frame() -> Vec<u8> {
+        let mut frame = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x08, 0x00];
+        frame.extend([0x45, 0x00, 0x00, 0x1c, 0x00, 0x01, 0x00, 0x00, 64, 17, 0, 0]);
+        frame.extend([10, 0, 0, 1, 10, 0, 0, 2]);
+        frame.extend([0x04, 0xd2, 0x00, 0x35, 0x00, 0x08, 0x00, 0x00]);
+        frame
+    }
+
+    /// paccel 0.4 refuses a linktype it has no case for rather than guessing.
+    /// libpcap reports whatever the interface says, so a capture on such a
+    /// link would otherwise yield no flows at all.
+    #[test]
+    fn an_unknown_linktype_still_parses() {
+        let mut parsed = ParsedPacket::default();
+        // 9 is LINKTYPE_PPP, which paccel has no case for.
+        assert!(parse_frame_into(&frame(), 9, &mut parsed).is_ok());
+        assert!(parsed.ipv4.is_some(), "the fallback sniffed the frame");
+    }
+
+    #[test]
+    fn a_known_linktype_is_used_as_given() {
+        let mut parsed = ParsedPacket::default();
+        assert!(parse_frame_into(&frame(), 1, &mut parsed).is_ok());
+        assert_eq!(
+            parsed.ipv4.expect("addresses").source.to_string(),
+            "10.0.0.1"
+        );
+    }
+
+    /// The fallback is a fallback: bytes that are not a frame under either
+    /// reading are still refused.
+    #[test]
+    fn nonsense_is_still_refused() {
+        let mut parsed = ParsedPacket::default();
+        assert!(parse_frame_into(&[0, 1, 2], 9, &mut parsed).is_err());
+    }
 }
