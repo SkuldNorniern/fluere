@@ -851,6 +851,90 @@ mod tests {
         }
     }
 
+    /// A second first-fragment claiming a datagram must not redirect the rest
+    /// of it.
+    ///
+    /// A genuine retransmission carries the same ports, so keeping what was
+    /// recorded first costs nothing. Taking the newest instead let one forged
+    /// packet send a datagram's later fragments to a flow nobody sent.
+    #[test]
+    fn a_forged_first_fragment_does_not_redirect_a_datagram() {
+        let mut capture = Capture::new(600_000);
+
+        let genuine = ipv4_with(
+            17,
+            64,
+            A,
+            B,
+            Some((42, 0, true)),
+            &udp(50_003, 9_999, &[b'F'; 400]),
+        );
+        // Same identification, other ports, arriving before the rest.
+        let forged = ipv4_with(
+            17,
+            64,
+            A,
+            B,
+            Some((42, 0, true)),
+            &udp(1_111, 2_222, &[b'X'; 400]),
+        );
+        let rest = ipv4_with(17, 64, A, B, Some((42, 51, false)), &[b'F'; 200]);
+
+        capture
+            .push(&ethernet(0x0800, &genuine))
+            .push(&ethernet(0x0800, &forged))
+            .push(&ethernet(0x0800, &rest));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        let real = flows.only(|f| f.key.endpoints.ports() == Some((50_003, 9_999)));
+        assert_eq!(
+            real.packets(),
+            2,
+            "the datagram keeps its own later fragment"
+        );
+    }
+
+    /// An IPv6 atomic fragment must not claim a real datagram's identification.
+    ///
+    /// RFC 6946: a fragment header with offset 0 and no More Fragments is a
+    /// whole packet that happens to carry the header. It is not part of any
+    /// datagram, so it must not overwrite what a genuine first fragment said
+    /// about where its later fragments are going.
+    #[test]
+    fn an_ipv6_atomic_fragment_does_not_hijack_a_datagram() {
+        const FRAGMENT_HEADER: u8 = 44;
+        let mut capture = Capture::new(600_000);
+
+        // A genuine datagram: first fragment carries the ports.
+        let mut first = ipv6_fragment(17, 7, 0, true);
+        first.extend_from_slice(&udp(5_000, 6_000, &[b'F'; 200]));
+
+        // An atomic fragment reusing the identification, with other ports.
+        let mut atomic = ipv6_fragment(17, 7, 0, false);
+        atomic.extend_from_slice(&udp(1_111, 2_222, &[b'X'; 8]));
+
+        // The rest of the genuine datagram.
+        let mut rest = ipv6_fragment(17, 7, 26, false);
+        rest.extend_from_slice(&[b'F'; 100]);
+
+        capture
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &first)))
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &atomic)))
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &rest)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        let real = flows.only(|f| f.key.endpoints.ports() == Some((5_000, 6_000)));
+        assert_eq!(
+            real.packets(),
+            2,
+            "the datagram's own two fragments, not one of them reattributed"
+        );
+    }
+
     /// Only the first fragment carries the ports; the rest must join it rather
     /// than opening a portless flow of their own.
     #[test]

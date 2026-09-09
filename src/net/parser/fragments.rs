@@ -102,7 +102,23 @@ impl FragmentTracker {
     }
 
     fn remember(&mut self, id: DatagramId, endpoints: Endpoints, now: u64) {
-        if self.datagrams.len() >= MAX_TRACKED && !self.datagrams.contains_key(&id) {
+        // A datagram keeps the endpoints its first first-fragment reported. A
+        // retransmission carries the same ones, so nothing legitimate is lost
+        // by refusing a later disagreement - and taking the newest let a forged
+        // fragment reusing the identification send the rest of somebody else's
+        // datagram to a flow that never existed.
+        //
+        // Only while the datagram is still in flight: an identification is 16
+        // bits in IPv4 and comes round often, so one that has gone quiet past
+        // `MAX_AGE` belongs to whatever claims it next.
+        if let Some(held) = self.datagrams.get_mut(&id)
+            && now.saturating_sub(held.last_seen) <= MAX_AGE
+        {
+            held.last_seen = held.last_seen.max(now);
+            return;
+        }
+
+        if self.datagrams.len() >= MAX_TRACKED {
             super::expiry::make_room(&mut self.datagrams, now, MAX_AGE, |entry| entry.last_seen);
         }
 
@@ -149,6 +165,19 @@ impl Fragment {
     /// extension header, which paccel reports separately.
     pub fn of(parsed: &paccel::engine::ParsedPacket) -> Option<Self> {
         if let Some(fragment) = parsed.ipv6_fragment.as_ref() {
+            // RFC 6946: offset zero with no More Fragments is an atomic
+            // fragment - a whole packet that happens to carry the header. A
+            // receiver processes it on its own, so treating it as part of a
+            // datagram would let one of them overwrite the endpoints a genuine
+            // first fragment recorded under the same identification, and send
+            // that datagram's later fragments to a flow nobody sent.
+            //
+            // The same rule as IPv4's below, which the fragment header made
+            // easy to miss because its presence looks like fragmentation.
+            if !fragment.more_fragments && fragment.offset == 0 {
+                return None;
+            }
+
             // The next header after the fragment header is the transport, and
             // `resolved_next_header` has already walked to it.
             let protocol = parsed
@@ -215,6 +244,38 @@ mod tests {
             source,
             destination,
         }
+    }
+
+    /// An identification comes round: IPv4's is 16 bits. A datagram that has
+    /// gone quiet past `MAX_AGE` must not hold the number against whatever
+    /// claims it next.
+    #[test]
+    fn a_stale_datagram_does_not_keep_its_identification() {
+        let mut tracker = FragmentTracker::new();
+        tracker.remember(id(42), ports(50_003, 9_999), 1_000);
+
+        let later = 1_000 + MAX_AGE + 1;
+        tracker.remember(id(42), ports(1_111, 2_222), later);
+
+        assert_eq!(
+            tracker.recall(&id(42), later),
+            Some(ports(1_111, 2_222)),
+            "the new datagram owns the identification now"
+        );
+    }
+
+    /// While it is still in flight, though, the first report stands.
+    #[test]
+    fn a_live_datagram_keeps_the_endpoints_it_reported_first() {
+        let mut tracker = FragmentTracker::new();
+        tracker.remember(id(42), ports(50_003, 9_999), 1_000);
+        tracker.remember(id(42), ports(1_111, 2_222), 2_000);
+
+        assert_eq!(
+            tracker.recall(&id(42), 3_000),
+            Some(ports(50_003, 9_999)),
+            "a second first-fragment does not redirect the datagram"
+        );
     }
 
     #[test]
