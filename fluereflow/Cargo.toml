@@ -1,6 +1,6 @@
 [package]
 name = "fluereflow"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Skuld Norniern <skuldnorniern@gmail.com>"]
 edition = "2021"
 description = "The FluereFlow record: a bidirectional network flow as a passive capture can observe it."
