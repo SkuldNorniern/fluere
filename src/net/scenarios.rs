@@ -1051,6 +1051,57 @@ mod tests {
         );
     }
 
+    /// The last ACK of a normal close belongs to the connection it closes.
+    ///
+    /// RFC 9293 sec 3.6: a full close is FIN, ACK, FIN, ACK. Ending the flow
+    /// the moment both FINs are seen leaves the final ACK to open a flow of its
+    /// own, understating the connection it belongs to.
+    #[test]
+    fn the_final_ack_of_a_close_belongs_to_the_connection() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, SYN)))
+            .push(&v4(6, 64, B, A, &tcp(443, 40_001, SYN_ACK)))
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, ACK)))
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, FIN_ACK)))
+            .push(&v4(6, 64, B, A, &tcp(443, 40_001, ACK)))
+            .push(&v4(6, 64, B, A, &tcp(443, 40_001, FIN_ACK)))
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, ACK)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 6),
+            1,
+            "one connection, closed once"
+        );
+        assert_eq!(flows.only(|f| f.key.protocol == 6).packets(), 7);
+    }
+
+    /// A SYN reusing a tuple that has just closed starts a new connection, and
+    /// must not be counted as the acknowledgement finishing the old one.
+    #[test]
+    fn a_syn_reusing_a_closed_tuple_starts_a_new_flow() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, SYN)))
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, FIN_ACK)))
+            .push(&v4(6, 64, B, A, &tcp(443, 40_001, FIN_ACK)))
+            .push(&v4(6, 64, A, B, &tcp(40_001, 443, SYN)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 6),
+            2,
+            "the close and the connection that reused the tuple"
+        );
+        let closed = flows.only(|f| f.record.time.end_reason == Some(fluereflow::EndReason::Fin));
+        assert_eq!(closed.packets(), 3, "the new SYN is not part of the close");
+    }
+
     /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
     ///
     /// Naming the flow it refers to needs paccel's decode of the quote: the

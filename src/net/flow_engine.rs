@@ -59,6 +59,11 @@ struct FlowState {
     /// classification on the same flow is a probe seeing the reply, not the
     /// flow turning into something else.
     l7: Option<SessionL7>,
+    /// Set once both halves have closed, holding the reason the flow will end
+    /// with. The flow stays open for one more packet: RFC 9293 sec 3.6 closes a
+    /// connection with FIN, ACK, FIN, ACK, so the last of those belongs to the
+    /// connection it closes rather than to a flow of its own.
+    closing: Option<EndReason>,
 }
 
 impl FlowState {
@@ -70,6 +75,7 @@ impl FlowState {
             scheduled,
             quoted: None,
             l7: None,
+            closing: None,
         }
     }
 
@@ -145,13 +151,22 @@ fn fold(
     // Nothing else to update: the record's own end time is the authoritative
     // deadline, and the sweep reads it directly, so a packet costs no expiry
     // bookkeeping.
+    // A reset aborts: nothing follows it that belongs here.
     if flags.rst {
-        Some(EndReason::Rst)
-    } else if state.both_halves_closed() {
-        Some(EndReason::Fin)
-    } else {
-        None
+        return Some(EndReason::Rst);
     }
+
+    // Both halves were already closed when this packet arrived, so this is the
+    // acknowledgement that finishes the close. It has been counted above, and
+    // the flow ends with it.
+    if let Some(pending) = state.closing {
+        return Some(pending);
+    }
+
+    if state.both_halves_closed() {
+        state.closing = Some(EndReason::Fin);
+    }
+    None
 }
 
 /// Open a flow for the first packet seen on it.
@@ -254,6 +269,17 @@ impl FlowEngine {
         // Copied out before the borrow below, which holds `self` mutably.
         let resolution = self.resolution;
 
+        // A SYN arriving on a flow that has already closed is a new connection
+        // reusing the tuple, not the acknowledgement that finishes the old one.
+        // The old flow ends here without this packet, and this packet goes on
+        // to open its successor below.
+        let reused = if flags.syn {
+            self.take_closed(&key)
+                .or_else(|| self.take_closed(&reverse))
+        } else {
+            None
+        };
+
         // One lookup for the case that repeats on every packet: traffic on a
         // flow already keyed the way this packet is. The key is 112 bytes and
         // hashing it is squarely on the hot path, so looking it up and then
@@ -285,6 +311,10 @@ impl FlowEngine {
             *opened = true;
             (key, reason)
         };
+
+        if let Some(finished) = reused {
+            return Some(finished);
+        }
 
         let reason = reason?;
         self.active.remove(&flow_key).map(|mut state| {
@@ -376,7 +406,10 @@ impl FlowEngine {
                 if deadline <= current_time {
                     if let Some(mut state) = self.active.remove(&key) {
                         trace!("flow ended: {:?}", EndReason::IdleTimeout);
-                        state.record.close(EndReason::IdleTimeout);
+                        // A flow that closed but never saw its final
+                        // acknowledgement still ended in a close.
+                        let reason = state.closing.unwrap_or(EndReason::IdleTimeout);
+                        state.record.close(reason);
                         expired.push(
                             Flow::new(key, state.record)
                                 .quoting(state.quoted)
@@ -405,7 +438,9 @@ impl FlowEngine {
             .drain()
             .map(|(key, mut state)| {
                 trace!("flow ended: {:?}", EndReason::CaptureEnd);
-                state.record.close(EndReason::CaptureEnd);
+                state
+                    .record
+                    .close(state.closing.unwrap_or(EndReason::CaptureEnd));
                 Flow::new(key, state.record)
                     .quoting(state.quoted)
                     .carrying(state.l7)
@@ -442,6 +477,21 @@ impl FlowEngine {
     /// opened it. A deadline at the end of the range means the flow leaves
     /// through termination or a drain instead, which is what a time that far
     /// ahead deserves.
+    /// Takes a flow that has closed and is only waiting for its final
+    /// acknowledgement, so a new connection can have the tuple.
+    fn take_closed(&mut self, key: &Key) -> Option<(Flow, EndReason)> {
+        let closing = self.active.get(key).and_then(|state| state.closing)?;
+        let mut state = self.active.remove(key)?;
+        state.record.close(closing);
+
+        Some((
+            Flow::new(*key, state.record)
+                .quoting(state.quoted)
+                .carrying(state.l7),
+            closing,
+        ))
+    }
+
     fn deadline_from(&self, packet_time: u64) -> u64 {
         packet_time.saturating_add(self.timeout.unwrap_or(0))
     }
@@ -469,6 +519,7 @@ mod tests {
     const SYN: u8 = 0x02;
     const FIN: u8 = 0x01;
     const RST: u8 = 0x04;
+    const ACK: u8 = 0x10;
 
     const A: [u8; 4] = [192, 0, 2, 1];
     const B: [u8; 4] = [198, 51, 100, 2];
@@ -648,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn a_flow_ends_once_both_directions_have_sent_a_fin() {
+    fn a_flow_ends_when_its_close_is_acknowledged() {
         let mut engine = FlowEngine::new(10);
         accept_at(&mut engine, &tcp_frame(true, SYN), 1);
 
@@ -659,13 +710,37 @@ mod tests {
             "a half-close must not end the flow"
         );
 
-        let outcome = accept_at(&mut engine, &tcp_frame(false, FIN), 3);
+        assert!(
+            accept_at(&mut engine, &tcp_frame(false, FIN), 3)
+                .completed
+                .is_empty(),
+            "RFC 9293 sec 3.6 closes with FIN, ACK, FIN, ACK: the last \
+             acknowledgement is still to come and belongs to this flow"
+        );
+
+        let outcome = accept_at(&mut engine, &tcp_frame(true, ACK), 4);
         assert_eq!(outcome.completed.len(), 1);
         assert_eq!(
             outcome.completed[0].record.time.end_reason,
             Some(EndReason::Fin)
         );
+        assert_eq!(outcome.completed[0].record.packets(), 4);
         assert_eq!(engine.active_count(), 0);
+    }
+
+    /// A close whose final acknowledgement never arrives still ended in a
+    /// close, not in going quiet.
+    #[test]
+    fn a_close_with_no_final_ack_still_reports_a_fin() {
+        let mut engine = FlowEngine::new(10);
+        accept_at(&mut engine, &tcp_frame(true, SYN), 1);
+        accept_at(&mut engine, &tcp_frame(true, FIN), 2);
+        accept_at(&mut engine, &tcp_frame(false, FIN), 3);
+
+        let completed = engine.drain();
+
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].record.time.end_reason, Some(EndReason::Fin));
     }
 
     #[test]
@@ -736,9 +811,11 @@ mod tests {
         accept_at(&mut engine, &udp_frame(), 1_000);
         accept_at(&mut engine, &tcp_frame(true, SYN), 2_000);
         accept_at(&mut engine, &tcp_frame(true, FIN), 3_000);
+        accept_at(&mut engine, &tcp_frame(false, FIN), 4_000);
 
-        // Past the UDP flow's deadline and past the lateness allowance.
-        let outcome = accept_at(&mut engine, &tcp_frame(false, FIN), 17_000);
+        // Past the UDP flow's deadline and past the lateness allowance. The
+        // acknowledgement finishing the TCP close arrives on the same sweep.
+        let outcome = accept_at(&mut engine, &tcp_frame(true, ACK), 17_000);
         assert_eq!(outcome.completed.len(), 2);
         assert_eq!(engine.active_count(), 0);
     }
