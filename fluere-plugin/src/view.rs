@@ -310,7 +310,7 @@ mod tests {
 
         assert_eq!(
             view.fields.len(),
-            48,
+            50,
             "one entry per record field, plus what identified the flow"
         );
         assert_eq!(view.schema_version, SCHEMA_VERSION);

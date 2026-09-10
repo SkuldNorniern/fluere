@@ -83,7 +83,15 @@ mod tests {
 
     #[test]
     fn a_deeper_stack_is_identified_by_its_outer_tags() {
-        let tags = VlanTags::from_stack(&[1, 2, 3, 4]);
-        assert_eq!(tags.tags(), [1, 2]);
+        let tags = VlanTags::from_stack(&[1, 2, 3, 4, 5]);
+        assert_eq!(tags.tags(), [1, 2, 3, 4]);
+    }
+
+    /// Four covers a tagged frame inside a tagged tunnel. Two did not, and
+    /// truncating there merged tenants that differed only by the inner tag.
+    #[test]
+    fn a_tunnelled_tag_still_fits() {
+        let tags = VlanTags::from_stack(&[10, 20, 30]);
+        assert_eq!(tags.tags(), [10, 20, 30]);
     }
 }

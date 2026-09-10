@@ -16,11 +16,21 @@ pub struct PathChange {
 }
 
 impl std::fmt::Display for PathChange {
-    /// `fwd:203.0.113.77:60000`. One spelling for the CSV and the plugin view,
-    /// so the two cannot drift.
+    /// `fwd:203.0.113.77:60000`, and `fwd:[2001:db8::1]:60000` for IPv6. One
+    /// spelling for the CSV and the plugin view, so the two cannot drift.
+    ///
+    /// The brackets are what make an IPv6 path readable back: the address
+    /// carries colons of its own, so without them nothing can tell where it
+    /// ends and the port begins. `SocketAddr` already spells both families the
+    /// way RFC 3986 does, rather than this doing it by hand.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (address, port) = self.endpoint;
-        write!(f, "{}:{}:{}", self.direction.as_str(), address, port)
+        write!(
+            f,
+            "{}:{}",
+            self.direction.as_str(),
+            std::net::SocketAddr::new(address, port)
+        )
     }
 }
 
@@ -97,6 +107,24 @@ mod tests {
     use std::net::Ipv4Addr;
 
     use super::*;
+
+    /// An IPv6 endpoint's own colons must not be confused with the one before
+    /// the port. Without brackets `fwd:2001:db8::1:60000` cannot be split back
+    /// into an address and a port by anything reading the output.
+    #[test]
+    fn an_ipv6_path_is_unambiguous() {
+        use std::net::Ipv6Addr;
+
+        let change = PathChange {
+            direction: Direction::Forward,
+            endpoint: (
+                IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)),
+                60_000,
+            ),
+        };
+
+        assert_eq!(change.to_string(), "fwd:[2001:db8::1]:60000");
+    }
 
     fn endpoint(last: u8, port: u16) -> (IpAddr, u16) {
         (IpAddr::V4(Ipv4Addr::new(192, 0, 2, last)), port)
