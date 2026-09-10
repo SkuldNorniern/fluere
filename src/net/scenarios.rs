@@ -1016,6 +1016,41 @@ mod tests {
         );
     }
 
+    /// RFC 4443 sec 2.1 and 2.4(c): every ICMPv6 type below 128 is an error and
+    /// carries the packet that provoked it, not only the four named types. An
+    /// error of an unknown type still names the flow it is about.
+    #[test]
+    fn an_icmpv6_error_of_an_unnamed_type_names_its_flow() {
+        let mut capture = Capture::new(600_000);
+        let quoted = ipv6(6, A6, B6, &tcp(40_001, 443, SYN));
+        // Type 100, reserved for private experimentation, is an error message.
+        capture.push(&ethernet(
+            0x86DD,
+            &ipv6(58, B6, A6, &icmp_error(100, 0, &quoted)),
+        ));
+
+        let flows = capture.finish();
+        let error = flows.only_flow(|f| f.key.protocol == 58);
+        let named = error.quoted.expect("an error below 128 quotes");
+        assert_eq!(named.ports, Some((40_001, 443)));
+    }
+
+    /// And a type of 128 or above is informational: what it carries is its own
+    /// payload, however much it may look like a datagram.
+    #[test]
+    fn an_icmpv6_echo_quotes_nothing() {
+        let mut capture = Capture::new(600_000);
+        let mut echo = icmp(128);
+        echo.extend_from_slice(&ipv6(6, A6, B6, &tcp(40_001, 443, SYN)));
+        capture.push(&ethernet(0x86DD, &ipv6(58, A6, B6, &echo)));
+
+        let flows = capture.finish();
+        assert!(
+            flows.only_flow(|f| f.key.protocol == 58).quoted.is_none(),
+            "an echo request quotes nothing"
+        );
+    }
+
     /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
     ///
     /// Naming the flow it refers to needs paccel's decode of the quote: the

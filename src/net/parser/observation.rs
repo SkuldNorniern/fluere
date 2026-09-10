@@ -345,9 +345,11 @@ fn quoted_bytes<'a>(parsed: &ParsedPacket, packet_data: &'a [u8]) -> Option<&'a 
         // Destination unreachable, source quench, redirect, time exceeded,
         // parameter problem.
         (Some(icmp), _) => matches!(icmp.icmp_type, 3 | 4 | 5 | 11 | 12),
-        // Destination unreachable, packet too big, time exceeded, parameter
-        // problem.
-        (_, Some(icmpv6)) => matches!(icmpv6.icmp_type, 1..=4),
+        // RFC 4443 sec 2.1: every type below 128 is an error message - the
+        // high-order bit is what separates them from informational ones - and
+        // sec 2.4(c) requires every one of them to carry the invoking packet.
+        // The four named types are not the whole list.
+        (_, Some(icmpv6)) => icmpv6.icmp_type < 128,
         _ => false,
     };
     if !quotes {
