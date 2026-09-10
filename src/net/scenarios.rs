@@ -1124,6 +1124,77 @@ mod tests {
         );
     }
 
+    /// A datagram whose tail arrives before its head is split across two
+    /// flows, and its octets stay with whichever flow counted them.
+    ///
+    /// Known limitation, not an accident. Only the first fragment carries the
+    /// ports, and this module deliberately never buffers packets - each is
+    /// counted as it arrives, with its own size and timestamp - so a fragment
+    /// that precedes its own header has nothing to be keyed on yet. Fixing it
+    /// means either holding fragments back until the head arrives or moving
+    /// counters between flows afterwards, both of which change that design.
+    ///
+    /// What must hold either way is that nothing is lost or double-counted.
+    #[test]
+    fn a_datagram_whose_last_fragment_arrives_first_is_split_but_conserved() {
+        const FRAGMENT_HEADER: u8 = 44;
+        let mut capture = Capture::new(600_000);
+
+        let mut first = ipv6_fragment(17, 7, 0, true);
+        first.extend_from_slice(&udp(5_000, 6_000, &[b'F'; 200]));
+        let mut rest = ipv6_fragment(17, 7, 26, false);
+        rest.extend_from_slice(&[b'F'; 100]);
+
+        capture
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &rest)))
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &first)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.count(|f| f.key.protocol == 17), 2);
+        assert_eq!(
+            flows
+                .only(|f| f.key.endpoints.ports() == Some((5_000, 6_000)))
+                .packets(),
+            1,
+            "the fragment that named the ports"
+        );
+    }
+
+    /// A tunnelled security association is named by the SPI inside the tunnel.
+    ///
+    /// The outer headers are the carrier; the association is what the tunnel
+    /// carries. Reading the outer packet for an SPI that is not there left
+    /// every tunnelled association sharing one flow.
+    #[test]
+    fn tunnelled_associations_with_different_spis_are_different_flows() {
+        let mut capture = Capture::new(600_000);
+
+        for spi in [0x100u32, 0x200] {
+            let inner_frame = ethernet(
+                0x0800,
+                &ipv4(50, 32, [10, 1, 0, 1], [10, 2, 0, 2], &esp(spi)),
+            );
+            capture.push(&v4(
+                17,
+                64,
+                A,
+                B,
+                &udp(4_789, 4_789, &vxlan(42, &inner_frame)),
+            ));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 50),
+            2,
+            "two associations inside one tunnel"
+        );
+    }
+
     /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
     ///
     /// Naming the flow it refers to needs paccel's decode of the quote: the

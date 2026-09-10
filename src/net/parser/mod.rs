@@ -35,13 +35,19 @@ use paccel::engine::{BuiltinPacketParser, ParseConfig, ParsedPacket, StopLayer};
 /// two flows instead of the two directions of one. They are recorded as a
 /// measurement on the flow record instead.
 fn endpoints_of(parsed: &ParsedPacket, protocol: u8, ports: (u16, u16)) -> Endpoints {
+    // What names a flow sits in the innermost packet, the same one the flow is
+    // keyed on. The outer headers are the carrier: a tunnel has no security
+    // association or SCTP association of its own, and reading it for one left
+    // everything inside a tunnel sharing a single flow.
+    let inner = fluereflows::innermost(parsed);
+
     match protocol {
         // IPsec associations are one-way by design: the return traffic carries
         // a different SPI and is a separate flow.
-        50 => parsed.esp.as_ref().map_or(Endpoints::None, |esp| {
+        50 => inner.esp.as_ref().map_or(Endpoints::None, |esp| {
             Endpoints::SecurityAssociation(esp.spi)
         }),
-        51 => parsed
+        51 => inner
             .ah
             .as_ref()
             .map_or(Endpoints::None, |ah| Endpoints::SecurityAssociation(ah.spi)),
@@ -51,10 +57,10 @@ fn endpoints_of(parsed: &ParsedPacket, protocol: u8, ports: (u16, u16)) -> Endpo
         // The innermost packet, not the outer one: a tunnel carrying TCP has
         // no transport of its own, and reading that as missing ports would
         // strip the ports off every tunnelled flow.
-        6 | 17 if fluereflows::innermost(parsed).transport.is_none() => Endpoints::None,
+        6 | 17 if inner.transport.is_none() => Endpoints::None,
         // SCTP has real ports; they just do not arrive through
         // `TransportSegment`, which only covers TCP and UDP.
-        132 => parsed
+        132 => inner
             .sctp
             .as_ref()
             .map_or(Endpoints::None, |sctp| Endpoints::Ports {
