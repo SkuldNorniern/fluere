@@ -1195,6 +1195,40 @@ mod tests {
         );
     }
 
+    /// A datagram whose first fragment carries an extension header before the
+    /// transport one is still one datagram. RFC 8200 sec 4.5 identifies it by
+    /// its addresses and identification.
+    #[test]
+    fn fragments_with_a_header_after_the_fragment_header_stay_together() {
+        const FRAGMENT_HEADER: u8 = 44;
+        const DEST_OPTIONS: u8 = 60;
+        let dest_options = [17u8, 0, 0, 0, 0, 0, 0, 0];
+
+        let mut capture = Capture::new(600_000);
+
+        // First fragment: Fragment -> Destination Options -> UDP.
+        let mut first = ipv6_fragment(DEST_OPTIONS, 7, 0, true);
+        first.extend_from_slice(&dest_options);
+        first.extend_from_slice(&udp(5_000, 6_000, &[b'F'; 200]));
+
+        // The rest carries the same next header in its fragment header.
+        let mut rest = ipv6_fragment(DEST_OPTIONS, 7, 27, false);
+        rest.extend_from_slice(&[b'F'; 100]);
+
+        capture
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &first)))
+            .push(&ethernet(0x86DD, &ipv6(FRAGMENT_HEADER, A6, B6, &rest)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 17),
+            1,
+            "one datagram, whatever headers sat in front of its transport"
+        );
+    }
+
     /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
     ///
     /// Naming the flow it refers to needs paccel's decode of the quote: the
