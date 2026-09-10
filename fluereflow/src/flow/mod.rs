@@ -130,6 +130,17 @@ impl FlowRecord {
         // duration and pull the idle deadline in with it, and leaving `start`
         // where the first delivery put it reported a flow beginning after its
         // own earliest packet.
+        // A SYN stamped at or before everything else seen is the handshake
+        // arriving out of order, not a connection restarting mid-flow: a
+        // restart's SYN comes after what preceded it. Checked before `start`
+        // moves, so the comparison is against the rest of the flow.
+        if facts.tcp_flags.is_some_and(|flags| flags.syn)
+            && self.time.start_state == StartState::MidStream
+            && facts.time <= self.time.start
+        {
+            self.time.start_state = StartState::SynObserved;
+        }
+
         self.time.start = self.time.start.min(facts.time);
         self.time.end = self.time.end.max(facts.time);
         if let Some(ttl) = facts.ttl {

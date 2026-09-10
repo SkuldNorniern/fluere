@@ -879,6 +879,43 @@ mod tests {
         assert_eq!(flow.time.duration(), 2_000_000);
     }
 
+    /// A SYN delivered late still means the handshake was captured.
+    ///
+    /// `start_state` says whether the capture caught the connection opening.
+    /// Out-of-order delivery is expected - it is why `start` and `end` both
+    /// move - so deciding this from the first packet *delivered* rather than
+    /// the earliest one *stamped* reports a mid-stream capture of a connection
+    /// whose SYN is right there in the file.
+    #[test]
+    fn a_late_delivered_syn_still_counts_as_the_handshake() {
+        let mut capture = Capture::new(600_000);
+
+        capture
+            .push_at(&v4(6, 64, A, B, &tcp(40_001, 443, ACK)), 2_000)
+            .push_at(&v4(6, 64, A, B, &tcp(40_001, 443, SYN)), 1_000);
+
+        let flows = capture.finish();
+        let flow = flows.only(|f| f.key.protocol == 6);
+
+        assert_eq!(flow.time.start_state, StartState::SynObserved);
+    }
+
+    /// A SYN arriving mid-flow is a connection restarting, not the handshake
+    /// this flow began with, so it must not rewrite how the flow started.
+    #[test]
+    fn a_syn_arriving_mid_flow_does_not_rewrite_the_start_state() {
+        let mut capture = Capture::new(600_000);
+
+        capture
+            .push_at(&v4(6, 64, A, B, &tcp(40_001, 443, ACK)), 1_000)
+            .push_at(&v4(6, 64, A, B, &tcp(40_001, 443, SYN)), 2_000);
+
+        let flows = capture.finish();
+        let flow = flows.only(|f| f.key.protocol == 6);
+
+        assert_eq!(flow.time.start_state, StartState::MidStream);
+    }
+
     /// With `--useMAC`, the addresses that separate tunnelled traffic are the
     /// ones on the frame inside the tunnel.
     ///
