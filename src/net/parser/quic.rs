@@ -225,7 +225,20 @@ impl QuicTracker {
         };
 
         if target == observation.key {
-            // Same addresses as before: nothing migrated.
+            // Same addresses as before, so nothing migrated - but the
+            // connection is plainly still in use, and saying so is what keeps
+            // it from ageing out. Without this only a move refreshed it, so a
+            // connection that carried traffic steadily on one address pair was
+            // forgotten while busy, and the move that eventually came opened a
+            // second flow.
+            self.connections.observe_short_header_at(
+                source.address,
+                source.port,
+                destination.address,
+                destination.port,
+                &dcid,
+                now,
+            );
             return false;
         }
         // A connection ID says which connection a packet belongs to, not which
@@ -650,6 +663,35 @@ mod tests {
         let (observation, migrated) = observe(&mut tracker, &moved, 1_000 + MAX_AGE * 2);
         assert!(!migrated, "a forgotten connection cannot be migrated to");
         assert_eq!(observation.key.source, IpAddr::V4(Ipv4Addr::from(MOVED)));
+    }
+
+    /// Traffic on the original addresses keeps a connection alive.
+    ///
+    /// A connection that has been carrying packets all along has not gone
+    /// quiet, so ageing it out and losing the migration that follows reports
+    /// two flows for one connection.
+    #[test]
+    fn traffic_on_the_original_tuple_keeps_a_connection_alive() {
+        let mut tracker = QuicTracker::new();
+        let cid = [1u8, 2, 3, 4, 5, 6, 7, 8];
+
+        let handshake = udp_frame((SERVER, 443), (CLIENT, 50_000), &long_header(&cid));
+        observe(&mut tracker, &handshake, 1_000);
+
+        // Steady traffic on the addresses it opened on, well past MAX_AGE.
+        let steady = udp_frame((CLIENT, 50_000), (SERVER, 443), &short_header(&cid));
+        let mut now = 1_000;
+        for _ in 0..8 {
+            now += MAX_AGE / 2;
+            observe(&mut tracker, &steady, now);
+        }
+
+        // Then it moves.
+        let moved = udp_frame((MOVED, 53_000), (SERVER, 443), &short_header(&cid));
+        let (observation, migrated) = observe(&mut tracker, &moved, now + 1_000);
+
+        assert!(migrated, "a connection in constant use has not gone quiet");
+        assert_eq!(observation.key.source, IpAddr::V4(Ipv4Addr::from(CLIENT)));
     }
 
     #[test]
