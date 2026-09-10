@@ -1102,6 +1102,28 @@ mod tests {
         assert_eq!(closed.packets(), 3, "the new SYN is not part of the close");
     }
 
+    /// Security associations are one-way, and an SPI is chosen by whichever
+    /// endpoint receives on it. Two of them can pick the same number, so an SPI
+    /// on its own does not make return traffic.
+    ///
+    /// RFC 4301 sec 4.1 and RFC 4303 sec 2.1.
+    #[test]
+    fn opposite_ipsec_associations_sharing_an_spi_are_two_flows() {
+        let mut capture = Capture::new(600_000);
+        capture
+            .push(&v4(50, 64, A, B, &esp(0x100)))
+            .push(&v4(50, 64, B, A, &esp(0x100)));
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(
+            flows.count(|f| f.key.protocol == 50),
+            2,
+            "each direction is its own association"
+        );
+    }
+
     /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
     ///
     /// Naming the flow it refers to needs paccel's decode of the quote: the

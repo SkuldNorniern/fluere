@@ -31,6 +31,18 @@ pub enum Endpoints {
 }
 
 impl Endpoints {
+    /// Whether traffic the other way belongs to the same flow.
+    ///
+    /// For everything with two endpoints it does. An IPsec security
+    /// association is the exception: RFC 4301 sec 4.1 makes it one-way, and
+    /// RFC 4303 sec 2.1 has the receiver choose the SPI, so the two directions
+    /// of one tunnel carry unrelated SPIs and two unrelated associations may
+    /// carry the same one. Reversing the addresses while keeping the SPI
+    /// therefore names a flow that has nothing to do with this one.
+    pub fn has_reverse_direction(self) -> bool {
+        !matches!(self, Endpoints::SecurityAssociation(_))
+    }
+
     /// Transport ports, for the protocols that have them.
     pub fn ports(self) -> Option<(u16, u16)> {
         match self {

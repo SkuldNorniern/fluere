@@ -292,7 +292,11 @@ impl FlowEngine {
                 key,
                 fold(state, &key, Direction::Forward, &observation, flags),
             )
-        } else if let Some(state) = self.active.get_mut(&reverse) {
+        } else if let Some(state) = self
+            .active
+            .get_mut(&reverse)
+            .filter(|_| key.endpoints.has_reverse_direction())
+        {
             (
                 reverse,
                 fold(state, &reverse, Direction::Reverse, &observation, flags),
