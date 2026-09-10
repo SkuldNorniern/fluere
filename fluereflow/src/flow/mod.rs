@@ -124,10 +124,13 @@ impl FlowRecord {
         };
         stats.observe(facts.frame_octets, facts.tcp_flags.unwrap_or_default());
 
-        // The latest packet seen, not the most recently delivered one. Merged
-        // captures and multi-queue interfaces deliver out of order, and letting
-        // an early packet arriving late move `end` backwards would shorten the
-        // duration and pull the idle deadline in with it.
+        // The earliest and latest packet seen, not the first and last delivered.
+        // Merged captures and multi-queue interfaces deliver out of order:
+        // letting a late arrival move `end` backwards would shorten the
+        // duration and pull the idle deadline in with it, and leaving `start`
+        // where the first delivery put it reported a flow beginning after its
+        // own earliest packet.
+        self.time.start = self.time.start.min(facts.time);
         self.time.end = self.time.end.max(facts.time);
         if let Some(ttl) = facts.ttl {
             stats::observe(&mut self.network.ttl, ttl);

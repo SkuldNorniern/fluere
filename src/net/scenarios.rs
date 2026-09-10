@@ -853,6 +853,32 @@ mod tests {
         );
     }
 
+    /// A packet delivered late but stamped early still sets when the flow
+    /// began.
+    ///
+    /// `end` is already guarded against moving backwards for exactly this
+    /// reason - merged captures and multi-queue interfaces deliver out of
+    /// order. `start` has to move the other way for the same reason, or the
+    /// flow reports beginning after its own earliest packet and a duration
+    /// short by the gap.
+    #[test]
+    fn a_late_delivered_early_packet_moves_when_the_flow_began() {
+        let mut capture = Capture::new(600_000);
+        let frame = v4(17, 64, A, B, &udp(50_001, 9_000, &[b'D'; 16]));
+
+        capture
+            .push_at(&frame, 2_000)
+            .push_at(&frame, 1_000)
+            .push_at(&frame, 3_000);
+
+        let flows = capture.finish();
+        let flow = flows.only(|f| f.key.protocol == 17);
+
+        assert_eq!(flow.time.start.micros(), 1_000, "the earliest packet seen");
+        assert_eq!(flow.time.end.micros(), 3_000);
+        assert_eq!(flow.time.duration(), 2_000_000);
+    }
+
     /// With `--useMAC`, the addresses that separate tunnelled traffic are the
     /// ones on the frame inside the tunnel.
     ///
