@@ -73,7 +73,12 @@ impl Paths {
             direction,
             endpoint,
         };
-        if self.latest == Some(change) || self.endpoints().contains(&change) {
+        // Compared in place rather than through `endpoints()`, which allocates.
+        // A migrated flow reaches here for every packet that follows the move,
+        // not only for the move itself.
+        if self.latest == Some(change)
+            || self.endpoints.iter().flatten().any(|held| *held == change)
+        {
             return;
         }
         self.latest = Some(change);
