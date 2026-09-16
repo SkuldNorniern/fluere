@@ -9,7 +9,6 @@ use fluereflow::{PacketFacts, QuotedFlow, TcpFlags, Timestamp};
 use super::fluereflows::{CaptureResolution, innermost, packet_time, wire_length};
 use super::fragments::{Fragment, FragmentTracker};
 use super::keys::keys_from_parsed;
-use super::parse_frame_into;
 use super::properties;
 use super::quic::QuicTracker;
 
@@ -107,7 +106,7 @@ pub fn observe(
 
     // Taken while `parsed` is still borrowed; everything after this needs the
     // state mutably.
-    let quoted = quoted_datagram(parsed, packet.data, &mut state.quoted);
+    let quoted = quoted_datagram(parsed);
 
     let now = properties.facts.time.nanos();
     expire_sessions(state.sessions.as_mut(), &mut state.last_session_expiry, now);
@@ -179,10 +178,6 @@ pub struct ParserState {
     /// The packet buffer every frame is parsed into, kept across packets so the
     /// parser has somewhere to write that it does not have to allocate or move.
     parsed: ParsedPacket,
-    /// A second buffer, for the datagram an ICMP error quotes. Separate from
-    /// `parsed` because the quote is decoded while the error itself is still
-    /// being read out of it.
-    quoted: ParsedPacket,
     /// The unit libpcap is reporting sub-second timestamps in. Set once, from
     /// the precision the capture was opened with.
     pub resolution: CaptureResolution,
@@ -283,40 +278,15 @@ fn http_host(message: &paccel::layer::application::http::HttpMessage) -> Option<
     }
 }
 
-/// The head of the datagram an ICMP error quoted, if this packet is one.
+/// The flow the datagram an ICMP error quoted refers to, if it carried one.
 ///
-/// Decoded here rather than taken from paccel's `icmp_quoted`, which is only
-/// filled in when the parse runs to the application layer. Doing that for every
-/// packet cost twelve times the parse time on a QUIC-heavy capture, and an
-/// error quote is not application data: it is an IP header with a transport
-/// header behind it, so it is parsed as a bare IP frame at transport depth.
-fn quoted_datagram(
-    parsed: &ParsedPacket,
-    packet_data: &[u8],
-    scratch: &mut ParsedPacket,
-) -> Option<QuotedFlow> {
+/// paccel decodes the quote, which is the only way to reach a tunnelled error:
+/// the offsets on an inner packet are relative to the tunnel payload, a slice
+/// this does not have.
+fn quoted_datagram(parsed: &ParsedPacket) -> Option<QuotedFlow> {
     // The error that matters is the innermost one, because that is the flow the
     // packet counts towards.
-    let inner = innermost(parsed);
-
-    // paccel's own decode where it has one. It is the only way to reach a
-    // tunnelled error: the offsets on an inner packet are relative to the
-    // tunnel payload, which is a slice this does not have.
-    if let Some(quoted) = inner.icmp_quoted.as_deref() {
-        return quoted_flow_of(quoted);
-    }
-
-    // Otherwise decode it here, which works for an error that is not tunnelled
-    // - where the innermost packet is the frame itself and the offsets index
-    // the buffer directly.
-    if inner.transport_segment_offset != parsed.transport_segment_offset {
-        return None;
-    }
-    let quoted = quoted_bytes(parsed, packet_data)?;
-    // 101 is LINKTYPE_RAW: an IP datagram with no link header, which is exactly
-    // what an error quotes. It covers both families; the version nibble picks.
-    parse_frame_into(quoted, 101, scratch).ok()?;
-    quoted_flow_of(scratch)
+    quoted_flow_of(innermost(parsed).icmp_quoted.as_deref()?)
 }
 
 /// Names the flow an already-decoded quoted datagram refers to.
@@ -334,37 +304,6 @@ fn quoted_flow_of(quoted: &ParsedPacket) -> Option<QuotedFlow> {
         protocol: key.protocol,
     })
 }
-
-/// The bytes after an ICMP error's own eight-byte header.
-///
-/// Only the error types that quote: an echo request carries an identifier and
-/// sequence number in those same eight bytes and a payload of its own choosing
-/// behind them, which is not a datagram and must not be read as one.
-fn quoted_bytes<'a>(parsed: &ParsedPacket, packet_data: &'a [u8]) -> Option<&'a [u8]> {
-    let quotes = match (parsed.icmp.as_ref(), parsed.icmpv6.as_ref()) {
-        // Destination unreachable, source quench, redirect, time exceeded,
-        // parameter problem.
-        (Some(icmp), _) => matches!(icmp.icmp_type, 3 | 4 | 5 | 11 | 12),
-        // RFC 4443 sec 2.1: every type below 128 is an error message - the
-        // high-order bit is what separates them from informational ones - and
-        // sec 2.4(c) requires every one of them to carry the invoking packet.
-        // The four named types are not the whole list.
-        (_, Some(icmpv6)) => icmpv6.icmp_type < 128,
-        _ => false,
-    };
-    if !quotes {
-        return None;
-    }
-
-    let offset = parsed
-        .transport_segment_offset?
-        .checked_add(ICMP_HEADER_LEN)?;
-    let quoted = packet_data.get(offset..)?;
-    (!quoted.is_empty()).then_some(quoted)
-}
-
-/// An ICMP header is eight bytes, whatever follows it.
-const ICMP_HEADER_LEN: usize = 8;
 
 #[cfg(test)]
 mod tests {
