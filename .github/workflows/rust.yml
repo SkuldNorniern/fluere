@@ -37,6 +37,14 @@ jobs:
           curl -L -o npcap-sdk.zip https://npcap.com/dist/npcap-sdk-1.13.zip
           unzip -q npcap-sdk.zip -d $env:GITHUB_WORKSPACE\npcap-sdk
           echo "LIB=$env:GITHUB_WORKSPACE\npcap-sdk\Lib\x64" >> $env:GITHUB_ENV
+          # The SDK is an import library with no runtime, so pcap's build
+          # script has no wpcap.dll to read a version out of. Its fallback on
+          # Windows is 1.0.0, which switches off every binding above that -
+          # including the 1.5.0 per-file timestamp precision convert needs.
+          # Npcap is based on libpcap 1.10, but say 1.5.0: it is what is
+          # needed, and anything higher enables bindings that have never been
+          # linked against Npcap here.
+          echo "LIBPCAP_VER=1.5.0" >> $env:GITHUB_ENV
 
       - name: Build
         run: cargo build --release --verbose

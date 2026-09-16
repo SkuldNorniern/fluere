@@ -34,6 +34,9 @@ jobs:
           curl -L -o npcap-sdk.zip https://npcap.com/dist/npcap-sdk-1.13.zip
           unzip -q npcap-sdk.zip -d $env:GITHUB_WORKSPACE\npcap-sdk
           echo "LIB=$env:GITHUB_WORKSPACE\npcap-sdk\Lib\x64" >> $env:GITHUB_ENV
+          # See the note in rust.yml: the SDK has no runtime for pcap to read
+          # a version out of, and its Windows fallback disables the binding.
+          echo "LIBPCAP_VER=1.5.0" >> $env:GITHUB_ENV
 
       # See the note in rust.yml: Windows has no capture runtime to load, so
       # the tests are compiled there rather than run.
@@ -130,6 +133,9 @@ jobs:
           curl -L -o npcap-sdk.zip https://npcap.com/dist/npcap-sdk-1.13.zip
           unzip -q npcap-sdk.zip -d $env:GITHUB_WORKSPACE\npcap-sdk
           echo "LIB=$env:GITHUB_WORKSPACE\npcap-sdk\Lib\x64" >> $env:GITHUB_ENV
+          # See the note in rust.yml: the SDK has no runtime for pcap to read
+          # a version out of, and its Windows fallback disables the binding.
+          echo "LIBPCAP_VER=1.5.0" >> $env:GITHUB_ENV
 
       - run: cargo build --release
       - name: Archive the binary
