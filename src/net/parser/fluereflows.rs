@@ -68,8 +68,14 @@ pub(super) fn packet_time(
     //
     // A live capture's clock is a real `time_t` and stays positive, so it takes
     // the first branch and keeps its full range.
-    let seconds = u64::try_from(packet.header.ts.tv_sec)
-        .or_else(|_| u64::try_from(packet.header.ts.tv_sec & 0xFFFF_FFFF))
+    // Widened first: `tv_sec` is 64 bits on Linux and macOS and 32 on Windows,
+    // where the mask does not fit the type it would be applied to. Allowed
+    // rather than expected, because on the wider platforms this is the
+    // identity and on Windows the lint does not fire at all.
+    #[allow(clippy::useless_conversion)]
+    let written = i64::from(packet.header.ts.tv_sec);
+    let seconds = u64::try_from(written)
+        .or_else(|_| u64::try_from(written & 0xFFFF_FFFF))
         .unwrap_or(0);
     let subsecond = u64::try_from(packet.header.ts.tv_usec).unwrap_or(0);
 
