@@ -1229,15 +1229,36 @@ mod tests {
         );
     }
 
-    /// A tunnelled ICMP error is its own flow, and keeps its own bytes.
+    /// One PPTP call is one tunnel, however its payload lengths vary.
     ///
-    /// Naming the flow it refers to needs paccel's decode of the quote: the
-    /// offsets on an inner packet are relative to the tunnel payload, which is
-    /// a slice fluere never holds. paccel 0.4.0 fills that in only for an
-    /// application-depth parse, which costs far more than it is worth here, so
-    /// a tunnelled error goes unnamed until that reaches a release. What must
-    /// hold either way is that nothing is misread: the error counts on its own
-    /// flow and never claims a quote belonging to the outer packet.
+    /// RFC 2637 sec 4.1 gives GRE version 1 a different header: where a
+    /// version-0 key would sit there is a payload length and a call ID, and the
+    /// length changes with every packet. Reading that as a key gives every
+    /// packet of one call a tunnel of its own.
+    #[test]
+    fn a_pptp_tunnel_is_one_flow_across_its_payload_lengths() {
+        let mut capture = Capture::new(600_000);
+
+        for payload_length in [40u16, 80] {
+            let mut header = vec![0x30, 0x01, 0x88, 0x0b];
+            header.extend_from_slice(&payload_length.to_be_bytes());
+            header.extend_from_slice(&0x1234u16.to_be_bytes());
+            header.extend_from_slice(&[0, 0, 0, 1]);
+            header.extend(vec![0xff; usize::from(payload_length)]);
+            capture.push(&v4(47, 64, A, B, &header));
+        }
+
+        let flows = capture.finish();
+        flows.assert_conserved();
+
+        assert_eq!(flows.count(|f| f.key.protocol == 47), 1);
+    }
+
+    /// A tunnelled ICMP error is its own flow, keeps its own bytes, and names
+    /// the flow it refers to.
+    ///
+    /// Naming it needs paccel's decode of the quote: the offsets on an inner
+    /// packet are relative to the tunnel payload, a slice fluere never holds.
     #[test]
     fn a_tunnelled_icmp_error_is_counted_on_its_own_flow() {
         let mut capture = Capture::new(600_000);
@@ -1255,6 +1276,11 @@ mod tests {
             IpAddr::V4(Ipv4Addr::from(ROUTER)),
             "the innermost error, not the tunnel it arrived in"
         );
+        let quoted = error.quoted.as_ref().expect("the error names a flow");
+        assert_eq!(quoted.source, IpAddr::V4(Ipv4Addr::from(A)));
+        assert_eq!(quoted.destination, IpAddr::V4(Ipv4Addr::from(B)));
+        assert_eq!(quoted.ports, Some((40_001, 443)));
+        assert_eq!(quoted.protocol, 6);
     }
 
     /// An echo request's eight bytes are an identifier and a sequence number,

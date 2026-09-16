@@ -1470,9 +1470,9 @@ dependencies = [
 
 [[package]]
 name = "paccel"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e3a570d9b519117140e137ead03be5e2e6bf3cb68e8772b847249cdd663d301"
+checksum = "1b59d1430a4d37e29b35ae0411d5eb67e7e3af589e37796faa7afae1ad5f26e4"
 dependencies = [
  "aes",
  "aes-gcm",
